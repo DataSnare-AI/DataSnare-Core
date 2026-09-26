@@ -166,6 +166,11 @@ DS-RAG-012 and DS-RAG-013 now provide replaceable cross-agent candidate aggregat
 term-aware reranking helpers. DS-RAG-014 persists retrieval audit events through a tenant-scoped
 repository and exposes them at `GET /api/tenants/{tenant_id}/rag/audit` for authorized operational roles.
 
+Phase 3 has started with DS-RAG-020 site query planning and DS-RAG-023 site cache boundaries. Query plans
+normalize site, area, agent, and result constraints into stable cache keys; the current cache is an
+in-memory tenant-scoped implementation with explicit TTL behavior. Cross-area correlation, evidence
+deduplication across site agents, and the site knowledge graph remain the next Phase 3 slices.
+
 ## Shared visual skins
 
 Core now exposes two persisted suite skin choices through `src/contracts/skins.js`:
