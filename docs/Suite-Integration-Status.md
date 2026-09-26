@@ -213,3 +213,8 @@ The first Postgres persistence boundary is now defined in
 pgvector embeddings, agent manifests, graph edges, and retrieval audit events with scope/provenance
 indexes. Application startup does not execute migrations; deployment should apply them through the
 database migration process before switching Core repositories from in-memory implementations.
+
+Core project launch context now includes the selected suite skin. The shared `src/contracts/session.js`
+reader normalizes the `datasnare-core/project-launch-v1` envelope and provides tenant/actor request
+headers for migrated React tools. This keeps AINetScope, AIPerf, AIProcMon, and AILogScope from each
+inventing separate launch-context and skin handling while they gain their Python-backed web versions.

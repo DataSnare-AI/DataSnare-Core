@@ -99,7 +99,7 @@ export const projects = [
   },
 ];
 
-export function buildProjectLaunchContext(project, account = {}) {
+export function buildProjectLaunchContext(project, account = {}, skin = null) {
   return {
     schema: 'datasnare-core/project-launch-v1',
     issuedAt: new Date().toISOString(),
@@ -117,5 +117,6 @@ export function buildProjectLaunchContext(project, account = {}) {
       actorId: account.actorId || null,
       license: project.license,
     },
+    skin,
   };
 }
