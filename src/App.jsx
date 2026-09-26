@@ -16,7 +16,7 @@ const partnerIntegrations = [
   },
 ];
 
-function ProjectCard({ project, onOpen }) {
+function ProjectCard({ project, onOpen, onDetails }) {
   return (
     <article className={`project-card project-card--${project.accent}`}>
       <div className="project-card__topline">
@@ -26,11 +26,15 @@ function ProjectCard({ project, onOpen }) {
       <p className="eyebrow">{project.category}</p>
       <h3>{project.name}</h3>
       <p className="project-card__description">{project.description}</p>
-      <button className="project-card__link" type="button" onClick={() => onOpen(project)}>
-        Open project <ArrowUpRight size={16} />
-      </button>
+      <div className="project-card__actions"><button className="project-card__link" type="button" onClick={() => onOpen(project)}>Open project <ArrowUpRight size={16} /></button>{project.details && <a className="project-card__details" href={`#details-${project.id}`} onClick={() => onDetails(project)}>Details</a>}</div>
     </article>
   );
+}
+
+function ProjectDetails({ project, onBack }) {
+  const details = project.details;
+  if (!details) return null;
+  return <section className="project-details" id={`details-${project.id}`}><button className="project-details__back" type="button" onClick={onBack}>Back to projects</button><div className="project-details__heading"><p className="eyebrow">{project.category}</p><h2>{project.name}</h2><p>{details.tagline}</p></div><div className="project-details__grid"><article><p className="eyebrow">Inputs</p><ul>{details.inputs.map(input => <li key={input}>{input}</li>)}</ul></article><article><p className="eyebrow">What it does</p><ul>{details.highlights.map(highlight => <li key={highlight}>{highlight}</li>)}</ul></article></div><div className="project-details__workflow"><p className="eyebrow">Typical workflow</p><p>{details.workflow}</p><p className="project-details__caveat"><strong>Current boundary:</strong> {details.caveat}</p><span className="project-details__schema">{project.exportSchema}</span></div></section>;
 }
 
 function SuiteStatus() {
@@ -90,6 +94,7 @@ function KnowledgeSearch() {
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sessionOpen, setSessionOpen] = useState(false);
+  const [detailsProject, setDetailsProject] = useState(null);
   const [skin, setSkin] = useState(() => normalizeSuiteSkin(localStorage.getItem(SUITE_SKIN_STORAGE_KEY) || DEFAULT_SUITE_SKIN));
 
   const selectSkin = (nextSkin) => {
@@ -153,13 +158,13 @@ export default function App() {
           </div>
         </section>
 
-        <section className="section-heading" id="projects">
+        {detailsProject ? <ProjectDetails project={detailsProject} onBack={() => { setDetailsProject(null); window.location.hash = 'projects'; }} /> : <><section className="section-heading" id="projects">
           <div><p className="eyebrow">Project registry</p><h2>Six tools, one point of entry.</h2></div>
           <p>Each DataSnare tool keeps its own release cycle and license while Core keeps your context close.</p>
         </section>
         <section className="project-grid" aria-label="DataSnare projects">
-          {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} />)}
-        </section>
+          {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} onDetails={setDetailsProject} />)}
+        </section></>}
 
         <SuiteStatus />
         <KnowledgeSearch />

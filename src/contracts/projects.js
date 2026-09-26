@@ -46,6 +46,7 @@ export const projects = [
     exportSchema: PROJECT_EXPORT_SCHEMAS.ailogscope,
     capabilities: ['local-evidence-import', 'normalized-event-export'],
     webMigration: PROJECT_WEB_MIGRATIONS.ailogscope,
+    details: { tagline: 'Normalize application logs and Windows event evidence into explainable findings.', inputs: ['.log, .txt, .json, .csv, .ndjson, and converted EVTX'], highlights: ['Log4j and Log4j2 records with stack-trace continuations', 'UTF-8 and UTF-16 detection with bounded evidence retention', 'Deterministic error, restart, service, and failed-logon findings'], workflow: 'Import local evidence, review normalized events and findings, then export datasnare-ailogscope/events-v1.', caveat: 'Native EVTX conversion remains a local PowerShell step; the web migration adds queued Python ingestion.' },
   },
   {
     id: 'aiperf',
@@ -59,6 +60,7 @@ export const projects = [
     exportSchema: PROJECT_EXPORT_SCHEMAS.aiperf,
     capabilities: ['local-evidence-import', 'normalized-event-export'],
     webMigration: PROJECT_WEB_MIGRATIONS.aiperf,
+    details: { tagline: 'Review Performance Monitor captures and identify sustained resource pressure.', inputs: ['Converted Performance Monitor CSV', 'System Diagnostics report.xml', 'Native .blg through the web job boundary'], highlights: ['CPU, memory, disk, network, and TCP metric series', 'Sustained threshold findings with observed extremes and windows', 'Locale-aware PDH timestamps and normalized events export'], workflow: 'Convert or upload performance evidence, inspect source metrics and findings, then export datasnare-aiperf/events-v1.', caveat: 'Binary BLG decoding uses the planned Python/native conversion worker; the browser path remains CSV/XML.' },
   },
   {
     id: 'aiprocmon',
@@ -72,6 +74,7 @@ export const projects = [
     exportSchema: PROJECT_EXPORT_SCHEMAS.aiprocmon,
     capabilities: ['local-evidence-import', 'normalized-event-export', 'process-map-export'],
     webMigration: PROJECT_WEB_MIGRATIONS.aiprocmon,
+    details: { tagline: 'Investigate process activity, failures, and slow operations from ProcMon evidence.', inputs: ['ProcMon CSV and XML exports', 'Native .pml through the web job boundary'], highlights: ['Streaming large CSV imports with bounded salient evidence', 'Access, sharing, path, duration, and process findings', 'Optional TCP/UDP process-map observations'], workflow: 'Convert or upload ProcMon evidence, review deterministic findings and process context, then export datasnare-aiprocmon/events-v1.', caveat: 'Keep the original PML/CSV as primary evidence; normalized exports retain aggregate and salient records.' },
   },
   {
     id: 'airca',
@@ -97,6 +100,7 @@ export const projects = [
     exportSchema: PROJECT_EXPORT_SCHEMAS.ainetscope,
     capabilities: ['local-evidence-import', 'network-flow-export'],
     webMigration: PROJECT_WEB_MIGRATIONS.ainetscope,
+    details: { tagline: 'Inspect large packet captures, streams, and protocol behavior.', inputs: ['.pcap, .pcapng, and .cap captures', 'Capture sets from dumpcap rotations', 'Normalized process-map observations'], highlights: ['PCAP/PCAPNG protocol, flow, latency, and topology analysis', 'Wireshark-style packet workbench with lazy byte inspection', 'Large-capture compact models, worker parsing, and outlier detection'], workflow: 'Open a local capture for offline triage or queue it through the Core web workbench, then inspect flows, packets, findings, and exports.', caveat: 'The current Python web parser validates capture headers while full packet decoding remains in the local browser analyzer.' },
   },
   {
     id: 'core',
