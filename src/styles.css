@@ -2,14 +2,21 @@
 
 :root { font-family: 'Manrope', sans-serif; color: #18302d; background: #f4f2ec; font-synthesis: none; --ink: #18302d; --muted: #687773; --cream: #f4f2ec; --paper: #fffdf8; --mint: #b9e4c9; --line: rgba(24, 48, 45, .14); }
 .app-shell { --ink: #18302d; --muted: #687773; --cream: #f4f2ec; --paper: #fffdf8; --mint: #b9e4c9; --line: rgba(24, 48, 45, .14); }
-.app-shell.skin-aiops { --ink: #e6edf5; --muted: #9aa9b8; --cream: #111a24; --paper: #192532; --mint: #2f91d5; --line: rgba(198, 216, 232, .16); color: var(--ink); background: #111a24; }
-.app-shell.skin-aiops .topbar, .app-shell.skin-aiops .section-heading, .app-shell.skin-aiops .project-grid, .app-shell.skin-aiops .partner-section, .app-shell.skin-aiops .access-band, .app-shell.skin-aiops .license-section, .app-shell.skin-aiops .footer { color: var(--ink); }
-.app-shell.skin-aiops .project-card, .app-shell.skin-aiops .partner-card, .app-shell.skin-aiops .session-modal, .app-shell.skin-aiops .topbar__nav { background: var(--paper); }
-.app-shell.skin-aiops .project-card:hover { box-shadow: 0 17px 34px rgba(0, 0, 0, .28); }
-.app-shell.skin-aiops .hero__signal { background: rgba(25, 37, 50, .72); box-shadow: 0 35px 80px rgba(0, 0, 0, .25); }
-.app-shell.skin-aiops .signal-core, .app-shell.skin-aiops .primary-button, .app-shell.skin-aiops .notice { background: #2f91d5; color: #061421; }
-.app-shell.skin-aiops .primary-button:hover { background: #55ace5; }
-.app-shell.skin-aiops .project-card--amber { border-top-color: #e2ac45; }.app-shell.skin-aiops .project-card--teal { border-top-color: #2f91d5; }.app-shell.skin-aiops .project-card--mint { border-top-color: #63c39b; }
+.app-shell.skin-dark { --ink: #e6edf5; --muted: #9aa9b8; --cream: #111a24; --paper: #192532; --mint: #2f91d5; --line: rgba(198, 216, 232, .16); color: var(--ink); background: #111a24; }
+.app-shell.skin-dark .topbar, .app-shell.skin-dark .section-heading, .app-shell.skin-dark .project-grid, .app-shell.skin-dark .partner-section, .app-shell.skin-dark .access-band, .app-shell.skin-dark .license-section, .app-shell.skin-dark .footer { color: var(--ink); }
+.app-shell.skin-dark .project-card, .app-shell.skin-dark .partner-card, .app-shell.skin-dark .session-modal, .app-shell.skin-dark .topbar__nav { background: var(--paper); }
+.app-shell.skin-dark .project-card:hover { box-shadow: 0 17px 34px rgba(0, 0, 0, .28); }
+.app-shell.skin-dark .hero__signal { background: rgba(25, 37, 50, .72); box-shadow: 0 35px 80px rgba(0, 0, 0, .25); }
+.app-shell.skin-dark .signal-core, .app-shell.skin-dark .primary-button, .app-shell.skin-dark .notice { background: #2f91d5; color: #061421; }
+.app-shell.skin-dark .primary-button:hover { background: #55ace5; }
+.app-shell.skin-dark .project-card--amber { border-top-color: #e2ac45; }.app-shell.skin-dark .project-card--teal { border-top-color: #2f91d5; }.app-shell.skin-dark .project-card--mint { border-top-color: #63c39b; }
+.app-shell.skin-light { --ink: #1f2937; --muted: #667085; --cream: #f5f7fb; --paper: #fff; --mint: #1677ff; --line: #d9e3f0; color: var(--ink); background: #f5f7fb; }
+.app-shell.skin-light .topbar, .app-shell.skin-light .section-heading, .app-shell.skin-light .project-grid, .app-shell.skin-light .partner-section, .app-shell.skin-light .access-band, .app-shell.skin-light .license-section, .app-shell.skin-light .footer { color: var(--ink); }
+.app-shell.skin-light .project-card, .app-shell.skin-light .partner-card, .app-shell.skin-light .session-modal, .app-shell.skin-light .topbar__nav { background: var(--paper); box-shadow: 0 2px 8px rgba(31, 41, 55, .08); }
+.app-shell.skin-light .hero__signal { background: rgba(255, 255, 255, .8); box-shadow: 0 24px 60px rgba(31, 41, 55, .12); }
+.app-shell.skin-light .signal-core, .app-shell.skin-light .primary-button, .app-shell.skin-light .notice { background: #1677ff; color: #fff; }
+.app-shell.skin-light .primary-button:hover { background: #4096ff; }
+.app-shell.skin-light .project-card--amber { border-top-color: #faad14; }.app-shell.skin-light .project-card--teal { border-top-color: #1677ff; }.app-shell.skin-light .project-card--mint { border-top-color: #52c41a; }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; background: radial-gradient(circle at 85% 0%, rgba(255, 218, 142, .34), transparent 29rem), linear-gradient(135deg, #f4f2ec 0%, #e9f0e8 100%); }
@@ -60,8 +67,8 @@ h3 { margin-bottom: 10px; font-size: 20px; letter-spacing: -.04em; }
 .knowledge-search__status strong { color: var(--ink); }
 .knowledge-result { display: flex; justify-content: space-between; gap: 22px; padding: 20px; border: 1px solid var(--line); background: rgba(255, 253, 248, .76); }
 .knowledge-result h3 { margin-bottom: 7px; }.knowledge-result p:last-child { max-width: 760px; margin-bottom: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }.knowledge-result small { flex: 0 0 180px; color: var(--muted); font: 10px/1.5 'DM Mono', monospace; }.knowledge-search__citations, .knowledge-search__error { margin: 10px 2px 0; color: var(--muted); font: 11px 'DM Mono', monospace; }.knowledge-search__error { color: #b64f3b; }
-.app-shell.skin-aiops .knowledge-search__form, .app-shell.skin-aiops .knowledge-result { background: var(--paper); }
-.app-shell.skin-aiops .status-panel, .app-shell.skin-aiops .migration-strip { background: var(--paper); }.app-shell.skin-aiops .migration-list span { background: rgba(255,255,255,.03); }
+.app-shell.skin-dark .knowledge-search__form, .app-shell.skin-dark .knowledge-result, .app-shell.skin-dark .status-panel, .app-shell.skin-dark .migration-strip { background: var(--paper); }.app-shell.skin-dark .migration-list span { background: rgba(255,255,255,.03); }
+.app-shell.skin-light .knowledge-search__form, .app-shell.skin-light .knowledge-result, .app-shell.skin-light .status-panel, .app-shell.skin-light .migration-strip { background: var(--paper); }
 .tool-workbench { width: min(1240px, calc(100% - 48px)); margin: 0 auto; padding: 0 0 120px; }
 .tool-workbench > p:not(.eyebrow) { max-width: 620px; color: var(--muted); line-height: 1.6; }
 .tool-workbench__form { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 20px; border: 1px solid var(--line); background: rgba(255,253,248,.76); }

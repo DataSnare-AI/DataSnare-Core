@@ -230,14 +230,16 @@ retrieval contract and site audit metadata.
 
 ## Shared visual skins
 
-Core now exposes two persisted suite skin choices through `src/contracts/skins.js`:
+Core now exposes three persisted suite skin choices through `src/contracts/skins.js`:
 
-- `ainetscope`: paper surfaces, mono typography, and evidence-analysis signal colors.
-- `aiops`: denser operational-console surfaces, slate backgrounds, and blue status accents.
+- `modern`: the former AINetScope style with paper surfaces, mono typography, and evidence-analysis signal colors.
+- `dark`: the former AIOps-inspired dark operational-console style with slate backgrounds and blue status accents.
+- `light`: an AIOps-inspired light operational style with bright surfaces, compact panels, and Ant-style blue/green/amber status accents.
 
-AINetScope is the default. The selector is intentionally a Core preference so future React tool
-versions can consume the same visual language without forcing every product into one layout. More
-skins can be added after the first React/Python migrations mature.
+Modern is the default. Legacy stored values `ainetscope` and `aiops` are normalized to Modern and Dark.
+The selector is intentionally a Core preference so future React tool versions can consume the same
+visual language without forcing every product into one layout. More skins can be added after the first
+React/Python migrations mature.
 
 Phase 4 has started with policy-aware retrieval and citation generation. Document classification is
 preserved through indexing; restricted evidence is visible only to tenant or platform administrators.
