@@ -152,6 +152,11 @@ services, and the retrieval endpoint returns indexed, provenance-bearing results
 only a dependency-free baseline for development and tests; production semantic retrieval must replace it
 with an approved local embedding model without changing the route or evidence contracts.
 
+DS-RAG-010 now defines tenant-scoped agent manifests. Tenant administrators can register an agent's
+site, area, capabilities, knowledge types, and status; retrieval roles can list manifests for routing.
+The repository is replaceable and currently in-memory while the coordinator persistence model is being
+established.
+
 ## Shared visual skins
 
 Core now exposes two persisted suite skin choices through `src/contracts/skins.js`:
