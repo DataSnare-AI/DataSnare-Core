@@ -220,6 +220,11 @@ protocol with asyncpg-compatible `fetch`/`execute` calls, including tenant filte
 mapping. Core still defaults to in-memory repositories for local tests; deployment can inject the
 Postgres adapter after applying the migration.
 
+The matching pgvector adapter is available at `backend/app/services/postgres_vector_store.py`. It
+upserts chunk embeddings and searches with cosine distance while retaining tenant and optional agent
+filters. The adapter is injectable alongside the current in-memory vector store; production wiring must
+provide an asyncpg pool and apply `001_rag_foundation.sql` first.
+
 Core project launch context now includes the selected suite skin. The shared `src/contracts/session.js`
 reader normalizes the `datasnare-core/project-launch-v1` envelope and provides tenant/actor request
 headers for migrated React tools. This keeps AINetScope, AIPerf, AIProcMon, and AILogScope from each
