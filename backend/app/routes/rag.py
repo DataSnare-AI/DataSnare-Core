@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Header, Request
 
 from app.contracts.knowledge import KnowledgeItem, KnowledgeProvenance, RagRetrieveRequest, RagRetrievalResponse
+from app.repositories.retrieval_audit import RetrievalAuditEvent
 from app.security.authorization import require_permission, resolve_actor
 from app.services.routing import route_query
 
@@ -44,6 +45,14 @@ async def retrieve_knowledge(
         ),
     ) for document in documents]
     retrieval_status = "indexed" if results else "not_indexed"
+    await request.app.state.retrieval_audit.append(RetrievalAuditEvent(
+        tenant_id=tenant_id,
+        actor_id=actor.actor_id,
+        retrieval_id=retrieval_id,
+        status=retrieval_status,
+        routed_agent_ids=tuple(routed_agent_ids or ()),
+        metadata={"query": body.query, "result_count": len(results), "routing_reason": route.reason},
+    ))
     return RagRetrievalResponse(
         retrieval_id=retrieval_id,
         tenant_id=tenant_id,
@@ -63,3 +72,30 @@ async def retrieve_knowledge(
             "routing_reason": route.reason,
         },
     )
+
+
+@router.get("/audit")
+async def list_retrieval_audit(
+    tenant_id: int,
+    request: Request,
+    x_actor: str | None = Header(default=None),
+    x_role: str | None = Header(default=None),
+):
+    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.audit.view")
+    events = await request.app.state.retrieval_audit.list_for_tenant(tenant_id)
+    return {
+        "schema": "datasnare-rag/retrieval-audit-list-v1",
+        "tenant_id": tenant_id,
+        "events": [
+            {
+                "event_id": event.event_id,
+                "retrieval_id": event.retrieval_id,
+                "actor_id": event.actor_id,
+                "status": event.status,
+                "routed_agent_ids": list(event.routed_agent_ids),
+                "metadata": event.metadata,
+                "created_at": event.created_at.isoformat(),
+            }
+            for event in events
+        ],
+    }

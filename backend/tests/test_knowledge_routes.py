@@ -51,6 +51,10 @@ def test_operator_can_ingest_document_with_provenance_and_list_it():
     assert retrieved.json()["status"] == "indexed"
     assert retrieved.json()["results"][0]["provenance"]["source_id"] == "runbook-42"
 
+    audit = client.get("/api/tenants/7/rag/audit", headers=headers)
+    assert audit.status_code == 200
+    assert audit.json()["events"][0]["metadata"]["result_count"] == 1
+
     other_tenant = client.get("/api/tenants/8/knowledge/documents", headers=headers)
     assert other_tenant.status_code == 200
     assert other_tenant.json() == []

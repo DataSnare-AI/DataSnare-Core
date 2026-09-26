@@ -162,6 +162,10 @@ agent, and knowledge-type filters. The selected agent IDs and routing reason are
 audit event. When a tenant has no manifests yet, local retrieval retains the compatibility behavior of
 searching that tenant's indexed evidence without an agent restriction.
 
+DS-RAG-012 and DS-RAG-013 now provide replaceable cross-agent candidate aggregation and deterministic
+term-aware reranking helpers. DS-RAG-014 persists retrieval audit events through a tenant-scoped
+repository and exposes them at `GET /api/tenants/{tenant_id}/rag/audit` for authorized operational roles.
+
 ## Shared visual skins
 
 Core now exposes two persisted suite skin choices through `src/contracts/skins.js`:

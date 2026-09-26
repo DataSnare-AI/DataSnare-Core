@@ -7,8 +7,8 @@ from fastapi import Header, HTTPException
 
 ROLE_PERMISSIONS = {
     "viewer": {"ingest.jobs.view", "rag.retrieve"},
-    "operator": {"ingest.jobs.view", "ingest.jobs.create", "ingest.jobs.cancel", "rag.retrieve", "rag.ingest"},
-    "approver": {"ingest.jobs.view", "ingest.jobs.approve", "rag.retrieve"},
+    "operator": {"ingest.jobs.view", "ingest.jobs.create", "ingest.jobs.cancel", "rag.retrieve", "rag.ingest", "rag.audit.view"},
+    "approver": {"ingest.jobs.view", "ingest.jobs.approve", "rag.retrieve", "rag.audit.view"},
     "tenant_admin": {
         "ingest.jobs.view",
         "ingest.jobs.create",
@@ -24,6 +24,7 @@ ROLE_PERMISSIONS = {
         "rag.retrieve",
         "rag.ingest",
         "rag.manifest.manage",
+        "rag.audit.view",
     },
     "platform_admin": {"*"},
 }
