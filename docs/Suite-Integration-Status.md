@@ -276,3 +276,8 @@ Core now exposes `GET /api/health/readiness` as a deployment gate. Development r
 in-memory services and development headers; production reports `not_ready` until a configured auth
 provider and database pool are present. The response also verifies migration availability and all four
 tool contracts before deployment smoke tests proceed.
+
+The Core app factory now accepts `database_pool` and `auth_provider` injection. Supplying a database
+pool automatically selects the Postgres knowledge repository and pgvector store; omitting it preserves
+the local in-memory mode. This makes deployment wiring explicit and testable without requiring local
+credentials or a running database during development.
