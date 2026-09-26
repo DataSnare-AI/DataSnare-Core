@@ -271,3 +271,8 @@ Core route `POST /api/tenants/{tenant_id}/tools/{tool_id}/jobs`. Native BLG and 
 with their existing normalized schemas and explicit planned-converter status. All four tools now have
 reachable web job surfaces; the remaining migration work is the native parser/conversion implementation,
 upload persistence, and result publication for each tool.
+
+Core now exposes `GET /api/health/readiness` as a deployment gate. Development reports ready with
+in-memory services and development headers; production reports `not_ready` until a configured auth
+provider and database pool are present. The response also verifies migration availability and all four
+tool contracts before deployment smoke tests proceed.
