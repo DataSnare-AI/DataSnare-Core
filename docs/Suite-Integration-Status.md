@@ -141,6 +141,11 @@ the contract testable while DS-RAG-001 through DS-RAG-004 are implemented.
 The next implementation slice is the agent document ingestion framework and persisted knowledge-item
 repository, followed by local chunking, embeddings, and `pgvector` retrieval.
 
+DS-RAG-001 is now implemented as a replaceable tenant-scoped knowledge-item repository with document
+ingestion and provenance-preserving list routes. DS-RAG-002 is implemented as a deterministic local
+chunking service with bounded overlap and source offsets. The current repository is in-memory by design;
+the next persistence slice will add the Postgres schema and vector-store boundary.
+
 ## Shared visual skins
 
 Core now exposes two persisted suite skin choices through `src/contracts/skins.js`:
