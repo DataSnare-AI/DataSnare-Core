@@ -23,6 +23,7 @@ ROLE_PERMISSIONS = {
         "agent_credentials.revoke",
         "rag.retrieve",
         "rag.ingest",
+        "rag.manifest.manage",
     },
     "platform_admin": {"*"},
 }
