@@ -265,3 +265,9 @@ Phase 5 now includes typed graph neighborhood queries at
 policy filtering, citations, and bounded graph relationships into one tenant-scoped response. Supported
 graph entity types include device, user, application, service, alert, incident, runbook, document, site,
 knowledge article, change, and action.
+
+AIPerf and AIProcMon now have shared React workbench coverage through `NativeToolWorkbench` and the
+Core route `POST /api/tenants/{tenant_id}/tools/{tool_id}/jobs`. Native BLG and PML jobs are accepted
+with their existing normalized schemas and explicit planned-converter status. All four tools now have
+reachable web job surfaces; the remaining migration work is the native parser/conversion implementation,
+upload persistence, and result publication for each tool.

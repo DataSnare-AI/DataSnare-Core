@@ -20,6 +20,7 @@ from app.routes.knowledge_graph import router as knowledge_graph_router
 from app.routes.projects import router as projects_router
 from app.routes.ainetscope import router as ainetscope_router
 from app.routes.ailogscope import router as ailogscope_router
+from app.routes.tool_jobs import router as tool_jobs_router
 
 
 def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=None, embedding_provider=None, vector_store=None, agent_manifests=None, retrieval_audit=None, knowledge_graph=None, site_cache=None, capture_parser=None, log_parser=None) -> FastAPI:
@@ -44,6 +45,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.include_router(projects_router)
     app.include_router(ainetscope_router)
     app.include_router(ailogscope_router)
+    app.include_router(tool_jobs_router)
     return app
 
 
