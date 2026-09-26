@@ -10,6 +10,8 @@ from app.security.authorization import require_permission, resolve_actor
 from app.services.routing import route_query
 from app.services.site_coordination import build_site_query_plan
 from app.services.site_results import SiteResult, aggregate_site_results
+from app.services.citations import build_citations
+from app.services.policy import filter_by_policy
 
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/rag", tags=["RAG"])
@@ -29,7 +31,7 @@ async def retrieve_knowledge(
     manifests = await request.app.state.agent_manifests.list_for_tenant(tenant_id)
     route = route_query(manifests, site_id=body.site_id, area_id=body.area_id, agent_id=body.agent_id, item_types=body.item_types)
     routed_agent_ids = route.agent_ids if manifests else None
-    documents = await request.app.state.vector_store.search(tenant_id, query_embedding.vector, body.top_k, routed_agent_ids)
+    documents = filter_by_policy(actor, await request.app.state.vector_store.search(tenant_id, query_embedding.vector, body.top_k, routed_agent_ids))
     results = [KnowledgeItem(
         tenant_id=tenant_id,
         item_id=document.metadata.get("knowledge_item_id", document.item_id),
@@ -62,6 +64,7 @@ async def retrieve_knowledge(
         status=retrieval_status,
         query=body.query,
         results=results,
+        citations=build_citations(results),
         audit_event={
             "schema": "datasnare-rag/retrieval-audit-v1",
             "event_type": "rag.retrieve",
@@ -123,7 +126,7 @@ async def retrieve_site_knowledge(
     route = route_query(manifests, site_id=plan.site_id, area_id=body.area_id, agent_id=body.agent_id, item_types=body.item_types)
     routed_agent_ids = route.agent_ids if manifests else None
     query_embedding = request.app.state.embedding_provider.embed(body.query)
-    documents = await request.app.state.vector_store.search(tenant_id, query_embedding.vector, body.top_k, routed_agent_ids)
+    documents = filter_by_policy(actor, await request.app.state.vector_store.search(tenant_id, query_embedding.vector, body.top_k, routed_agent_ids))
     site_results = aggregate_site_results([
         SiteResult(
             item_id=document.metadata.get("knowledge_item_id", document.item_id),
@@ -145,6 +148,6 @@ async def retrieve_site_knowledge(
     ) for result in site_results]
     retrieval_id = f"retrieval_{uuid4().hex}"
     status = "indexed" if results else "not_indexed"
-    response = RagRetrievalResponse(retrieval_id=retrieval_id, tenant_id=tenant_id, actor_id=actor.actor_id, status=status, query=body.query, results=results, audit_event={"schema": "datasnare-rag/retrieval-audit-v1", "event_type": "rag.site_retrieve", "retrieval_id": retrieval_id, "tenant_id": tenant_id, "actor_id": actor.actor_id, "role": actor.role, "status": status, "site_id": plan.site_id, "routed_agent_ids": list(routed_agent_ids or []), "routing_reason": route.reason})
+    response = RagRetrievalResponse(retrieval_id=retrieval_id, tenant_id=tenant_id, actor_id=actor.actor_id, status=status, query=body.query, results=results, citations=build_citations(results), audit_event={"schema": "datasnare-rag/retrieval-audit-v1", "event_type": "rag.site_retrieve", "retrieval_id": retrieval_id, "tenant_id": tenant_id, "actor_id": actor.actor_id, "role": actor.role, "status": status, "site_id": plan.site_id, "routed_agent_ids": list(routed_agent_ids or []), "routing_reason": route.reason})
     await request.app.state.site_cache.set(tenant_id, plan.cache_key, response.model_dump(by_alias=True))
     return response

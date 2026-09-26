@@ -25,6 +25,7 @@ class DocumentIngestRequest(BaseModel):
     site_id: str | None = None
     area_id: str | None = None
     metadata: dict = Field(default_factory=dict)
+    classification: str = "internal"
 
 
 @router.post("/documents", response_model=KnowledgeItem, status_code=201)
@@ -42,7 +43,7 @@ async def ingest_document(
         item_type=body.item_type,
         title=body.title,
         text=body.text,
-        metadata={**body.metadata, "ingested_by": actor.actor_id},
+        metadata={**body.metadata, "ingested_by": actor.actor_id, "classification": body.classification.lower()},
         provenance=KnowledgeProvenance(
             source_type=body.source_type,
             source_id=body.source_id,
@@ -73,6 +74,7 @@ async def ingest_document(
                 "agent_id": saved.provenance.agent_id,
                 "site_id": saved.provenance.site_id,
                 "area_id": saved.provenance.area_id,
+                "classification": saved.metadata.get("classification", "internal"),
             },
         ))
     return saved

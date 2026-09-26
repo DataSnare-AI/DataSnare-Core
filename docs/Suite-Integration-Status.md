@@ -193,3 +193,8 @@ Core now exposes two persisted suite skin choices through `src/contracts/skins.j
 AINetScope is the default. The selector is intentionally a Core preference so future React tool
 versions can consume the same visual language without forcing every product into one layout. More
 skins can be added after the first React/Python migrations mature.
+
+Phase 4 has started with policy-aware retrieval and citation generation. Document classification is
+preserved through indexing; restricted evidence is visible only to tenant or platform administrators.
+Both standard and site retrieval return citations containing source, agent/site/area, and chunk-offset
+provenance.
