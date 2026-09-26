@@ -39,6 +39,14 @@ def test_tenant_admin_can_add_graph_edge_and_viewer_can_read_it():
     assert listed.status_code == 200
     assert listed.json()[0]["predicate"] == "caused_by"
 
+    path = client.get(
+        "/api/tenants/7/knowledge/graph/path",
+        params={"start_type": "alert", "start_id": "alert-42", "end_type": "service", "end_id": "database"},
+        headers={"X-Actor": "viewer@example.com", "X-Role": "viewer"},
+    )
+    assert path.status_code == 200
+    assert [hop["predicate"] for hop in path.json()["hops"]] == ["caused_by"]
+
     other_tenant = client.get(
         "/api/tenants/8/knowledge/graph/edges",
         headers={"X-Actor": "viewer@example.com", "X-Role": "viewer"},

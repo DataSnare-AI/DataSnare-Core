@@ -8,6 +8,8 @@ from app.contracts.knowledge import KnowledgeItem, KnowledgeProvenance, RagRetri
 from app.repositories.retrieval_audit import RetrievalAuditEvent
 from app.security.authorization import require_permission, resolve_actor
 from app.services.routing import route_query
+from app.services.site_coordination import build_site_query_plan
+from app.services.site_results import SiteResult, aggregate_site_results
 
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/rag", tags=["RAG"])
@@ -99,3 +101,50 @@ async def list_retrieval_audit(
             for event in events
         ],
     }
+
+
+@router.post("/site/retrieve", response_model=RagRetrievalResponse)
+async def retrieve_site_knowledge(
+    tenant_id: int,
+    body: RagRetrieveRequest,
+    request: Request,
+    x_actor: str | None = Header(default=None),
+    x_role: str | None = Header(default=None),
+):
+    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    if not body.site_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="site_id is required for site retrieval")
+    plan = build_site_query_plan(tenant_id, body.site_id, body.query, area_ids=(body.area_id,) if body.area_id else (), agent_ids=(body.agent_id,) if body.agent_id else (), top_k=body.top_k)
+    cached = await request.app.state.site_cache.get(tenant_id, plan.cache_key)
+    if cached:
+        return RagRetrievalResponse.model_validate(cached)
+    manifests = await request.app.state.agent_manifests.list_for_tenant(tenant_id)
+    route = route_query(manifests, site_id=plan.site_id, area_id=body.area_id, agent_id=body.agent_id, item_types=body.item_types)
+    routed_agent_ids = route.agent_ids if manifests else None
+    query_embedding = request.app.state.embedding_provider.embed(body.query)
+    documents = await request.app.state.vector_store.search(tenant_id, query_embedding.vector, body.top_k, routed_agent_ids)
+    site_results = aggregate_site_results([
+        SiteResult(
+            item_id=document.metadata.get("knowledge_item_id", document.item_id),
+            text=document.text,
+            score=1.0,
+            area_ids=(document.metadata.get("area_id"),) if document.metadata.get("area_id") else (),
+            agent_ids=(document.metadata.get("agent_id"),) if document.metadata.get("agent_id") else (),
+            metadata=document.metadata,
+        ) for document in documents
+    ], body.top_k)
+    results = [KnowledgeItem(
+        tenant_id=tenant_id,
+        item_id=result.item_id,
+        item_type="document",
+        title=result.metadata.get("title"),
+        text=result.text,
+        metadata=result.metadata,
+        provenance=KnowledgeProvenance(source_type=result.metadata.get("source_type", "document"), source_id=result.metadata.get("source_id", result.item_id), source_name=result.metadata.get("source_name"), agent_id=result.metadata.get("agent_id"), site_id=result.metadata.get("site_id"), area_id=result.metadata.get("area_id")),
+    ) for result in site_results]
+    retrieval_id = f"retrieval_{uuid4().hex}"
+    status = "indexed" if results else "not_indexed"
+    response = RagRetrievalResponse(retrieval_id=retrieval_id, tenant_id=tenant_id, actor_id=actor.actor_id, status=status, query=body.query, results=results, audit_event={"schema": "datasnare-rag/retrieval-audit-v1", "event_type": "rag.site_retrieve", "retrieval_id": retrieval_id, "tenant_id": tenant_id, "actor_id": actor.actor_id, "role": actor.role, "status": status, "site_id": plan.site_id, "routed_agent_ids": list(routed_agent_ids or []), "routing_reason": route.reason})
+    await request.app.state.site_cache.set(tenant_id, plan.cache_key, response.model_dump(by_alias=True))
+    return response

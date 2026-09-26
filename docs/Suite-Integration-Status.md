@@ -177,6 +177,12 @@ The knowledge graph foundation is also present as a tenant-scoped typed-edge API
 authorization. The in-memory repository is a contract seam for the future Postgres graph tables or
 dedicated graph store.
 
+Phase 3 now includes cross-area result merging, bounded graph path traversal at
+`/api/tenants/{tenant_id}/knowledge/graph/path`, and site retrieval at
+`POST /api/tenants/{tenant_id}/rag/site/retrieve`. Site retrieval uses the manifest route, local vector
+store, duplicate evidence aggregation, and tenant-scoped TTL caching. Cached responses retain the same
+retrieval contract and site audit metadata.
+
 ## Shared visual skins
 
 Core now exposes two persisted suite skin choices through `src/contracts/skins.js`:

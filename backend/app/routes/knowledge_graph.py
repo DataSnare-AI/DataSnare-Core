@@ -31,3 +31,26 @@ async def list_edges(
 ):
     require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
     return await request.app.state.knowledge_graph.list_edges(tenant_id)
+
+
+@router.get("/path")
+async def find_path(
+    tenant_id: int,
+    start_type: str,
+    start_id: str,
+    end_type: str,
+    end_id: str,
+    request: Request,
+    max_hops: int = 4,
+    x_actor: str | None = Header(default=None),
+    x_role: str | None = Header(default=None),
+):
+    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    path = await request.app.state.knowledge_graph.find_path(tenant_id, start_type, start_id, end_type, end_id, max_hops)
+    return {
+        "schema": "datasnare-knowledge/path-v1",
+        "tenant_id": tenant_id,
+        "start": {"type": start_type, "id": start_id},
+        "end": {"type": end_type, "id": end_id},
+        "hops": [edge.model_dump(by_alias=True) for edge in path],
+    }

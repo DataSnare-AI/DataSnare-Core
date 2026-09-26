@@ -59,6 +59,23 @@ def test_operator_can_ingest_document_with_provenance_and_list_it():
     assert other_tenant.status_code == 200
     assert other_tenant.json() == []
 
+    site_retrieval = client.post(
+        "/api/tenants/7/rag/site/retrieve",
+        headers=headers,
+        json={"query": "database restart procedure", "site_id": "site-east", "top_k": 3},
+    )
+    assert site_retrieval.status_code == 200
+    assert site_retrieval.json()["status"] == "indexed"
+    assert site_retrieval.json()["audit_event"]["site_id"] == "site-east"
+
+    cached = client.post(
+        "/api/tenants/7/rag/site/retrieve",
+        headers=headers,
+        json={"query": "database restart procedure", "site_id": "site-east", "top_k": 3},
+    )
+    assert cached.status_code == 200
+    assert cached.json()["retrieval_id"] == site_retrieval.json()["retrieval_id"]
+
 
 def test_viewer_can_retrieve_documents_but_cannot_ingest_them():
     client = TestClient(create_app())
