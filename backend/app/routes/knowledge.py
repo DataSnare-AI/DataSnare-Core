@@ -6,9 +6,11 @@ from fastapi import APIRouter, Header, Request
 from pydantic import BaseModel, Field
 
 from app.contracts.knowledge import KnowledgeItem, KnowledgeProvenance
+from app.contracts.evidence import EvidenceIngestRequest
 from app.security.authorization import require_permission, resolve_actor
 from app.services.chunking import chunk_text
 from app.services.vector_store import VectorDocument
+from app.services.knowledge_ingestion import build_knowledge_item, store_knowledge_item
 
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/knowledge", tags=["Knowledge"])
@@ -78,6 +80,24 @@ async def ingest_document(
             },
         ))
     return saved
+
+
+@router.post("/evidence", response_model=KnowledgeItem, status_code=201)
+async def ingest_evidence(
+    tenant_id: int,
+    body: EvidenceIngestRequest,
+    request: Request,
+    x_actor: str | None = Header(default=None),
+    x_role: str | None = Header(default=None),
+):
+    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.ingest")
+    try:
+        item_type = body.normalized_item_type()
+    except ValueError as error:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    item = build_knowledge_item(tenant_id, actor.actor_id, item_type=item_type, source_id=body.source_id, source_name=body.source_name, title=body.title, text=body.text, agent_id=body.agent_id, site_id=body.site_id, area_id=body.area_id, classification=body.classification, metadata=body.metadata)
+    return await store_knowledge_item(request, tenant_id=tenant_id, actor_id=actor.actor_id, item=item)
 
 
 @router.get("/documents", response_model=list[KnowledgeItem])

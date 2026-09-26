@@ -218,3 +218,8 @@ Core project launch context now includes the selected suite skin. The shared `sr
 reader normalizes the `datasnare-core/project-launch-v1` envelope and provides tenant/actor request
 headers for migrated React tools. This keeps AINetScope, AIPerf, AIProcMon, and AILogScope from each
 inventing separate launch-context and skin handling while they gain their Python-backed web versions.
+
+Core also exposes `POST /api/tenants/{tenant_id}/knowledge/evidence` for normalized operational evidence.
+The contract accepts AIOps knowledge-note types including telemetry, events, alerts, changes, actions,
+incidents, runbooks, documents, metrics, logs, and knowledge articles. These items use the same tenant,
+provenance, chunking, embedding, vector, policy, citation, and graph foundations as document evidence.
