@@ -67,7 +67,7 @@ def test_unsupported_ingest_artifact_is_rejected():
     response = client.post(
         "/api/tenants/7/ingest/jobs",
         headers={"X-Actor": "operator@example.com"},
-        json={"tool_id": "ailogscope", "artifact_name": "application.log", "artifact_type": "log"},
+        json={"tool_id": "airca", "artifact_name": "investigation.json", "artifact_type": "json"},
     )
 
     assert response.status_code == 400

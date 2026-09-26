@@ -235,6 +235,12 @@ The contract accepts AIOps knowledge-note types including telemetry, events, ale
 incidents, runbooks, documents, metrics, logs, and knowledge articles. These items use the same tenant,
 provenance, chunking, embedding, vector, policy, citation, and graph foundations as document evidence.
 
+The four-tool web migration registry is now exposed at `GET /api/projects/web-migrations`. AILogScope,
+AIPerf, AIProcMon, and AINetScope are all marked `contract-ready` for React frontends and Python
+backends, with their accepted native artifact types and normalized output schemas. Core ingest jobs now
+accept AILogScope log/document artifacts and AINetScope PCAP/PCAPNG artifacts in addition to the existing
+AIPerf and AIProcMon native contracts.
+
 Phase 5 now includes typed graph neighborhood queries at
 `GET /api/tenants/{tenant_id}/knowledge/graph/related` and a tenant orchestrator at
 `POST /api/tenants/{tenant_id}/rag/tenant/retrieve`. The orchestrator combines semantic retrieval,

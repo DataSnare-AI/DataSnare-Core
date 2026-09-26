@@ -11,6 +11,11 @@ router = APIRouter(prefix="/api/tenants/{tenant_id}/ingest/jobs", tags=["Ingest"
 
 
 SUPPORTED_NATIVE_ARTIFACTS = {
+    "ailogscope": {
+        "artifact_types": {"log", "txt", "json", "yaml", "pdf"},
+        "normalized_schema": "datasnare-ailogscope/events-v1",
+        "converter": "logscope-document-python-job",
+    },
     "aiperf": {
         "artifact_types": {"blg"},
         "normalized_schema": "datasnare-aiperf/events-v1",
@@ -20,6 +25,11 @@ SUPPORTED_NATIVE_ARTIFACTS = {
         "artifact_types": {"pml", "csv"},
         "normalized_schema": "datasnare-aiprocmon/events-v1",
         "converter": "procmon-native-python-job",
+    },
+    "ainetscope": {
+        "artifact_types": {"pcap", "pcapng", "cap"},
+        "normalized_schema": "datasnare-ainetscope/analysis-v1",
+        "converter": "netscope-packet-python-job",
     },
 }
 

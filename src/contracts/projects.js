@@ -16,6 +16,13 @@ export const PROJECT_BROWSER_APIS = {
   ainetscope: 'DataSnareAINetScope',
 };
 
+export const PROJECT_WEB_MIGRATIONS = {
+  ailogscope: { frontend: 'react', backend: 'python', status: 'contract-ready', ingest: ['log', 'txt', 'json', 'yaml', 'pdf'] },
+  aiperf: { frontend: 'react', backend: 'python', status: 'contract-ready', ingest: ['blg', 'csv', 'xml'] },
+  aiprocmon: { frontend: 'react', backend: 'python', status: 'contract-ready', ingest: ['pml', 'csv', 'xml'] },
+  ainetscope: { frontend: 'react', backend: 'python', status: 'contract-ready', ingest: ['pcap', 'pcapng', 'cap'] },
+};
+
 export const projects = [
   {
     id: 'aiops',
@@ -38,6 +45,7 @@ export const projects = [
     browserApi: PROJECT_BROWSER_APIS.ailogscope,
     exportSchema: PROJECT_EXPORT_SCHEMAS.ailogscope,
     capabilities: ['local-evidence-import', 'normalized-event-export'],
+    webMigration: PROJECT_WEB_MIGRATIONS.ailogscope,
   },
   {
     id: 'aiperf',
@@ -50,6 +58,7 @@ export const projects = [
     browserApi: PROJECT_BROWSER_APIS.aiperf,
     exportSchema: PROJECT_EXPORT_SCHEMAS.aiperf,
     capabilities: ['local-evidence-import', 'normalized-event-export'],
+    webMigration: PROJECT_WEB_MIGRATIONS.aiperf,
   },
   {
     id: 'aiprocmon',
@@ -62,6 +71,7 @@ export const projects = [
     browserApi: PROJECT_BROWSER_APIS.aiprocmon,
     exportSchema: PROJECT_EXPORT_SCHEMAS.aiprocmon,
     capabilities: ['local-evidence-import', 'normalized-event-export', 'process-map-export'],
+    webMigration: PROJECT_WEB_MIGRATIONS.aiprocmon,
   },
   {
     id: 'airca',
@@ -86,6 +96,7 @@ export const projects = [
     browserApi: PROJECT_BROWSER_APIS.ainetscope,
     exportSchema: PROJECT_EXPORT_SCHEMAS.ainetscope,
     capabilities: ['local-evidence-import', 'network-flow-export'],
+    webMigration: PROJECT_WEB_MIGRATIONS.ainetscope,
   },
   {
     id: 'core',
@@ -110,6 +121,7 @@ export function buildProjectLaunchContext(project, account = {}, skin = null) {
       exportSchema: project.exportSchema || null,
       browserApi: project.browserApi || null,
       capabilities: project.capabilities || [],
+      webMigration: project.webMigration || null,
     },
     account: {
       tenantId: account.tenantId || null,
