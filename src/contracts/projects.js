@@ -33,6 +33,7 @@ export const projects = [
     license: 'Active',
     accent: 'mint',
     capabilities: ['identity-handoff', 'tenant-context', 'approval-actions'],
+    details: { tagline: 'Monitor systems, investigate incidents, and orchestrate approved remediation.', inputs: ['Telemetry, metrics, processes, logs, and inventory', 'Alerts, changes, incidents, and remediation results', 'Partner context from services such as NinjaOne'], highlights: ['Real-time monitoring and custom dashboards', 'Local anomaly detection, predictive maintenance, and AI playbooks', 'Approval-aware remediation, ticketing, notifications, and audit history'], workflow: 'Observe tenant systems, correlate operational signals, investigate an incident, then request and approve controlled remediation with an audit trail.', caveat: 'AIOps remains the existing operational platform and source of agent telemetry; Core consumes its context through authenticated APIs rather than direct database access.' },
   },
   {
     id: 'ailogscope',
@@ -87,6 +88,7 @@ export const projects = [
     browserApi: PROJECT_BROWSER_APIS.airca,
     exportSchema: PROJECT_EXPORT_SCHEMAS.airca,
     capabilities: ['local-evidence-import', 'investigation-export'],
+    details: { tagline: 'Correlate network, performance, process, and log evidence into a time-aligned investigation.', inputs: ['AINetScope analysis and capture-set exports', 'AIPerf, AIProcMon, and AILogScope normalized evidence', 'Generic normalized JSON, timestamped CSV, and text logs'], highlights: ['Unified timeline with clock-offset correction', 'Severity/text filtering, zoom, inspection, and evidence bookmarks', 'Problem statement, hypotheses, root cause, recommended actions, and bundle export'], workflow: 'Import multiple evidence artifacts, align source clocks, inspect timeline relationships, capture bookmarks, and produce a structured investigation report.', caveat: 'AIRootCause remains a local-first browser workspace today; the Core migration will add tenant persistence and federated retrieval.' },
   },
   {
     id: 'ainetscope',
