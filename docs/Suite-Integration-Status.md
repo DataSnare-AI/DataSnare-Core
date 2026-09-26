@@ -198,3 +198,7 @@ Phase 4 has started with policy-aware retrieval and citation generation. Documen
 preserved through indexing; restricted evidence is visible only to tenant or platform administrators.
 Both standard and site retrieval return citations containing source, agent/site/area, and chunk-offset
 provenance.
+
+DS-RAG-033 now exposes `GET /api/tenants/{tenant_id}/knowledge/catalog`, summarizing tenant evidence by
+item type, classification, source type, agent, site, and area. This is the backend contract for the
+future tenant-wide search UI and catalog administration views.

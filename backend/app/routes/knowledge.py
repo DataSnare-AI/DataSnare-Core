@@ -89,3 +89,39 @@ async def list_documents(
 ):
     require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
     return await request.app.state.knowledge_items.list_for_tenant(tenant_id)
+
+
+@router.get("/catalog")
+async def knowledge_catalog(
+    tenant_id: int,
+    request: Request,
+    x_actor: str | None = Header(default=None),
+    x_role: str | None = Header(default=None),
+):
+    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    items = await request.app.state.knowledge_items.list_for_tenant(tenant_id)
+    by_type: dict[str, int] = {}
+    by_classification: dict[str, int] = {}
+    agents: set[str] = set()
+    sites: set[str] = set()
+    areas: set[str] = set()
+    sources: set[str] = set()
+    for item in items:
+        by_type[item.item_type] = by_type.get(item.item_type, 0) + 1
+        classification = str(item.metadata.get("classification", "internal"))
+        by_classification[classification] = by_classification.get(classification, 0) + 1
+        if item.provenance.agent_id: agents.add(item.provenance.agent_id)
+        if item.provenance.site_id: sites.add(item.provenance.site_id)
+        if item.provenance.area_id: areas.add(item.provenance.area_id)
+        sources.add(item.provenance.source_type)
+    return {
+        "schema": "datasnare-knowledge/catalog-v1",
+        "tenant_id": tenant_id,
+        "item_count": len(items),
+        "by_type": by_type,
+        "by_classification": by_classification,
+        "agent_ids": sorted(agents),
+        "site_ids": sorted(sites),
+        "area_ids": sorted(areas),
+        "source_types": sorted(sources),
+    }

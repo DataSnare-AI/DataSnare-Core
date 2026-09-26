@@ -77,6 +77,12 @@ def test_operator_can_ingest_document_with_provenance_and_list_it():
     assert cached.status_code == 200
     assert cached.json()["retrieval_id"] == site_retrieval.json()["retrieval_id"]
 
+    catalog = client.get("/api/tenants/7/knowledge/catalog", headers=headers)
+    assert catalog.status_code == 200
+    assert catalog.json()["item_count"] == 1
+    assert catalog.json()["source_types"] == ["runbook"]
+    assert catalog.json()["site_ids"] == ["site-east"]
+
 
 def test_viewer_can_retrieve_documents_but_cannot_ingest_them():
     client = TestClient(create_app())
