@@ -1,72 +1,8 @@
 import { useState } from 'react';
-import { ArrowUpRight, Check, ChevronRight, CircleUserRound, ExternalLink, KeyRound, Menu, ShieldCheck, X } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronRight, CircleUserRound, ExternalLink, KeyRound, Menu, Palette, ShieldCheck, X } from 'lucide-react';
 import { ninjaOnePartner } from './contracts/partnerIntegrations';
-
-const projects = [
-  {
-    id: 'aiops',
-    name: 'DataSnare-AIOps',
-    category: 'Operations platform',
-    description: 'Monitor systems, investigate incidents, and orchestrate approved remediation.',
-    path: '/aiops',
-    license: 'Active',
-    accent: 'mint',
-  },
-  {
-    id: 'ailogscope',
-    name: 'DataSnare-AILogScope',
-    category: 'Log intelligence',
-    description: 'Normalize event logs and application evidence into explainable findings.',
-    path: '/ailogscope',
-    license: 'Active',
-    accent: 'amber',
-  },
-  {
-    id: 'aiperf',
-    name: 'DataSnare-AIPerf',
-    category: 'Performance analysis',
-    description: 'Review Performance Monitor captures and identify resource pressure.',
-    path: '/aiperf',
-    license: 'Active',
-    accent: 'blue',
-  },
-  {
-    id: 'aiprocmon',
-    name: 'DataSnare-AIProcMon',
-    category: 'Process investigation',
-    description: 'Trace process activity, failures, and slow operations from ProcMon exports.',
-    path: '/aiprocmon',
-    license: 'Active',
-    accent: 'coral',
-  },
-  {
-    id: 'airca',
-    name: 'DataSnare-AIRootCause',
-    category: 'Root cause analysis',
-    description: 'Combine normalized evidence into an incident narrative and next actions.',
-    path: '/airca',
-    license: 'Active',
-    accent: 'violet',
-  },
-  {
-    id: 'ainetscope',
-    name: 'DataSnare-AINetScope',
-    category: 'Network analysis',
-    description: 'Inspect large packet captures, streams, and protocol-level behavior.',
-    path: '/ainetscope',
-    license: 'Active',
-    accent: 'teal',
-  },
-  {
-    id: 'core',
-    name: 'DataSnare-Core',
-    category: 'Suite control plane',
-    description: 'Manage suite identity, access, licensing, and project launch points.',
-    path: '/',
-    license: 'Included',
-    accent: 'ink',
-  },
-];
+import { buildProjectLaunchContext, projects } from './contracts/projects';
+import { DEFAULT_SUITE_SKIN, normalizeSuiteSkin, SUITE_SKINS, SUITE_SKIN_STORAGE_KEY } from './contracts/skins';
 
 const partnerIntegrations = [
   {
@@ -97,17 +33,25 @@ function ProjectCard({ project, onOpen }) {
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sessionOpen, setSessionOpen] = useState(false);
+  const [skin, setSkin] = useState(() => normalizeSuiteSkin(localStorage.getItem(SUITE_SKIN_STORAGE_KEY) || DEFAULT_SUITE_SKIN));
+
+  const selectSkin = (nextSkin) => {
+    const normalized = normalizeSuiteSkin(nextSkin);
+    setSkin(normalized);
+    localStorage.setItem(SUITE_SKIN_STORAGE_KEY, normalized);
+  };
 
   const openProject = (project) => {
     if (project.id === 'core') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    sessionStorage.setItem('datasnare:lastLaunchContext', JSON.stringify(buildProjectLaunchContext(project)));
     window.location.assign(project.path);
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell skin-${skin}`}>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="DataSnare home">
           <span className="brand__glyph">DS</span>
@@ -124,6 +68,10 @@ export default function App() {
             <CircleUserRound size={17} /> Sign in
           </button>
         </nav>
+        <div className="skin-picker" aria-label="Suite skin">
+          <Palette size={15} aria-hidden="true" />
+          {Object.values(SUITE_SKINS).map((option) => <button className={skin === option.id ? 'skin-picker__option skin-picker__option--active' : 'skin-picker__option'} key={option.id} type="button" onClick={() => selectSkin(option.id)} aria-pressed={skin === option.id}>{option.label}</button>)}
+        </div>
       </header>
 
       <main id="top">
