@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Header, HTTPException, Request
+
+from app.repositories.ingest_jobs import IngestJobRecord
+from app.routes.ingest import SUPPORTED_NATIVE_ARTIFACTS, _job_payload
+from app.security.authorization import require_permission, resolve_actor
+
+
+router = APIRouter(prefix="/api/tenants/{tenant_id}/tools/ailogscope", tags=["AILogScope"])
+
+
+@router.post("/jobs")
+async def create_log_job(tenant_id: int, body: dict, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
+    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    name = str(body.get("artifact_name", "")).strip()
+    artifact_type = str(body.get("artifact_type", "")).strip().lower().lstrip(".")
+    if not name or artifact_type not in SUPPORTED_NATIVE_ARTIFACTS["ailogscope"]["artifact_types"]:
+        raise HTTPException(status_code=400, detail="AILogScope accepts log, txt, json, yaml, or pdf artifacts")
+    record = IngestJobRecord(tenant_id=tenant_id, tool_id="ailogscope", artifact_name=name, artifact_type=artifact_type, requested_by=actor.actor_id, normalized_schema="datasnare-ailogscope/events-v1", native_conversion={"schema": "datasnare-ingest/native-conversion-v1", "strategy": "logscope-document-python-job", "status": "planned"})
+    saved = await request.app.state.ingest_jobs.create(record)
+    return {"schema": "datasnare-ailogscope/job-v1", "job": _job_payload(saved), "next": "upload-artifact"}
+
+
+@router.post("/jobs/{job_id}/artifact")
+async def upload_log_artifact(tenant_id: int, job_id: str, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
+    require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
+    if not record or record.tool_id != "ailogscope":
+        raise HTTPException(status_code=404, detail="AILogScope log job not found")
+    await request.app.state.ingest_jobs.update(tenant_id, job_id, state="running")
+    analysis = await request.app.state.log_parser.analyze(await request.body(), record.artifact_name)
+    completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis.__dict__})
+    return {"schema": "datasnare-ailogscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis.__dict__}

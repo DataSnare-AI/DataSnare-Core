@@ -253,6 +253,12 @@ AINetScope capture jobs now support raw artifact upload at
 the normalized analysis envelope. The current `HeaderCaptureParser` is deliberately an acceptance seam
 with zero decoded packets; replacing it with the full Python decoder is the next AINetScope backend step.
 
+AILogScope now has a matching React workbench and Python text adapter. It queues and uploads log/text
+artifacts through `/api/tenants/{tenant_id}/tools/ailogscope/jobs`, decodes UTF-8 and UTF-16 input,
+counts bounded non-empty event records, and returns `datasnare-ailogscope/events-v1`. AILogScope is now
+the first migrated tool with a useful completed parser boundary; JSON/YAML/PDF structured extraction
+remains a follow-up parser slice.
+
 Phase 5 now includes typed graph neighborhood queries at
 `GET /api/tenants/{tenant_id}/knowledge/graph/related` and a tenant orchestrator at
 `POST /api/tenants/{tenant_id}/rag/tenant/retrieve`. The orchestrator combines semantic retrieval,
