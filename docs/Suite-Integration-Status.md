@@ -207,3 +207,9 @@ DS-RAG-034 now has an initial Core React search surface. It accepts a tenant ID 
 tenant retrieval API, renders indexed results and source citations, and exposes loading/error/empty states.
 It consumes the shared AINetScope and AIOps skins and remains ready to bind to the authenticated tenant
 session when Core identity replaces the development headers.
+
+The first Postgres persistence boundary is now defined in
+`backend/migrations/001_rag_foundation.sql`. It creates tenant-scoped knowledge items, chunks with
+pgvector embeddings, agent manifests, graph edges, and retrieval audit events with scope/provenance
+indexes. Application startup does not execute migrations; deployment should apply them through the
+database migration process before switching Core repositories from in-memory implementations.
