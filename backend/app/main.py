@@ -16,6 +16,7 @@ from app.routes.knowledge import router as knowledge_router
 from app.routes.agent_manifests import router as agent_manifests_router
 from app.routes.knowledge_graph import router as knowledge_graph_router
 from app.routes.projects import router as projects_router
+from app.routes.ainetscope import router as ainetscope_router
 
 
 def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=None, embedding_provider=None, vector_store=None, agent_manifests=None, retrieval_audit=None, knowledge_graph=None, site_cache=None) -> FastAPI:
@@ -36,6 +37,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.include_router(agent_manifests_router)
     app.include_router(knowledge_graph_router)
     app.include_router(projects_router)
+    app.include_router(ainetscope_router)
     return app
 
 

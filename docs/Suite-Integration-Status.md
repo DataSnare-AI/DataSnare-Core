@@ -241,6 +241,12 @@ backends, with their accepted native artifact types and normalized output schema
 accept AILogScope log/document artifacts and AINetScope PCAP/PCAPNG artifacts in addition to the existing
 AIPerf and AIProcMon native contracts.
 
+AINetScope now has its first reachable React/Python migration slice. The Core shell exposes an
+`AINetScopeWorkbench` that queues PCAP, PCAPNG, and CAP metadata through
+`POST /api/tenants/{tenant_id}/tools/ainetscope/jobs`, and the matching status route returns the
+`datasnare-ainetscope/job-v1` envelope. The existing local browser analyzer remains the fallback while
+the Python packet parser, upload storage, and result persistence are implemented next.
+
 Phase 5 now includes typed graph neighborhood queries at
 `GET /api/tenants/{tenant_id}/knowledge/graph/related` and a tenant orchestrator at
 `POST /api/tenants/{tenant_id}/rag/tenant/retrieve`. The orchestrator combines semantic retrieval,

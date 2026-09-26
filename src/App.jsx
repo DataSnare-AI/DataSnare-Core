@@ -3,6 +3,7 @@ import { ArrowUpRight, Check, ChevronRight, CircleUserRound, ExternalLink, KeyRo
 import { ninjaOnePartner } from './contracts/partnerIntegrations';
 import { buildProjectLaunchContext, projects } from './contracts/projects';
 import { DEFAULT_SUITE_SKIN, normalizeSuiteSkin, SUITE_SKINS, SUITE_SKIN_STORAGE_KEY } from './contracts/skins';
+import AINetScopeWorkbench from './tools/AINetScopeWorkbench';
 
 const partnerIntegrations = [
   {
@@ -132,6 +133,7 @@ export default function App() {
         </section>
 
         <KnowledgeSearch />
+        <AINetScopeWorkbench />
 
         <section className="partner-section" id="partners">
           <div className="section-heading section-heading--partner">
