@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowUpRight, Check, ChevronRight, CircleUserRound, ExternalLink, KeyRound, Menu, Palette, ShieldCheck, X } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronRight, CircleUserRound, ExternalLink, KeyRound, Menu, Palette, Search, ShieldCheck, X } from 'lucide-react';
 import { ninjaOnePartner } from './contracts/partnerIntegrations';
 import { buildProjectLaunchContext, projects } from './contracts/projects';
 import { DEFAULT_SUITE_SKIN, normalizeSuiteSkin, SUITE_SKINS, SUITE_SKIN_STORAGE_KEY } from './contracts/skins';
@@ -28,6 +28,33 @@ function ProjectCard({ project, onOpen }) {
       </button>
     </article>
   );
+}
+
+function KnowledgeSearch() {
+  const [tenantId, setTenantId] = useState('');
+  const [query, setQuery] = useState('');
+  const [response, setResponse] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const search = async (event) => {
+    event.preventDefault();
+    if (!tenantId.trim() || !query.trim()) return;
+    setLoading(true); setError('');
+    try {
+      const result = await fetch(`/api/tenants/${encodeURIComponent(tenantId.trim())}/rag/retrieve`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Actor': 'core-ui', 'X-Role': 'viewer' }, body: JSON.stringify({ query: query.trim(), top_k: 8 }) });
+      if (!result.ok) throw new Error(`Knowledge search returned ${result.status}.`);
+      setResponse(await result.json());
+    } catch (searchError) { setResponse(null); setError(searchError.message || 'Knowledge search failed.'); }
+    finally { setLoading(false); }
+  };
+
+  return <section className="knowledge-search" id="knowledge">
+    <div className="section-heading"><div><p className="eyebrow">Tenant knowledge fabric</p><h2>Ask across your evidence.</h2></div><p>Search agent notes, runbooks, alerts, changes, and indexed documents with citations back to their source.</p></div>
+    <form className="knowledge-search__form" onSubmit={search}><label><span>Tenant</span><input value={tenantId} onChange={(event) => setTenantId(event.target.value)} placeholder="Tenant ID" inputMode="numeric" /></label><label className="knowledge-search__query"><span>Question</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="What changed around the database service?" /></label><button className="primary-button" type="submit" disabled={loading || !tenantId.trim() || !query.trim()}><Search size={16} /> {loading ? 'Searching' : 'Search knowledge'}</button></form>
+    {error && <p className="knowledge-search__error">{error}</p>}
+    {response && <div className="knowledge-search__results"><div className="knowledge-search__status"><strong>{response.results.length.toLocaleString()} results</strong><span>{response.status} · {response.retrieval_id}</span></div>{response.results.map((result) => <article className="knowledge-result" key={`${result.item_id}-${result.metadata?.chunk_index || 0}`}><div><p className="eyebrow">{result.provenance.source_type}</p><h3>{result.title || result.provenance.source_name || result.item_id}</h3><p>{result.text}</p></div><small>{result.provenance.site_id || 'Tenant evidence'} · {result.provenance.source_id}</small></article>)}{response.citations.length > 0 && <p className="knowledge-search__citations">{response.citations.length} source citations attached</p>}</div>}
+  </section>;
 }
 
 export default function App() {
@@ -62,6 +89,7 @@ export default function App() {
         </button>
         <nav className={`topbar__nav ${menuOpen ? 'topbar__nav--open' : ''}`}>
           <a href="#projects" onClick={() => setMenuOpen(false)}>Projects</a>
+          <a href="#knowledge" onClick={() => setMenuOpen(false)}>Knowledge</a>
           <a href="#access" onClick={() => setMenuOpen(false)}>Access</a>
           <a href="#billing" onClick={() => setMenuOpen(false)}>Licensing</a>
           <button className="session-button" type="button" onClick={() => setSessionOpen(true)}>
@@ -102,6 +130,8 @@ export default function App() {
         <section className="project-grid" aria-label="DataSnare projects">
           {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} />)}
         </section>
+
+        <KnowledgeSearch />
 
         <section className="partner-section" id="partners">
           <div className="section-heading section-heading--partner">

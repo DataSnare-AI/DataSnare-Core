@@ -202,3 +202,8 @@ provenance.
 DS-RAG-033 now exposes `GET /api/tenants/{tenant_id}/knowledge/catalog`, summarizing tenant evidence by
 item type, classification, source type, agent, site, and area. This is the backend contract for the
 future tenant-wide search UI and catalog administration views.
+
+DS-RAG-034 now has an initial Core React search surface. It accepts a tenant ID and question, calls the
+tenant retrieval API, renders indexed results and source citations, and exposes loading/error/empty states.
+It consumes the shared AINetScope and AIOps skins and remains ready to bind to the authenticated tenant
+session when Core identity replaces the development headers.
