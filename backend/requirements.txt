@@ -4,3 +4,4 @@ uvicorn[standard]
 httpx
 pytest
 pytest-asyncio
+asyncpg

@@ -214,6 +214,12 @@ pgvector embeddings, agent manifests, graph edges, and retrieval audit events wi
 indexes. Application startup does not execute migrations; deployment should apply them through the
 database migration process before switching Core repositories from in-memory implementations.
 
+The first production repository adapter is now available at
+`backend/app/repositories/postgres_knowledge_items.py`. It implements the existing knowledge-item
+protocol with asyncpg-compatible `fetch`/`execute` calls, including tenant filtering and provenance
+mapping. Core still defaults to in-memory repositories for local tests; deployment can inject the
+Postgres adapter after applying the migration.
+
 Core project launch context now includes the selected suite skin. The shared `src/contracts/session.js`
 reader normalizes the `datasnare-core/project-launch-v1` envelope and provides tenant/actor request
 headers for migrated React tools. This keeps AINetScope, AIPerf, AIProcMon, and AILogScope from each
