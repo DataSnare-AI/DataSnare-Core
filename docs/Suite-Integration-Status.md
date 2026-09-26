@@ -157,6 +157,11 @@ site, area, capabilities, knowledge types, and status; retrieval roles can list 
 The repository is replaceable and currently in-memory while the coordinator persistence model is being
 established.
 
+DS-RAG-011 now routes retrieval through eligible online or degraded manifests using tenant, site, area,
+agent, and knowledge-type filters. The selected agent IDs and routing reason are included in the retrieval
+audit event. When a tenant has no manifests yet, local retrieval retains the compatibility behavior of
+searching that tenant's indexed evidence without an agent restriction.
+
 ## Shared visual skins
 
 Core now exposes two persisted suite skin choices through `src/contracts/skins.js`:

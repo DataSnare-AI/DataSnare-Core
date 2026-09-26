@@ -23,8 +23,11 @@ class InMemoryVectorStore:
         self._documents[(document.tenant_id, document.item_id)] = document
         return document
 
-    async def search(self, tenant_id: int, vector: Sequence[float], top_k: int = 10) -> list[VectorDocument]:
+    async def search(self, tenant_id: int, vector: Sequence[float], top_k: int = 10, agent_ids: Sequence[str] | None = None) -> list[VectorDocument]:
         candidates = [document for (document_tenant_id, _), document in self._documents.items() if document_tenant_id == tenant_id]
+        if agent_ids is not None:
+            allowed = set(agent_ids)
+            candidates = [document for document in candidates if document.metadata.get("agent_id") in allowed]
         ranked = sorted(candidates, key=lambda document: _cosine_similarity(vector, document.vector), reverse=True)
         return ranked[:top_k]
 
