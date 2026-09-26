@@ -247,6 +247,12 @@ AINetScope now has its first reachable React/Python migration slice. The Core sh
 `datasnare-ainetscope/job-v1` envelope. The existing local browser analyzer remains the fallback while
 the Python packet parser, upload storage, and result persistence are implemented next.
 
+AINetScope capture jobs now support raw artifact upload at
+`POST /api/tenants/{tenant_id}/tools/ainetscope/jobs/{job_id}/artifact`. Jobs transition through
+`running`, `completed`, or `failed`; the injected parser validates PCAP/PCAPNG magic headers and returns
+the normalized analysis envelope. The current `HeaderCaptureParser` is deliberately an acceptance seam
+with zero decoded packets; replacing it with the full Python decoder is the next AINetScope backend step.
+
 Phase 5 now includes typed graph neighborhood queries at
 `GET /api/tenants/{tenant_id}/knowledge/graph/related` and a tenant orchestrator at
 `POST /api/tenants/{tenant_id}/rag/tenant/retrieve`. The orchestrator combines semantic retrieval,

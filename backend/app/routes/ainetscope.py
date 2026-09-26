@@ -71,3 +71,26 @@ async def get_capture_job(
     if not record or record.tool_id != "ainetscope":
         raise HTTPException(status_code=404, detail="AINetScope capture job not found")
     return {"schema": "datasnare-ainetscope/job-v1", "job": _job_payload(record)}
+
+
+@router.post("/jobs/{job_id}/artifact")
+async def upload_capture_artifact(
+    tenant_id: int,
+    job_id: str,
+    request: Request,
+    x_actor: str | None = Header(default=None),
+    x_role: str | None = Header(default=None),
+):
+    require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
+    if not record or record.tool_id != "ainetscope":
+        raise HTTPException(status_code=404, detail="AINetScope capture job not found")
+    data = await request.body()
+    await request.app.state.ingest_jobs.update(tenant_id, job_id, state="running")
+    try:
+        analysis = await request.app.state.capture_parser.analyze(data, record.artifact_name)
+        completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis.__dict__})
+        return {"schema": "datasnare-ainetscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis.__dict__}
+    except ValueError as error:
+        failed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="failed", native_conversion={**(record.native_conversion or {}), "status": "failed", "error": str(error)})
+        raise HTTPException(status_code=422, detail=str(error)) from error

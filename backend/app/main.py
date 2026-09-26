@@ -8,6 +8,7 @@ from app.repositories.knowledge_graph import InMemoryKnowledgeGraphRepository
 from app.repositories.site_cache import InMemorySiteQueryCache
 from app.services.embeddings import LocalHashEmbeddingProvider
 from app.services.vector_store import InMemoryVectorStore
+from app.services.ainetscope_parser import HeaderCaptureParser
 from app.repositories.partner_connections import InMemoryPartnerConnectionRepository
 from app.routes.ingest import router as ingest_router
 from app.routes.ninjaone import router as ninjaone_router
@@ -19,7 +20,7 @@ from app.routes.projects import router as projects_router
 from app.routes.ainetscope import router as ainetscope_router
 
 
-def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=None, embedding_provider=None, vector_store=None, agent_manifests=None, retrieval_audit=None, knowledge_graph=None, site_cache=None) -> FastAPI:
+def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=None, embedding_provider=None, vector_store=None, agent_manifests=None, retrieval_audit=None, knowledge_graph=None, site_cache=None, capture_parser=None) -> FastAPI:
     app = FastAPI(title="DataSnare-Core API")
     app.state.partner_connections = partner_connections or InMemoryPartnerConnectionRepository()
     app.state.ingest_jobs = ingest_jobs or InMemoryIngestJobRepository()
@@ -30,6 +31,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.state.retrieval_audit = retrieval_audit or InMemoryRetrievalAuditRepository()
     app.state.knowledge_graph = knowledge_graph or InMemoryKnowledgeGraphRepository()
     app.state.site_cache = site_cache or InMemorySiteQueryCache()
+    app.state.capture_parser = capture_parser or HeaderCaptureParser()
     app.include_router(ingest_router)
     app.include_router(ninjaone_router)
     app.include_router(rag_router)

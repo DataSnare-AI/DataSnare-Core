@@ -32,6 +32,8 @@ class IngestJobRepository(Protocol):
 
     async def get(self, tenant_id: int, job_id: str) -> IngestJobRecord | None: ...
 
+    async def update(self, tenant_id: int, job_id: str, **changes) -> IngestJobRecord | None: ...
+
 
 class InMemoryIngestJobRepository:
     """Replaceable repository for local development and route tests."""
@@ -54,3 +56,11 @@ class InMemoryIngestJobRepository:
 
     async def get(self, tenant_id: int, job_id: str) -> IngestJobRecord | None:
         return self._records.get((tenant_id, job_id))
+
+    async def update(self, tenant_id: int, job_id: str, **changes) -> IngestJobRecord | None:
+        current = self._records.get((tenant_id, job_id))
+        if current is None:
+            return None
+        saved = replace(current, **changes, updated_at=datetime.now(timezone.utc))
+        self._records[(tenant_id, job_id)] = saved
+        return saved
