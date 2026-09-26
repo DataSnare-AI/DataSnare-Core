@@ -234,3 +234,10 @@ Core also exposes `POST /api/tenants/{tenant_id}/knowledge/evidence` for normali
 The contract accepts AIOps knowledge-note types including telemetry, events, alerts, changes, actions,
 incidents, runbooks, documents, metrics, logs, and knowledge articles. These items use the same tenant,
 provenance, chunking, embedding, vector, policy, citation, and graph foundations as document evidence.
+
+Phase 5 now includes typed graph neighborhood queries at
+`GET /api/tenants/{tenant_id}/knowledge/graph/related` and a tenant orchestrator at
+`POST /api/tenants/{tenant_id}/rag/tenant/retrieve`. The orchestrator combines semantic retrieval,
+policy filtering, citations, and bounded graph relationships into one tenant-scoped response. Supported
+graph entity types include device, user, application, service, alert, incident, runbook, document, site,
+knowledge article, change, and action.

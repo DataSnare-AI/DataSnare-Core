@@ -83,6 +83,15 @@ def test_operator_can_ingest_document_with_provenance_and_list_it():
     assert catalog.json()["source_types"] == ["runbook"]
     assert catalog.json()["site_ids"] == ["site-east"]
 
+    tenant_retrieval = client.post(
+        "/api/tenants/7/rag/tenant/retrieve",
+        headers=headers,
+        json={"query": "database restart procedure", "top_k": 3},
+    )
+    assert tenant_retrieval.status_code == 200
+    assert tenant_retrieval.json()["schema"] == "datasnare-rag/tenant-retrieval-v1"
+    assert tenant_retrieval.json()["orchestration"]["citation_count"] == 1
+
 
 def test_viewer_can_retrieve_documents_but_cannot_ingest_them():
     client = TestClient(create_app())

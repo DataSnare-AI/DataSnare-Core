@@ -12,6 +12,7 @@ from app.services.site_coordination import build_site_query_plan
 from app.services.site_results import SiteResult, aggregate_site_results
 from app.services.citations import build_citations
 from app.services.policy import filter_by_policy
+from app.services.graph_query import related_edges
 
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/rag", tags=["RAG"])
@@ -151,3 +152,28 @@ async def retrieve_site_knowledge(
     response = RagRetrievalResponse(retrieval_id=retrieval_id, tenant_id=tenant_id, actor_id=actor.actor_id, status=status, query=body.query, results=results, citations=build_citations(results), audit_event={"schema": "datasnare-rag/retrieval-audit-v1", "event_type": "rag.site_retrieve", "retrieval_id": retrieval_id, "tenant_id": tenant_id, "actor_id": actor.actor_id, "role": actor.role, "status": status, "site_id": plan.site_id, "routed_agent_ids": list(routed_agent_ids or []), "routing_reason": route.reason})
     await request.app.state.site_cache.set(tenant_id, plan.cache_key, response.model_dump(by_alias=True))
     return response
+
+
+@router.post("/tenant/retrieve")
+async def retrieve_tenant_knowledge(
+    tenant_id: int,
+    body: RagRetrieveRequest,
+    request: Request,
+    x_actor: str | None = Header(default=None),
+    x_role: str | None = Header(default=None),
+):
+    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    semantic = await retrieve_knowledge(tenant_id, body, request, x_actor=actor.actor_id, x_role=actor.role)
+    graph_edges = await request.app.state.knowledge_graph.list_edges(tenant_id)
+    relationships = []
+    for result in semantic.results:
+        relationships.extend(related_edges(graph_edges, entity_type=result.item_type, entity_id=result.item_id, max_hops=2))
+    unique_relationships = {edge.edge_id: edge for edge in relationships}
+    return {
+        "schema": "datasnare-rag/tenant-retrieval-v1",
+        "tenant_id": tenant_id,
+        "actor_id": actor.actor_id,
+        "retrieval": semantic.model_dump(by_alias=True),
+        "related_edges": [edge.model_dump(by_alias=True) for edge in unique_relationships.values()],
+        "orchestration": {"semantic_results": len(semantic.results), "graph_edges": len(unique_relationships), "citation_count": len(semantic.citations)},
+    }

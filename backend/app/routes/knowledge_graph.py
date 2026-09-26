@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, Request
 
 from app.contracts.knowledge_graph import KnowledgeEdge
 from app.security.authorization import require_permission, resolve_actor
+from app.services.graph_query import related_edges
 
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/knowledge/graph", tags=["Knowledge Graph"])
@@ -54,3 +55,20 @@ async def find_path(
         "end": {"type": end_type, "id": end_id},
         "hops": [edge.model_dump(by_alias=True) for edge in path],
     }
+
+
+@router.get("/related")
+async def related(
+    tenant_id: int,
+    entity_type: str,
+    entity_id: str,
+    request: Request,
+    predicate: str | None = None,
+    max_hops: int = 1,
+    x_actor: str | None = Header(default=None),
+    x_role: str | None = Header(default=None),
+):
+    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    edges = await request.app.state.knowledge_graph.list_edges(tenant_id)
+    selected = related_edges(edges, entity_type=entity_type, entity_id=entity_id, predicate=predicate, max_hops=max_hops)
+    return {"schema": "datasnare-knowledge/related-v1", "tenant_id": tenant_id, "entity": {"type": entity_type, "id": entity_id}, "edges": [edge.model_dump(by_alias=True) for edge in selected]}
