@@ -1,6 +1,51 @@
 # DataSnare Suite Integration Status
 
-_Last updated: 2026-09-21_
+_Last updated: 2026-09-26_
+
+## Azure deployment plan
+
+The existing `datasnare-aiops.com` environment remains the AIOps test-production system. Core should
+use the existing Azure PostgreSQL server initially, but a separate database and credential boundary:
+
+- `datasnare_aiops`: existing AIOps database; accessed through authenticated AIOps APIs/events.
+- `datasnare_core`: Core-owned identity context, ingestion jobs, RAG knowledge, pgvector chunks,
+  manifests, graph edges, retrieval audits, and shared tool state.
+
+Core must not query AIOps tables directly. The intended boundary is:
+
+```text
+Core UI -> Core API -> datasnare_core
+						-> authenticated AIOps API -> datasnare_aiops
+```
+
+Recommended Azure hostnames:
+
+- `datasnare-aiops.com`: existing AIOps test-production environment.
+- `staging.app.datasnare.com`: Core staging React shell.
+- `staging.api.datasnare.com`: Core staging API.
+- `app.datasnare.com`: Core production React shell.
+- `api.datasnare.com`: Core production API.
+
+Use `app.datasnare.com` rather than `ai.datasnare.com` or `apps.datasnare.com`; it clearly identifies
+the suite workspace and leaves `api.datasnare.com` as the service boundary. Tool routes can remain under
+the Core shell, such as `/ainetscope`, `/ailogscope`, `/aiperf`, and `/aiprocmon`.
+
+Deployment order:
+
+1. Create the `datasnare_core` database on the existing Azure PostgreSQL server.
+2. Install pgvector and apply `backend/migrations/001_rag_foundation.sql`.
+3. Create a least-privilege Core database credential separate from the AIOps credential.
+4. Deploy Core staging at `staging.api.datasnare.com` and `staging.app.datasnare.com`.
+5. Configure `DATASNARE_ENV=production`, Core `DATABASE_URL`, shared auth provider settings, and
+	`CORS_ALLOWED_ORIGINS` for the Core hostname.
+6. Confirm `/api/health/readiness` reports Postgres storage, configured authentication, migrations, and
+	all four tool contracts ready.
+7. Run tenant-isolation, project handoff, upload, RAG, citation, graph, and rollback smoke tests.
+8. Promote the same validated build to `api.datasnare.com` and `app.datasnare.com`.
+
+The current code supports this wiring through `create_app(database_pool=..., auth_provider=...)`. Local
+development continues to use in-memory repositories and development headers until the staging services
+are configured.
 
 ## Current contract
 
