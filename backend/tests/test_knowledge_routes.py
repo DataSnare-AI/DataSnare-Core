@@ -42,6 +42,15 @@ def test_operator_can_ingest_document_with_provenance_and_list_it():
     assert listed.status_code == 200
     assert [entry["item_id"] for entry in listed.json()] == [item["item_id"]]
 
+    retrieved = client.post(
+        "/api/tenants/7/rag/retrieve",
+        headers=headers,
+        json={"query": "database restart procedure", "top_k": 3},
+    )
+    assert retrieved.status_code == 200
+    assert retrieved.json()["status"] == "indexed"
+    assert retrieved.json()["results"][0]["provenance"]["source_id"] == "runbook-42"
+
     other_tenant = client.get("/api/tenants/8/knowledge/documents", headers=headers)
     assert other_tenant.status_code == 200
     assert other_tenant.json() == []

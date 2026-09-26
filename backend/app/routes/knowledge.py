@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from app.contracts.knowledge import KnowledgeItem, KnowledgeProvenance
 from app.security.authorization import require_permission, resolve_actor
+from app.services.chunking import chunk_text
+from app.services.vector_store import VectorDocument
 
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/knowledge", tags=["Knowledge"])
@@ -50,7 +52,30 @@ async def ingest_document(
             area_id=body.area_id,
         ),
     )
-    return await request.app.state.knowledge_items.create(item)
+    saved = await request.app.state.knowledge_items.create(item)
+    chunks = chunk_text(saved.text)
+    embeddings = request.app.state.embedding_provider.embed_batch([chunk.text for chunk in chunks])
+    for chunk, embedding in zip(chunks, embeddings):
+        await request.app.state.vector_store.upsert(VectorDocument(
+            tenant_id=tenant_id,
+            item_id=f"{saved.item_id}:chunk:{chunk.chunk_index}",
+            text=chunk.text,
+            vector=embedding.vector,
+            metadata={
+                "knowledge_item_id": saved.item_id,
+                "chunk_index": chunk.chunk_index,
+                "start_offset": chunk.start_offset,
+                "end_offset": chunk.end_offset,
+                "title": saved.title,
+                "source_type": saved.provenance.source_type,
+                "source_id": saved.provenance.source_id,
+                "source_name": saved.provenance.source_name,
+                "agent_id": saved.provenance.agent_id,
+                "site_id": saved.provenance.site_id,
+                "area_id": saved.provenance.area_id,
+            },
+        ))
+    return saved
 
 
 @router.get("/documents", response_model=list[KnowledgeItem])

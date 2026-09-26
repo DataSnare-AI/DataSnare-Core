@@ -146,6 +146,12 @@ ingestion and provenance-preserving list routes. DS-RAG-002 is implemented as a 
 chunking service with bounded overlap and source offsets. The current repository is in-memory by design;
 the next persistence slice will add the Postgres schema and vector-store boundary.
 
+DS-RAG-003 now exposes an embedding-provider boundary with a deterministic offline development provider.
+DS-RAG-004 now exposes a tenant-filtered local vector-store boundary. Document ingestion uses both
+services, and the retrieval endpoint returns indexed, provenance-bearing results. The hash provider is
+only a dependency-free baseline for development and tests; production semantic retrieval must replace it
+with an approved local embedding model without changing the route or evidence contracts.
+
 ## Shared visual skins
 
 Core now exposes two persisted suite skin choices through `src/contracts/skins.js`:
