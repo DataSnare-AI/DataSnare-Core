@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowUpRight, Check, ChevronRight, CircleUserRound, ExternalLink, KeyRound, Menu, Palette, Search, ShieldCheck, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowUpRight, Check, ChevronRight, CircleUserRound, ExternalLink, KeyRound, Menu, Palette, RefreshCw, Search, Server, ShieldCheck, X } from 'lucide-react';
 import { ninjaOnePartner } from './contracts/partnerIntegrations';
 import { buildProjectLaunchContext, projects } from './contracts/projects';
 import { DEFAULT_SUITE_SKIN, normalizeSuiteSkin, SUITE_SKINS, SUITE_SKIN_STORAGE_KEY } from './contracts/skins';
@@ -31,6 +31,33 @@ function ProjectCard({ project, onOpen }) {
       </button>
     </article>
   );
+}
+
+function SuiteStatus() {
+  const [tenantId, setTenantId] = useState(() => localStorage.getItem('datasnare:tenant-id') || '');
+  const [status, setStatus] = useState(null);
+  const [migrations, setMigrations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [offline, setOffline] = useState(false);
+
+  const refresh = async () => {
+    setLoading(true); setOffline(false);
+    try {
+      const [readinessResponse, migrationResponse] = await Promise.all([fetch('/api/health/readiness'), fetch('/api/projects/web-migrations')]);
+      if (!readinessResponse.ok || !migrationResponse.ok) throw new Error('Core status unavailable');
+      setStatus(await readinessResponse.json()); setMigrations((await migrationResponse.json()).projects || []);
+    } catch (_) { setOffline(true); setStatus(null); setMigrations([]); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const saveTenant = (event) => { const value = event.target.value; setTenantId(value); localStorage.setItem('datasnare:tenant-id', value); };
+  return <section className="suite-status" id="status">
+    <div className="section-heading"><div><p className="eyebrow">Control plane status</p><h2>Know what is ready.</h2></div><p>Keep tenant context close while Core, the Python services, and the Azure deployment move toward the same operating surface.</p></div>
+    <div className="suite-status__grid"><article className="status-panel status-panel--context"><div className="status-panel__heading"><span><Server size={17} /> Workspace context</span><button className="icon-button" type="button" onClick={refresh} aria-label="Refresh Core status"><RefreshCw size={15} /></button></div><label>Active test tenant<input value={tenantId} onChange={saveTenant} placeholder="Tenant ID" inputMode="numeric" /></label><small>Stored locally until shared authentication is connected.</small></article><article className="status-panel"><div className="status-panel__heading"><span><ShieldCheck size={17} /> Core readiness</span><span className={`status-indicator ${status?.status === 'ready' ? 'status-indicator--good' : ''}`}>{loading ? 'Checking' : status?.status || (offline ? 'Offline' : 'Unknown')}</span></div>{status ? <div className="readiness-list">{Object.entries(status.checks).map(([key, value]) => <span key={key}><i className={value ? 'check-dot check-dot--good' : 'check-dot'} />{key.replaceAll('_', ' ')}</span>)}</div> : <p className="status-panel__message">{offline ? 'Core API is not connected yet. The local shell remains available.' : 'Checking local services...'}</p>}</article></div>
+    <div className="migration-strip"><div className="status-panel__heading"><span>Web migration contracts</span><span>{migrations.length || 4} tools</span></div><div className="migration-list">{(migrations.length ? migrations : [{ project_id: 'ainetscope', status: 'contract-ready' }, { project_id: 'ailogscope', status: 'contract-ready' }, { project_id: 'aiperf', status: 'contract-ready' }, { project_id: 'aiprocmon', status: 'contract-ready' }]).map((migration) => <span key={migration.project_id}><b>{migration.project_id}</b><small>{migration.status}</small></span>)}</div></div>
+  </section>;
 }
 
 function KnowledgeSearch() {
@@ -134,6 +161,7 @@ export default function App() {
           {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} />)}
         </section>
 
+        <SuiteStatus />
         <KnowledgeSearch />
         <AINetScopeWorkbench />
         <AILogScopeWorkbench />
