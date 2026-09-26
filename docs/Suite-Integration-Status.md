@@ -171,6 +171,12 @@ normalize site, area, agent, and result constraints into stable cache keys; the 
 in-memory tenant-scoped implementation with explicit TTL behavior. Cross-area correlation, evidence
 deduplication across site agents, and the site knowledge graph remain the next Phase 3 slices.
 
+The knowledge graph foundation is also present as a tenant-scoped typed-edge API at
+`/api/tenants/{tenant_id}/knowledge/graph/edges`. It records relationships such as
+`alert caused_by service` and `document mentions device`, with actor provenance and centralized
+authorization. The in-memory repository is a contract seam for the future Postgres graph tables or
+dedicated graph store.
+
 ## Shared visual skins
 
 Core now exposes two persisted suite skin choices through `src/contracts/skins.js`:

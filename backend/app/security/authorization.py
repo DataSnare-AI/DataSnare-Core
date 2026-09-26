@@ -25,6 +25,7 @@ ROLE_PERMISSIONS = {
         "rag.ingest",
         "rag.manifest.manage",
         "rag.audit.view",
+        "rag.graph.manage",
     },
     "platform_admin": {"*"},
 }
