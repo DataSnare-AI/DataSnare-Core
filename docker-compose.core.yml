@@ -1,0 +1,23 @@
+services:
+  core-api:
+    build:
+      context: .
+      target: api
+    environment:
+      DATASNARE_ENV: development
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  core-web:
+    build:
+      context: .
+      target: web
+    environment:
+      CORE_APP_DOMAIN: ${CORE_APP_DOMAIN:-localhost}
+      CORE_API_DOMAIN: ${CORE_API_DOMAIN:-api.localhost}
+    depends_on:
+      - core-api
+    ports:
+      - "127.0.0.1:${CORE_HTTP_PORT:-8080}:80"
+    restart: unless-stopped
