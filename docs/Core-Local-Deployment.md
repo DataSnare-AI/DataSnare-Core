@@ -28,6 +28,24 @@ The preview compose binds to loopback and sets `DATASNARE_ENV=development`. It u
 
 ## Azure staging routing
 
+Keep the repositories in separate directories on the Azure VM:
+
+- Existing AIOps checkout: `/opt/datasnare`
+- Core checkout: `/opt/datasnare-core`
+
+This lets Core updates use `git pull` independently and prevents Core Compose commands from changing
+the AIOps working tree. Store Core's deployment-only `.env.core` in `/opt/datasnare-core` with
+permissions restricted to the deployment account; do not copy AIOps secrets into it. Use a distinct
+Compose project name (`datasnare-core`) for Core lifecycle commands.
+
+Initial checkout and later update:
+
+```bash
+git clone <core-repository-url> /opt/datasnare-core
+cd /opt/datasnare-core
+git pull --ff-only
+```
+
 The `docker-compose.staging.yml` profile joins Core to an existing Docker edge network and does not
 publish host ports. It is intended to share the network with the AIOps Caddy container; it does not
 replace or restart AIOps. Confirm that the VM's AIOps deployment uses this Docker network and that its
@@ -52,8 +70,11 @@ Set `CORE_EDGE_NETWORK` to the actual network name and deploy Core separately:
 export CORE_EDGE_NETWORK=<existing-aiops-edge-network>
 export CORE_APP_DOMAIN=staging.app.datasnare.com
 export CORE_API_DOMAIN=staging.api.datasnare.com
-docker compose --env-file .env.core -f docker-compose.staging.yml up --build -d
+docker compose -p datasnare-core --env-file .env.core -f docker-compose.staging.yml up --build -d
 ```
+
+For explicit container/network naming, include `-p datasnare-core` in Compose commands. Do not run
+`docker compose down` from `/opt/datasnare`; that remains the independent AIOps deployment.
 
 Before exposing either name through public DNS ingress, merge `deploy/Caddyfile.staging.example` into
 the existing AIOps edge Caddy configuration. Replace its documentation-only `192.0.2.10/32` allowlist
