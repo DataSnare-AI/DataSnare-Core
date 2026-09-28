@@ -1,0 +1,25 @@
+# Merge these site blocks into the existing AIOps edge Caddy configuration only
+# after replacing 192.0.2.10/32 with the approved tester/VPN egress CIDR.
+# The documentation-only CIDR intentionally denies ordinary clients by default.
+
+staging.app.datasnare.com {
+    encode gzip zstd
+
+    @approved_tester remote_ip 192.0.2.10/32
+    handle @approved_tester {
+        reverse_proxy datasnare-core-web:80
+    }
+
+    respond "Core staging is restricted" 403
+}
+
+staging.api.datasnare.com {
+    encode gzip zstd
+
+    @approved_tester remote_ip 192.0.2.10/32
+    handle @approved_tester {
+        reverse_proxy datasnare-core-api:8000
+    }
+
+    respond "Core staging is restricted" 403
+}

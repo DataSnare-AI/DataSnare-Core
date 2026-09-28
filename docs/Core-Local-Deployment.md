@@ -28,17 +28,45 @@ The preview compose binds to loopback and sets `DATASNARE_ENV=development`. It u
 
 ## Azure staging routing
 
-The web container serves the built Vite application and forwards `/api/*` to the Core API container. The same API container is routed under the dedicated API hostname. Configure Azure's ingress/application gateway to terminate TLS and forward HTTP to the Core web container's configured port.
+The `docker-compose.staging.yml` profile joins Core to an existing Docker edge network and does not
+publish host ports. It is intended to share the network with the AIOps Caddy container; it does not
+replace or restart AIOps. Confirm that the VM's AIOps deployment uses this Docker network and that its
+Caddy container is attached before starting Core.
 
 For staging, set the compose environment values to:
 
 ```text
 CORE_APP_DOMAIN=staging.app.datasnare.com
 CORE_API_DOMAIN=staging.api.datasnare.com
-CORE_HTTP_PORT=<private-host-port>
 ```
 
-DNS and ingress rules should route both staging hostnames to the same `core-web` service. Keep `datasnare-aiops.com` routed to the existing AIOps deployment.
+On the VM, identify the network used by AIOps Caddy:
+
+```bash
+docker inspect <aiops-caddy-container> --format '{{json .NetworkSettings.Networks}}'
+```
+
+Set `CORE_EDGE_NETWORK` to the actual network name and deploy Core separately:
+
+```bash
+export CORE_EDGE_NETWORK=<existing-aiops-edge-network>
+export CORE_APP_DOMAIN=staging.app.datasnare.com
+export CORE_API_DOMAIN=staging.api.datasnare.com
+docker compose --env-file .env.core -f docker-compose.staging.yml up --build -d
+```
+
+Before exposing either name through public DNS ingress, merge `deploy/Caddyfile.staging.example` into
+the existing AIOps edge Caddy configuration. Replace its documentation-only `192.0.2.10/32` allowlist
+with the approved tester/VPN egress CIDR, validate the Caddy configuration, then reload the existing
+Caddy service. Both staging hostnames are IP restricted by default. Keep `datasnare-aiops.com` routed
+to the existing AIOps deployment.
+
+After the edge proxy and DNS records resolve, verify from an allowed client:
+
+```bash
+curl -fsS https://staging.app.datasnare.com/ | head
+curl -fsS https://staging.api.datasnare.com/api/health/readiness
+```
 
 ## Production gate
 

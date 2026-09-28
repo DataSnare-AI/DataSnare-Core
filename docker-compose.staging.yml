@@ -1,0 +1,36 @@
+services:
+  core-api:
+    build:
+      context: .
+      target: api
+    environment:
+      DATASNARE_ENV: development
+    expose:
+      - "8000"
+    networks:
+      edge:
+        aliases:
+          - datasnare-core-api
+    restart: unless-stopped
+
+  core-web:
+    build:
+      context: .
+      target: web
+    environment:
+      CORE_APP_DOMAIN: ${CORE_APP_DOMAIN:-staging.app.datasnare.com}
+      CORE_API_DOMAIN: ${CORE_API_DOMAIN:-staging.api.datasnare.com}
+    depends_on:
+      - core-api
+    expose:
+      - "80"
+    networks:
+      edge:
+        aliases:
+          - datasnare-core-web
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true
+    name: ${CORE_EDGE_NETWORK:?Set CORE_EDGE_NETWORK to the existing AIOps/Caddy Docker network}
