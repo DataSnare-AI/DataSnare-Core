@@ -342,13 +342,15 @@ in-memory services and development headers; production reports `not_ready` until
 provider and database pool are present. The response also verifies migration availability and all four
 tool contracts before deployment smoke tests proceed.
 
-The Core app factory now accepts `database_pool` and `auth_provider` injection. Supplying a database
-pool automatically selects the Postgres knowledge repository and pgvector store; omitting it preserves
-the local in-memory mode. This makes deployment wiring explicit and testable without requiring local
-credentials or a running database during development.
+The Core app factory accepts injected `database_pool` and `auth_provider` objects, and creates/closes
+an asyncpg pool from Core-only `DATABASE_URL` when configured. A database pool selects Postgres
+repositories for knowledge items, agent manifests, ingest jobs, and vectors; omitting it preserves
+local in-memory mode. `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, and `DB_COMMAND_TIMEOUT_SECONDS` tune
+pool behavior.
 
-Persistent ingest-job storage is now available through `PostgresIngestJobRepository` and the separate
-`backend/migrations/002_ingest_jobs.sql` migration. The table is keyed by `(tenant_id, job_id)` and
-persists queued/running/completed/failed/cancelled state plus parser result metadata in JSONB. When a
-database pool is injected, Core now selects this repository automatically. Apply migrations 001 then
-002 before enabling database-backed job creation; uploaded source bytes are still not durably stored.
+Persistent ingest-job storage uses `PostgresIngestJobRepository` and the separate
+`backend/migrations/002_ingest_jobs.sql` migration. Its `(tenant_id, job_id)` key stores lifecycle state
+and parser result metadata in JSONB. The existing RAG migration stores manifests, which now use
+`PostgresAgentManifestRepository` under the same tenant-scoped contract. Apply migrations 001 then 002
+before enabling database-backed writes. Graph edges, retrieval audit, and site cache remain in memory;
+uploaded source bytes are not durably stored.

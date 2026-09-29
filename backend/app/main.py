@@ -8,6 +8,7 @@ from app.repositories.ingest_jobs import InMemoryIngestJobRepository
 from app.repositories.postgres_ingest_jobs import PostgresIngestJobRepository
 from app.repositories.knowledge_items import InMemoryKnowledgeItemRepository
 from app.repositories.agent_manifests import InMemoryAgentManifestRepository
+from app.repositories.postgres_agent_manifests import PostgresAgentManifestRepository
 from app.repositories.retrieval_audit import InMemoryRetrievalAuditRepository
 from app.repositories.knowledge_graph import InMemoryKnowledgeGraphRepository
 from app.repositories.site_cache import InMemorySiteQueryCache
@@ -51,6 +52,8 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
             app.state.ingest_jobs = PostgresIngestJobRepository(pool)
             app.state.knowledge_items = PostgresKnowledgeItemRepository(pool)
             app.state.vector_store = PostgresVectorStore(pool)
+            if agent_manifests is None:
+                app.state.agent_manifests = PostgresAgentManifestRepository(pool)
         try:
             yield
         finally:
@@ -65,7 +68,11 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.state.knowledge_items = knowledge_items or (PostgresKnowledgeItemRepository(database_pool) if database_pool is not None else InMemoryKnowledgeItemRepository())
     app.state.embedding_provider = embedding_provider or LocalHashEmbeddingProvider()
     app.state.vector_store = vector_store or (PostgresVectorStore(database_pool) if database_pool is not None else InMemoryVectorStore())
-    app.state.agent_manifests = agent_manifests or InMemoryAgentManifestRepository()
+    app.state.agent_manifests = agent_manifests or (
+        PostgresAgentManifestRepository(database_pool)
+        if database_pool is not None
+        else InMemoryAgentManifestRepository()
+    )
     app.state.retrieval_audit = retrieval_audit or InMemoryRetrievalAuditRepository()
     app.state.knowledge_graph = knowledge_graph or InMemoryKnowledgeGraphRepository()
     app.state.site_cache = site_cache or InMemorySiteQueryCache()
