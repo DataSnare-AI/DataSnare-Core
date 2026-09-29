@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.repositories.ingest_jobs import InMemoryIngestJobRepository
+from app.repositories.postgres_ingest_jobs import PostgresIngestJobRepository
 from app.repositories.knowledge_items import InMemoryKnowledgeItemRepository
 from app.repositories.agent_manifests import InMemoryAgentManifestRepository
 from app.repositories.retrieval_audit import InMemoryRetrievalAuditRepository
@@ -33,7 +34,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.state.database_pool = database_pool
     app.state.auth_provider = auth_provider
     app.state.partner_connections = partner_connections or InMemoryPartnerConnectionRepository()
-    app.state.ingest_jobs = ingest_jobs or InMemoryIngestJobRepository()
+    app.state.ingest_jobs = ingest_jobs or (PostgresIngestJobRepository(database_pool) if database_pool is not None else InMemoryIngestJobRepository())
     app.state.knowledge_items = knowledge_items or (PostgresKnowledgeItemRepository(database_pool) if database_pool is not None else InMemoryKnowledgeItemRepository())
     app.state.embedding_provider = embedding_provider or LocalHashEmbeddingProvider()
     app.state.vector_store = vector_store or (PostgresVectorStore(database_pool) if database_pool is not None else InMemoryVectorStore())

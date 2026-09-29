@@ -346,3 +346,9 @@ The Core app factory now accepts `database_pool` and `auth_provider` injection. 
 pool automatically selects the Postgres knowledge repository and pgvector store; omitting it preserves
 the local in-memory mode. This makes deployment wiring explicit and testable without requiring local
 credentials or a running database during development.
+
+Persistent ingest-job storage is now available through `PostgresIngestJobRepository` and the separate
+`backend/migrations/002_ingest_jobs.sql` migration. The table is keyed by `(tenant_id, job_id)` and
+persists queued/running/completed/failed/cancelled state plus parser result metadata in JSONB. When a
+database pool is injected, Core now selects this repository automatically. Apply migrations 001 then
+002 before enabling database-backed job creation; uploaded source bytes are still not durably stored.
