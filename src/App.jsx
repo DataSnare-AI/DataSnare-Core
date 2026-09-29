@@ -109,7 +109,21 @@ export default function App() {
       return;
     }
     sessionStorage.setItem('datasnare:lastLaunchContext', JSON.stringify(buildProjectLaunchContext(project, {}, skin)));
-    window.location.assign(project.path);
+    const workbench = document.getElementById(`tool-${project.id}`);
+    if (workbench) {
+      window.location.hash = `tool-${project.id}`;
+      workbench.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    if (project.id === 'aiops') {
+      window.location.assign('https://datasnare-aiops.com');
+      return;
+    }
+    if (project.details) {
+      setDetailsProject(project);
+      window.location.hash = `details-${project.id}`;
+      window.setTimeout(() => document.getElementById(`details-${project.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    }
   };
 
   return (
@@ -168,10 +182,10 @@ export default function App() {
 
         <SuiteStatus />
         <KnowledgeSearch />
-        <AINetScopeWorkbench />
-        <AILogScopeWorkbench />
-        <NativeToolWorkbench toolId="aiperf" />
-        <NativeToolWorkbench toolId="aiprocmon" />
+        <div id="tool-ainetscope"><AINetScopeWorkbench /></div>
+        <div id="tool-ailogscope"><AILogScopeWorkbench /></div>
+        <div id="tool-aiperf"><NativeToolWorkbench toolId="aiperf" /></div>
+        <div id="tool-aiprocmon"><NativeToolWorkbench toolId="aiprocmon" /></div>
 
         <section className="partner-section" id="partners">
           <div className="section-heading section-heading--partner">
