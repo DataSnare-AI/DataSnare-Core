@@ -1,3 +1,7 @@
+import os
+from contextlib import asynccontextmanager
+
+import asyncpg
 from fastapi import FastAPI
 
 from app.repositories.ingest_jobs import InMemoryIngestJobRepository
@@ -30,7 +34,30 @@ from app.routes.health import router as health_router
 
 
 def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=None, embedding_provider=None, vector_store=None, agent_manifests=None, retrieval_audit=None, knowledge_graph=None, site_cache=None, capture_parser=None, log_parser=None, aiperf_parser=None, aiprocmon_parser=None, database_pool=None, auth_provider=None) -> FastAPI:
-    app = FastAPI(title="DataSnare-Core API")
+    @asynccontextmanager
+    async def lifespan(app):
+        owned_pool = None
+        pool = app.state.database_pool
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if pool is None and database_url:
+            owned_pool = await asyncpg.create_pool(
+                database_url,
+                min_size=int(os.getenv("DB_POOL_MIN_SIZE", "1")),
+                max_size=int(os.getenv("DB_POOL_MAX_SIZE", "8")),
+                command_timeout=float(os.getenv("DB_COMMAND_TIMEOUT_SECONDS", "60")),
+            )
+            pool = owned_pool
+            app.state.database_pool = pool
+            app.state.ingest_jobs = PostgresIngestJobRepository(pool)
+            app.state.knowledge_items = PostgresKnowledgeItemRepository(pool)
+            app.state.vector_store = PostgresVectorStore(pool)
+        try:
+            yield
+        finally:
+            if owned_pool is not None:
+                await owned_pool.close()
+
+    app = FastAPI(title="DataSnare-Core API", lifespan=lifespan)
     app.state.database_pool = database_pool
     app.state.auth_provider = auth_provider
     app.state.partner_connections = partner_connections or InMemoryPartnerConnectionRepository()
