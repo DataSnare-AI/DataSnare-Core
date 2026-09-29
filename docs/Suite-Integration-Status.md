@@ -147,25 +147,28 @@ Initial job contract names:
 
 Job states should start with `queued`, `running`, `completed`, `failed`, and `cancelled`.
 
-Core now exposes the first contract stub:
+The original native-ingestion contract was introduced as a metadata-only stub:
 
 - `POST /api/tenants/{tenant_id}/ingest/jobs` creates a queued native ingest job.
 - `GET /api/tenants/{tenant_id}/ingest/jobs` lists queued/history jobs for the tenant.
 - `GET /api/tenants/{tenant_id}/ingest/jobs/{job_id}` returns one job.
 
-The stub requires `X-Actor`, stores jobs in the replaceable in-memory repository, and currently accepts:
+That initial stub required `X-Actor` and only accepted:
 
 - AIPerf `.blg` -> `datasnare-aiperf/events-v1`
 - AIProcMon `.pml` and large `.csv` -> `datasnare-aiprocmon/events-v1`
 
-Native parser execution is intentionally not implemented yet. `native_conversion.status` is `planned` and identifies the future Python conversion strategy.
+Current status has advanced: Core now has parser-backed uploads for text/JSON/YAML/PDF logs, converted
+PerfMon CSV/XML, ProcMon CSV/XML, and PCAP/PCAPNG. Native BLG/PML conversion remains Windows-dependent
+and is deliberately marked converter-required; parsers run in-process with bounded previews and job
+results, while original artifact persistence and asynchronous worker execution remain future work.
 
 ## Next integration slice
 
-1. Add a Python conversion service boundary for AIPerf `.blg` and AIProcMon `.pml` jobs.
-2. Add a small AIRootCause regression harness for the four normalized schemas.
-3. Decide whether the regression harness should live as browser Playwright checks or lightweight Node tests with a DOM shim.
-4. Connect React/Core job status UI to the ingest job routes once persisted repositories are available.
+1. Add durable tenant-scoped source-artifact storage and asynchronous job execution.
+2. Connect Core startup to production authentication and Postgres/pgvector using protected deployment configuration.
+3. Add Windows-agent conversion handoff for native BLG/PML artifacts and validate converted result ingest.
+4. Promote normalized artifacts into durable evidence records with reproducible parser/version provenance.
 
 ## Shared authorization and RAG foundation
 
@@ -296,15 +299,17 @@ the Python packet parser, upload storage, and result persistence are implemented
 
 AINetScope capture jobs now support raw artifact upload at
 `POST /api/tenants/{tenant_id}/tools/ainetscope/jobs/{job_id}/artifact`. Jobs transition through
-`running`, `completed`, or `failed`; the injected parser validates PCAP/PCAPNG magic headers and returns
-the normalized analysis envelope. The current `HeaderCaptureParser` is deliberately an acceptance seam
-with zero decoded packets; replacing it with the full Python decoder is the next AINetScope backend step.
+`running`, `completed`, or `failed`; the injected Scapy parser decodes PCAP/PCAPNG packets into bounded
+normalized packet previews, protocol counts, host/flow totals, and TCP-reset findings. Decoded summaries
+are indexed into the tenant knowledge fabric. Staging uploads are capped at 250 MiB and 1,000,000
+packets; larger captures should continue to use the local compact browser analyzer.
 
 AILogScope now has a matching React workbench and Python text adapter. It queues and uploads log/text
 artifacts through `/api/tenants/{tenant_id}/tools/ailogscope/jobs`, decodes UTF-8 and UTF-16 input,
 counts bounded non-empty event records, and returns `datasnare-ailogscope/events-v1`. AILogScope is now
-the first migrated tool with a useful completed parser boundary; JSON/YAML/PDF structured extraction
-remains a follow-up parser slice.
+the first migrated tool with a useful completed parser boundary; JSON, NDJSON, YAML, CSV, and PDF text
+extraction are implemented with a bounded preview. PDF extraction is capped at 100 pages; structured
+semantic extraction of complex PDFs remains a follow-up.
 
 The AILogScope job result now includes up to 200 normalized event samples with parsed timestamps,
 severity, source filename, and source line, plus full severity totals and the total event count. Staging
@@ -324,10 +329,13 @@ graph entity types include device, user, application, service, alert, incident, 
 knowledge article, change, and action.
 
 AIPerf and AIProcMon now have shared React workbench coverage through `NativeToolWorkbench` and the
-Core route `POST /api/tenants/{tenant_id}/tools/{tool_id}/jobs`. Native BLG and PML jobs are accepted
-with their existing normalized schemas and explicit planned-converter status. All four tools now have
-reachable web job surfaces; the remaining migration work is the native parser/conversion implementation,
-upload persistence, and result publication for each tool.
+Core routes under `/api/tenants/{tenant_id}/tools/{tool_id}/jobs`. AIPerf parses converted PerfMon CSV
+and System Diagnostics XML into `datasnare-aiperf/events-v1`; AIProcMon parses CSV/XML into
+`datasnare-aiprocmon/events-v1`, requiring explicit capture date and UTC offset for time-of-day CSV.
+Both publish normalized summaries to tenant knowledge. Native BLG/PML jobs remain accepted but require
+the Windows `relog.exe`/ProcMon converters; Core returns an explicit converter-required response rather
+than attempting unsupported Linux binary decoding. All four tools now have reachable web job surfaces;
+durable artifact upload/result persistence and production auth wiring remain deployment blockers.
 
 Core now exposes `GET /api/health/readiness` as a deployment gate. Development reports ready with
 in-memory services and development headers; production reports `not_ready` until a configured auth

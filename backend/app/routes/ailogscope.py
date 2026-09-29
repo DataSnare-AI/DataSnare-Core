@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.repositories.ingest_jobs import IngestJobRecord
 from app.routes.ingest import SUPPORTED_NATIVE_ARTIFACTS, _job_payload
 from app.security.authorization import require_permission, resolve_actor
+from app.services.knowledge_ingestion import build_knowledge_item, store_knowledge_item
 
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/tools/ailogscope", tags=["AILogScope"])
@@ -25,7 +27,7 @@ async def create_log_job(tenant_id: int, body: dict, request: Request, x_actor: 
 
 @router.post("/jobs/{job_id}/artifact")
 async def upload_log_artifact(tenant_id: int, job_id: str, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
     record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
     if not record or record.tool_id != "ailogscope":
         raise HTTPException(status_code=404, detail="AILogScope log job not found")
@@ -40,6 +42,14 @@ async def upload_log_artifact(tenant_id: int, job_id: str, request: Request, x_a
     if len(data) > MAX_LOG_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="AILogScope staging uploads are limited to 25 MiB")
     await request.app.state.ingest_jobs.update(tenant_id, job_id, state="running")
-    analysis = await request.app.state.log_parser.analyze(data, record.artifact_name)
-    completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis.__dict__})
-    return {"schema": "datasnare-ailogscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis.__dict__}
+    try:
+        analysis = await request.app.state.log_parser.analyze(data, record.artifact_name)
+    except ValueError as error:
+        await request.app.state.ingest_jobs.update(tenant_id, job_id, state="failed", native_conversion={**(record.native_conversion or {}), "status": "failed", "error": str(error)})
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    item = build_knowledge_item(tenant_id, actor.actor_id, item_type="log", source_id=job_id, source_name=record.artifact_name, title=record.artifact_name, text=analysis.knowledge_text, agent_id=None, site_id=None, area_id=None, classification="internal", metadata={"tool_id": "ailogscope", "parser": analysis.parser, "event_count": analysis.events, "severity_counts": analysis.severity_counts})
+    await store_knowledge_item(request, tenant_id=tenant_id, actor_id=actor.actor_id, item=item)
+    analysis_payload = asdict(analysis)
+    analysis_payload.pop("knowledge_text", None)
+    completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis_payload, "knowledge_item_id": item.item_id})
+    return {"schema": "datasnare-ailogscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "knowledge_item_id": item.item_id}

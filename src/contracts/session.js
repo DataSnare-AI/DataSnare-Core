@@ -41,3 +41,16 @@ export function buildSessionHeaders(context, headers = {}) {
   if (context?.account?.tenantId) next.set('X-Tenant-Id', context.account.tenantId);
   return next;
 }
+
+export async function buildRequestHeaders(context, headers = {}) {
+  const next = buildSessionHeaders(context, headers);
+  if (context?.account?.actorId) return next;
+  const response = await fetch('/api/health/readiness');
+  const readiness = response.ok ? await response.json() : null;
+  if (readiness?.environment !== 'development') {
+    throw new Error('Sign in through Core before submitting tenant evidence.');
+  }
+  next.set('X-Actor', 'core-staging-ui');
+  next.set('X-Role', 'operator');
+  return next;
+}

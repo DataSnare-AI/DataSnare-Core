@@ -27,6 +27,11 @@ def test_ailogscope_upload_normalizes_utf8_events():
     assert uploaded.json()["analysis"]["preview"][1]["severity"] == "error"
     assert uploaded.json()["analysis"]["preview"][1]["evidence"]["sourceLine"] == 2
     assert uploaded.json()["analysis"]["severity_counts"] == {"info": 1, "error": 1}
+    assert uploaded.json()["knowledge_item_id"]
+
+    retrieved = client.post("/api/tenants/7/rag/retrieve", headers=headers, json={"query": "database timeout", "top_k": 3})
+    assert retrieved.status_code == 200
+    assert any(result["provenance"]["source_id"] == job_id for result in retrieved.json()["results"])
 
 
 def test_ailogscope_rejects_unknown_artifact_type():
@@ -50,3 +55,21 @@ def test_ailogscope_rejects_oversized_upload_before_running_job():
     assert uploaded.status_code == 413
     status = client.get(f"/api/tenants/7/ingest/jobs/{job_id}", headers=headers)
     assert status.json()["state"] == "queued"
+
+
+def test_ailogscope_json_and_yaml_records_are_normalized():
+    client = TestClient(create_app())
+    headers = {"X-Actor": "operator@example.com", "X-Role": "operator"}
+    cases = [
+        ("events.json", "json", b'{"events":[{"timestamp":"2026-09-28T10:00:00Z","level":"Warning","host":"APP01","message":"connection retry"}]}'),
+        ("events.yaml", "yaml", b"events:\n  - timestamp: 2026-09-28T10:00:00Z\n    level: Critical\n    message: service failed\n"),
+    ]
+    for name, artifact_type, content in cases:
+        created = client.post("/api/tenants/7/tools/ailogscope/jobs", headers=headers, json={"artifact_name": name, "artifact_type": artifact_type})
+        job_id = created.json()["job"]["job_id"]
+        uploaded = client.post(f"/api/tenants/7/tools/ailogscope/jobs/{job_id}/artifact", headers=headers, content=content)
+        assert uploaded.status_code == 200
+        analysis = uploaded.json()["analysis"]
+        assert analysis["events"] == 1
+        assert analysis["preview"][0]["timestamp"] == "2026-09-28T10:00:00Z"
+        assert analysis["parser"].startswith("ailogscope-")

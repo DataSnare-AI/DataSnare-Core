@@ -61,7 +61,7 @@ export const projects = [
     exportSchema: PROJECT_EXPORT_SCHEMAS.aiperf,
     capabilities: ['local-evidence-import', 'normalized-event-export'],
     webMigration: PROJECT_WEB_MIGRATIONS.aiperf,
-    details: { tagline: 'Review Performance Monitor captures and identify sustained resource pressure.', inputs: ['Converted Performance Monitor CSV', 'System Diagnostics report.xml', 'Native .blg through the web job boundary'], highlights: ['CPU, memory, disk, network, and TCP metric series', 'Sustained threshold findings with observed extremes and windows', 'Locale-aware PDH timestamps and normalized events export'], workflow: 'Convert or upload performance evidence, inspect source metrics and findings, then export datasnare-aiperf/events-v1.', caveat: 'Binary BLG decoding uses the planned Python/native conversion worker; the browser path remains CSV/XML.' },
+    details: { tagline: 'Review Performance Monitor captures and identify sustained resource pressure.', inputs: ['Converted Performance Monitor CSV', 'System Diagnostics report.xml', 'Native .blg converted with Windows relog.exe'], highlights: ['Python web parsing for converted CSV and System Diagnostics XML', 'CPU, memory, disk, network, and TCP metric findings', 'Sustained thresholds with evidence values and normalized events export'], workflow: 'Convert native BLG on Windows or upload CSV/XML, inspect source metrics and findings, then export datasnare-aiperf/events-v1.', caveat: 'Native BLG conversion requires Windows Performance Monitor relog.exe; Core currently accepts the converted result.' },
   },
   {
     id: 'aiprocmon',
@@ -75,7 +75,7 @@ export const projects = [
     exportSchema: PROJECT_EXPORT_SCHEMAS.aiprocmon,
     capabilities: ['local-evidence-import', 'normalized-event-export', 'process-map-export'],
     webMigration: PROJECT_WEB_MIGRATIONS.aiprocmon,
-    details: { tagline: 'Investigate process activity, failures, and slow operations from ProcMon evidence.', inputs: ['ProcMon CSV and XML exports', 'Native .pml through the web job boundary'], highlights: ['Streaming large CSV imports with bounded salient evidence', 'Access, sharing, path, duration, and process findings', 'Optional TCP/UDP process-map observations'], workflow: 'Convert or upload ProcMon evidence, review deterministic findings and process context, then export datasnare-aiprocmon/events-v1.', caveat: 'Keep the original PML/CSV as primary evidence; normalized exports retain aggregate and salient records.' },
+    details: { tagline: 'Investigate process activity, failures, and slow operations from ProcMon evidence.', inputs: ['ProcMon CSV and XML exports', 'Native .pml converted with Windows Procmon'], highlights: ['Python web parsing for converted CSV and XML events', 'Access, sharing, missing-path, duration, and process findings', 'Optional TCP/UDP process-map observations'], workflow: 'Convert native PML on Windows or upload CSV/XML, review deterministic findings and process context, then export datasnare-aiprocmon/events-v1.', caveat: 'Native PML conversion requires Windows Procmon; keep the original PML/CSV as primary evidence.' },
   },
   {
     id: 'airca',
@@ -102,7 +102,7 @@ export const projects = [
     exportSchema: PROJECT_EXPORT_SCHEMAS.ainetscope,
     capabilities: ['local-evidence-import', 'network-flow-export'],
     webMigration: PROJECT_WEB_MIGRATIONS.ainetscope,
-    details: { tagline: 'Inspect large packet captures, streams, and protocol behavior.', inputs: ['.pcap, .pcapng, and .cap captures', 'Capture sets from dumpcap rotations', 'Normalized process-map observations'], highlights: ['PCAP/PCAPNG protocol, flow, latency, and topology analysis', 'Wireshark-style packet workbench with lazy byte inspection', 'Large-capture compact models, worker parsing, and outlier detection'], workflow: 'Open a local capture for offline triage or queue it through the Core web workbench, then inspect flows, packets, findings, and exports.', caveat: 'The current Python web parser validates capture headers while full packet decoding remains in the local browser analyzer.' },
+    details: { tagline: 'Inspect large packet captures, streams, and protocol behavior.', inputs: ['.pcap, .pcapng, and .cap captures', 'Capture sets from dumpcap rotations', 'Normalized process-map observations'], highlights: ['Python web decoding of PCAP/PCAPNG packets with bounded summaries', 'Protocol, host, flow counts, packet previews, and TCP reset findings', 'Local workbench adds lazy byte inspection, extensive protocol decoding, and compact large-capture handling'], workflow: 'Upload a bounded capture through the Core workbench or use the local analyzer for large traces, then inspect packet summaries, flows, findings, and exports.', caveat: 'Core staging limits uploads to 250 MiB and 1,000,000 packets; use the local browser analyzer for larger captures.' },
   },
   {
     id: 'core',

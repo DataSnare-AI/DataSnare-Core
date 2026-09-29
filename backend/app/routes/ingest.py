@@ -17,12 +17,12 @@ SUPPORTED_NATIVE_ARTIFACTS = {
         "converter": "logscope-document-python-job",
     },
     "aiperf": {
-        "artifact_types": {"blg"},
+        "artifact_types": {"blg", "csv", "xml"},
         "normalized_schema": "datasnare-aiperf/events-v1",
         "converter": "perfmon-blg-python-job",
     },
     "aiprocmon": {
-        "artifact_types": {"pml", "csv"},
+        "artifact_types": {"pml", "csv", "xml"},
         "normalized_schema": "datasnare-aiprocmon/events-v1",
         "converter": "procmon-native-python-job",
     },
