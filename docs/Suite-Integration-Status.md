@@ -306,6 +306,10 @@ counts bounded non-empty event records, and returns `datasnare-ailogscope/events
 the first migrated tool with a useful completed parser boundary; JSON/YAML/PDF structured extraction
 remains a follow-up parser slice.
 
+In development-mode staging only, the AILogScope workbench uses the explicit `core-staging-ui` operator
+actor when no authenticated launch context exists. It first checks Core readiness and refuses that
+fallback when the API reports production. Production submissions require a Core-issued actor identity.
+
 Phase 5 now includes typed graph neighborhood queries at
 `GET /api/tenants/{tenant_id}/knowledge/graph/related` and a tenant orchestrator at
 `POST /api/tenants/{tenant_id}/rag/tenant/retrieve`. The orchestrator combines semantic retrieval,

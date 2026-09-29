@@ -15,15 +15,25 @@ export default function AILogScopeWorkbench() {
     setError('');
     try {
       const headers = buildSessionHeaders(context, { 'Content-Type': 'application/json' });
+      if (!context?.account?.actorId) {
+        const readiness = await fetch('/api/health/readiness');
+        const deployment = readiness.ok ? await readiness.json() : null;
+        if (deployment?.environment !== 'development') throw new Error('Sign in through Core before submitting tenant evidence.');
+        headers.set('X-Actor', 'core-staging-ui');
+        headers.set('X-Role', 'operator');
+      }
       const base = `/api/tenants/${encodeURIComponent(tenantId.trim())}/tools/ailogscope/jobs`;
       const created = await fetch(base, { method: 'POST', headers, body: JSON.stringify({ artifact_name: file.name, artifact_type: file.name.split('.').pop() }) });
       if (!created.ok) throw new Error(`Log job returned ${created.status}.`);
       const queued = await created.json();
-      const uploaded = await fetch(`${base}/${queued.job.job_id}/artifact`, { method: 'POST', headers: buildSessionHeaders(context), body: await file.arrayBuffer() });
+      const uploadHeaders = buildSessionHeaders(context);
+      if (headers.has('X-Actor')) uploadHeaders.set('X-Actor', headers.get('X-Actor'));
+      if (headers.has('X-Role')) uploadHeaders.set('X-Role', headers.get('X-Role'));
+      const uploaded = await fetch(`${base}/${queued.job.job_id}/artifact`, { method: 'POST', headers: uploadHeaders, body: await file.arrayBuffer() });
       if (!uploaded.ok) throw new Error(`Log upload returned ${uploaded.status}.`);
       setJob(await uploaded.json());
     } catch (submitError) { setJob(null); setError(submitError.message || 'Could not process log evidence.'); }
   };
 
-  return <section className="tool-workbench" aria-labelledby="ailogscope-title"><p className="eyebrow">AILogScope web migration</p><h2 id="ailogscope-title">Log evidence job</h2><p>Normalize application logs and text notes through the Python ingestion boundary while retaining the local analyzer for offline review.</p><form onSubmit={submit} className="tool-workbench__form"><label>Tenant ID<input value={tenantId} onChange={(event) => setTenantId(event.target.value)} inputMode="numeric" /></label><label>Log or text file<input type="file" accept=".log,.txt,.json,.yaml,.pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label><button className="primary-button" type="submit" disabled={!file || !tenantId.trim()}><Upload size={16} /> Analyze log</button></form>{error && <p className="tool-workbench__error">{error}</p>}{job && <div className="tool-workbench__status"><FileText size={18} /><div><strong>{job.job.artifact_name}</strong><span>{job.job.state} · {job.analysis.events.toLocaleString()} events</span><small>{job.analysis.source_encoding} · {job.analysis.message}</small></div></div>}</section>;
+  return <section className="tool-workbench" aria-labelledby="ailogscope-title"><p className="eyebrow">AILogScope web migration</p><h2 id="ailogscope-title">Log evidence job</h2><p>Normalize application logs and text notes through the Python ingestion boundary while retaining the local analyzer for offline review.</p>{!context?.account?.actorId && <p className="tool-workbench__notice">Staging mode: uploads use the temporary Core staging operator identity. Production requires Core sign-in.</p>}<form onSubmit={submit} className="tool-workbench__form"><label>Tenant ID<input value={tenantId} onChange={(event) => setTenantId(event.target.value)} inputMode="numeric" /></label><label>Log or text file<input type="file" accept=".log,.txt,.json,.yaml,.pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label><button className="primary-button" type="submit" disabled={!file || !tenantId.trim()}><Upload size={16} /> Analyze log</button></form>{error && <p className="tool-workbench__error">{error}</p>}{job && <div className="tool-workbench__status"><FileText size={18} /><div><strong>{job.job.artifact_name}</strong><span>{job.job.state} · {job.analysis.events.toLocaleString()} events</span><small>{job.analysis.source_encoding} · {job.analysis.message}</small></div></div>}</section>;
 }
