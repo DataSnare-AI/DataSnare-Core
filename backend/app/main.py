@@ -10,7 +10,9 @@ from app.repositories.knowledge_items import InMemoryKnowledgeItemRepository
 from app.repositories.agent_manifests import InMemoryAgentManifestRepository
 from app.repositories.postgres_agent_manifests import PostgresAgentManifestRepository
 from app.repositories.retrieval_audit import InMemoryRetrievalAuditRepository
+from app.repositories.postgres_retrieval_audit import PostgresRetrievalAuditRepository
 from app.repositories.knowledge_graph import InMemoryKnowledgeGraphRepository
+from app.repositories.postgres_knowledge_graph import PostgresKnowledgeGraphRepository
 from app.repositories.site_cache import InMemorySiteQueryCache
 from app.services.embeddings import LocalHashEmbeddingProvider
 from app.services.vector_store import InMemoryVectorStore
@@ -49,11 +51,18 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
             )
             pool = owned_pool
             app.state.database_pool = pool
-            app.state.ingest_jobs = PostgresIngestJobRepository(pool)
-            app.state.knowledge_items = PostgresKnowledgeItemRepository(pool)
-            app.state.vector_store = PostgresVectorStore(pool)
+            if ingest_jobs is None:
+                app.state.ingest_jobs = PostgresIngestJobRepository(pool)
+            if knowledge_items is None:
+                app.state.knowledge_items = PostgresKnowledgeItemRepository(pool)
+            if vector_store is None:
+                app.state.vector_store = PostgresVectorStore(pool)
             if agent_manifests is None:
                 app.state.agent_manifests = PostgresAgentManifestRepository(pool)
+            if retrieval_audit is None:
+                app.state.retrieval_audit = PostgresRetrievalAuditRepository(pool)
+            if knowledge_graph is None:
+                app.state.knowledge_graph = PostgresKnowledgeGraphRepository(pool)
         try:
             yield
         finally:
@@ -73,8 +82,16 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
         if database_pool is not None
         else InMemoryAgentManifestRepository()
     )
-    app.state.retrieval_audit = retrieval_audit or InMemoryRetrievalAuditRepository()
-    app.state.knowledge_graph = knowledge_graph or InMemoryKnowledgeGraphRepository()
+    app.state.retrieval_audit = retrieval_audit or (
+        PostgresRetrievalAuditRepository(database_pool)
+        if database_pool is not None
+        else InMemoryRetrievalAuditRepository()
+    )
+    app.state.knowledge_graph = knowledge_graph or (
+        PostgresKnowledgeGraphRepository(database_pool)
+        if database_pool is not None
+        else InMemoryKnowledgeGraphRepository()
+    )
     app.state.site_cache = site_cache or InMemorySiteQueryCache()
     app.state.capture_parser = capture_parser or ScapyCaptureParser()
     app.state.log_parser = log_parser or TextLogParser()

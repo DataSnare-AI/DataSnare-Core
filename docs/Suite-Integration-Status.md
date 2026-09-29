@@ -344,13 +344,13 @@ tool contracts before deployment smoke tests proceed.
 
 The Core app factory accepts injected `database_pool` and `auth_provider` objects, and creates/closes
 an asyncpg pool from Core-only `DATABASE_URL` when configured. A database pool selects Postgres
-repositories for knowledge items, agent manifests, ingest jobs, and vectors; omitting it preserves
-local in-memory mode. `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, and `DB_COMMAND_TIMEOUT_SECONDS` tune
+repositories for knowledge items, agent manifests, ingest jobs, graph edges, retrieval audits, and
+vectors; omitting it preserves local in-memory mode. `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, and `DB_COMMAND_TIMEOUT_SECONDS` tune
 pool behavior.
 
 Persistent ingest-job storage uses `PostgresIngestJobRepository` and the separate
 `backend/migrations/002_ingest_jobs.sql` migration. Its `(tenant_id, job_id)` key stores lifecycle state
 and parser result metadata in JSONB. The existing RAG migration stores manifests, which now use
 `PostgresAgentManifestRepository` under the same tenant-scoped contract. Apply migrations 001 then 002
-before enabling database-backed writes. Graph edges, retrieval audit, and site cache remain in memory;
-uploaded source bytes are not durably stored.
+before enabling database-backed writes. Site-query caching remains in memory; uploaded source bytes
+are not durably stored.
