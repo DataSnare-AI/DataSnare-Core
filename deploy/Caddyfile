@@ -1,8 +1,4 @@
-{
-	auto_https off
-}
-
-http://{$CORE_APP_DOMAIN:localhost} {
+:80 {
 	root * /srv
 	encode gzip zstd
 
@@ -15,9 +11,4 @@ http://{$CORE_APP_DOMAIN:localhost} {
 		try_files {path} /index.html
 		file_server
 	}
-}
-
-http://{$CORE_API_DOMAIN:api.localhost} {
-	encode gzip zstd
-	reverse_proxy core-api:8000
 }

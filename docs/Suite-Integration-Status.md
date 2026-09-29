@@ -306,6 +306,12 @@ counts bounded non-empty event records, and returns `datasnare-ailogscope/events
 the first migrated tool with a useful completed parser boundary; JSON/YAML/PDF structured extraction
 remains a follow-up parser slice.
 
+The AILogScope job result now includes up to 200 normalized event samples with parsed timestamps,
+severity, source filename, and source line, plus full severity totals and the total event count. Staging
+raw uploads are capped at 25 MiB before job processing. This keeps the web preview useful for triage
+without returning an unbounded response; durable result storage remains part of the Postgres/job-worker
+deployment work.
+
 In development-mode staging only, the AILogScope workbench uses the explicit `core-staging-ui` operator
 actor when no authenticated launch context exists. It first checks Core readiness and refuses that
 fallback when the API reports production. Production submissions require a Core-issued actor identity.

@@ -8,6 +8,7 @@ from app.security.authorization import require_permission, resolve_actor
 
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/tools/ailogscope", tags=["AILogScope"])
+MAX_LOG_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 @router.post("/jobs")
@@ -28,7 +29,17 @@ async def upload_log_artifact(tenant_id: int, job_id: str, request: Request, x_a
     record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
     if not record or record.tool_id != "ailogscope":
         raise HTTPException(status_code=404, detail="AILogScope log job not found")
+    content_length = request.headers.get("content-length")
+    try:
+        declared_size = int(content_length) if content_length else None
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Invalid Content-Length header") from error
+    if declared_size is not None and declared_size > MAX_LOG_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="AILogScope staging uploads are limited to 25 MiB")
+    data = await request.body()
+    if len(data) > MAX_LOG_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="AILogScope staging uploads are limited to 25 MiB")
     await request.app.state.ingest_jobs.update(tenant_id, job_id, state="running")
-    analysis = await request.app.state.log_parser.analyze(await request.body(), record.artifact_name)
+    analysis = await request.app.state.log_parser.analyze(data, record.artifact_name)
     completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis.__dict__})
     return {"schema": "datasnare-ailogscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis.__dict__}

@@ -18,6 +18,16 @@ Update `src/App.jsx` when a production deployment URL changes, or move the regis
 
 Partner connection metadata is defined in `src/contracts/partnerIntegrations.js`. It is intentionally provider-neutral at the contract boundary: the backend owns credentials, connection state, capability checks, and external API calls.
 
+Project launch metadata is defined in `src/contracts/projects.js`. The registry records each tool path, browser integration global, normalized export schema, and launch capabilities so Core can hand off tenant/account context without coupling the individual tool release cycles.
+
+Current normalized evidence schemas:
+
+- AILogScope: `datasnare-ailogscope/events-v1`
+- AIPerf: `datasnare-aiperf/events-v1`
+- AIProcMon: `datasnare-aiprocmon/events-v1`
+- AIRootCause: `datasnare-rootcause/investigation-v1`
+- AINetScope: `datasnare-ainetscope/analysis-v1`
+
 ## Local development
 
 ```powershell
