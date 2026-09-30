@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from typing import Any
 
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
 
 
 ROLE_PERMISSIONS = {
@@ -43,11 +45,33 @@ class ActorContext:
         return "*" in permissions or permission in permissions
 
 
-def resolve_actor(
+async def resolve_actor(
     tenant_id: int,
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
+    *,
+    request: Request | None = None,
+    authorization: str | None = None,
 ) -> ActorContext:
+    provider = None
+    if request is not None:
+        provider = getattr(request.app.state, "auth_provider", None)
+    if provider is not None:
+        return await provider.resolve_actor(tenant_id, x_actor, x_role, request=request, authorization=authorization)
+
+    if os.getenv("DATASNARE_ENV", "development").strip().lower() == "production":
+        raise HTTPException(status_code=503, detail="Shared authentication provider is not configured")
+
+    if request is not None and authorization is None:
+        authorization = request.headers.get("authorization") or request.headers.get("Authorization")
+
+    if authorization and not x_actor:
+        token = authorization.strip()
+        if token.lower().startswith("bearer "):
+            token = token[7:].strip()
+        if token:
+            return ActorContext(actor_id=token, tenant_id=tenant_id, role=(x_role or "operator").strip().lower() or "operator", source="authorization-header")
+
     actor = (x_actor or "").strip()
     if not actor:
         raise HTTPException(status_code=401, detail="DataSnare actor authentication is required")

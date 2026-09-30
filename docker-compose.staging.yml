@@ -4,7 +4,11 @@ services:
       context: .
       target: api
     environment:
-      DATASNARE_ENV: development
+      DATASNARE_ENV: ${DATASNARE_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-}
+      DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-1}
+      DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-8}
+      DB_COMMAND_TIMEOUT_SECONDS: ${DB_COMMAND_TIMEOUT_SECONDS:-60}
     expose:
       - "8000"
     networks:

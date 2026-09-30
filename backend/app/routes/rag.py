@@ -26,7 +26,7 @@ async def retrieve_knowledge(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.retrieve")
     retrieval_id = f"retrieval_{uuid4().hex}"
     query_embedding = request.app.state.embedding_provider.embed(body.query)
     manifests = await request.app.state.agent_manifests.list_for_tenant(tenant_id)
@@ -87,7 +87,7 @@ async def list_retrieval_audit(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.audit.view")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.audit.view")
     events = await request.app.state.retrieval_audit.list_for_tenant(tenant_id)
     return {
         "schema": "datasnare-rag/retrieval-audit-list-v1",
@@ -115,7 +115,7 @@ async def retrieve_site_knowledge(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.retrieve")
     if not body.site_id:
         from fastapi import HTTPException
         raise HTTPException(status_code=422, detail="site_id is required for site retrieval")
@@ -162,7 +162,7 @@ async def retrieve_tenant_knowledge(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.retrieve")
     semantic = await retrieve_knowledge(tenant_id, body, request, x_actor=actor.actor_id, x_role=actor.role)
     graph_edges = await request.app.state.knowledge_graph.list_edges(tenant_id)
     relationships = []

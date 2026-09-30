@@ -15,7 +15,7 @@ MAX_LOG_UPLOAD_BYTES = 25 * 1024 * 1024
 
 @router.post("/jobs")
 async def create_log_job(tenant_id: int, body: dict, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.create")
     name = str(body.get("artifact_name", "")).strip()
     artifact_type = str(body.get("artifact_type", "")).strip().lower().lstrip(".")
     if not name or artifact_type not in SUPPORTED_NATIVE_ARTIFACTS["ailogscope"]["artifact_types"]:
@@ -27,7 +27,7 @@ async def create_log_job(tenant_id: int, body: dict, request: Request, x_actor: 
 
 @router.post("/jobs/{job_id}/artifact")
 async def upload_log_artifact(tenant_id: int, job_id: str, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.create")
     record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
     if not record or record.tool_id != "ailogscope":
         raise HTTPException(status_code=404, detail="AILogScope log job not found")

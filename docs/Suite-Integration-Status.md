@@ -8,8 +8,8 @@ The existing `datasnare-aiops.com` environment remains the AIOps test-production
 use the existing Azure PostgreSQL server initially, but a separate database and credential boundary:
 
 - `datasnare_aiops`: existing AIOps database; accessed through authenticated AIOps APIs/events.
-- `datasnare_core`: Core-owned identity context, ingestion jobs, RAG knowledge, pgvector chunks,
-  manifests, graph edges, retrieval audits, and shared tool state.
+- `datasnare_core`: Core-owned tenant/product account model, ingestion jobs, RAG knowledge,
+  pgvector chunks, manifests, graph edges, retrieval audits, and shared tool state.
 
 Core must not query AIOps tables directly. The intended boundary is:
 
@@ -33,19 +33,52 @@ the Core shell, such as `/ainetscope`, `/ailogscope`, `/aiperf`, and `/aiprocmon
 Deployment order:
 
 1. Create the `datasnare_core` database on the existing Azure PostgreSQL server.
-2. Install pgvector and apply `backend/migrations/001_rag_foundation.sql`.
+2. Install pgvector and apply migrations `001_rag_foundation.sql` through `004_core_identity.sql` in order.
 3. Create a least-privilege Core database credential separate from the AIOps credential.
 4. Deploy Core staging at `staging.api.datasnare.com` and `staging.app.datasnare.com`.
-5. Configure `DATASNARE_ENV=production`, Core `DATABASE_URL`, shared auth provider settings, and
+5. Configure `DATASNARE_ENV=production`, Core `DATABASE_URL`, Core-owned identity, and
 	`CORS_ALLOWED_ORIGINS` for the Core hostname.
 6. Confirm `/api/health/readiness` reports Postgres storage, configured authentication, migrations, and
 	all four tool contracts ready.
 7. Run tenant-isolation, project handoff, upload, RAG, citation, graph, and rollback smoke tests.
 8. Promote the same validated build to `api.datasnare.com` and `app.datasnare.com`.
 
-The current code supports this wiring through `create_app(database_pool=..., auth_provider=...)`. Local
-development continues to use in-memory repositories and development headers until the staging services
-are configured.
+The current code supports this wiring through `create_app(database_pool=...)`. Local development
+continues to use in-memory repositories and development headers until staging is configured.
+
+## Shared identity and product entitlements
+
+Core now owns username/password accounts and opaque sessions in `core_users` and
+`core_auth_sessions`. Migration `004_core_identity.sql` follows the tenant/product schema. AIOps
+password hashes are imported unchanged; plaintext passwords are never exported. Accounts with the
+`!invite-pending!` marker do not have usable passwords and must finish the existing invitation/setup
+flow. After import, Core login no longer needs AIOps. AIOps must validate Core-issued bearer sessions
+through Core's profile/introspection API while continuing to enforce its own tenant RBAC.
+
+Migration `003_core_product_accounts.sql` creates Core-owned tenant membership, product catalog,
+priced plans, and tenant-product entitlements while preserving existing AIOps numeric tenant IDs.
+Migration `004_core_identity.sql` adds Core-owned username/password accounts and opaque sessions.
+The Core Licensing section reads product and plan data from Core. The dry-run-first
+`backend/scripts/import_aiops_accounts.py` transfers legacy AIOps users and bcrypt hashes, tenants,
+roles, plan definitions, and assignments. It requires distinct `AIOPS_DATABASE_URL` and
+`CORE_DATABASE_URL`; no data is written without `--apply`. Passwords are never exported as plaintext.
+Accounts without hashes retain an invite-pending marker and must complete password setup. Imported
+membership subjects use `datasnare-core-local` so they can later be linked to OIDC subjects. The dry
+run reports role conflicts and refuses `--apply` when combined AIOps roles cannot be represented by a
+Core role without changing effective permissions.
+
+After account data is imported and reconciled, Core sign-in does not depend on AIOps availability.
+AIOps login/logout proxy to Core when `CORE_AUTH_PROVIDER_URL` is configured, and AIOps validates
+Core-issued bearer sessions through Core's profile API before continuing its own tenant RBAC. Set the
+variable to `https://staging.api.datasnare.com` in AIOps staging and `https://api.datasnare.com` in
+production. Remaining work includes running and reviewing the import, testing the deployed Core/AIOps
+flow, and moving later account administration changes to Core.
+
+Before running the importer, apply `004_core_identity.sql` to `datasnare_core`. From the Core backend
+directory, set `AIOPS_DATABASE_URL` and `CORE_DATABASE_URL` as environment variables, run
+`python scripts/import_aiops_accounts.py`, review the counts/conflicts, then rerun with `--apply` only
+after reconciliation. Configure the AIOps backend with `CORE_AUTH_PROVIDER_URL` set to the Core API
+origin; this is a server-to-server login/session validation call and does not share database credentials.
 
 ## Current contract
 

@@ -39,14 +39,20 @@ export function buildSessionHeaders(context, headers = {}) {
   const next = new Headers(headers);
   if (context?.account?.actorId) next.set('X-Actor', context.account.actorId);
   if (context?.account?.tenantId) next.set('X-Tenant-Id', context.account.tenantId);
+  const token = globalThis.localStorage?.getItem('datasnare:auth-token');
+  if (token) next.set('Authorization', `Bearer ${token}`);
   return next;
 }
 
 export async function buildRequestHeaders(context, headers = {}) {
   const next = buildSessionHeaders(context, headers);
-  if (context?.account?.actorId) return next;
+  if (next.has('Authorization')) return next;
   const response = await fetch('/api/health/readiness');
   const readiness = response.ok ? await response.json() : null;
+  if (readiness?.auth_mode === 'configured-provider') {
+    throw new Error('Sign in through Core before submitting tenant evidence.');
+  }
+  if (context?.account?.actorId) return next;
   if (readiness?.environment !== 'development') {
     throw new Error('Sign in through Core before submitting tenant evidence.');
   }

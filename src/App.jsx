@@ -76,7 +76,17 @@ function KnowledgeSearch() {
     if (!tenantId.trim() || !query.trim()) return;
     setLoading(true); setError('');
     try {
-      const result = await fetch(`/api/tenants/${encodeURIComponent(tenantId.trim())}/rag/retrieve`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Actor': 'core-ui', 'X-Role': 'viewer' }, body: JSON.stringify({ query: query.trim(), top_k: 8 }) });
+      const headers = new Headers({ 'Content-Type': 'application/json' });
+      const token = localStorage.getItem('datasnare:auth-token');
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      else {
+        const readinessResponse = await fetch('/api/health/readiness');
+        const readiness = readinessResponse.ok ? await readinessResponse.json() : null;
+        if (readiness?.environment !== 'development') throw new Error('Sign in through Core before searching tenant knowledge.');
+        headers.set('X-Actor', 'core-staging-ui');
+        headers.set('X-Role', 'viewer');
+      }
+      const result = await fetch(`/api/tenants/${encodeURIComponent(tenantId.trim())}/rag/retrieve`, { method: 'POST', headers, body: JSON.stringify({ query: query.trim(), top_k: 8 }) });
       if (!result.ok) throw new Error(`Knowledge search returned ${result.status}.`);
       setResponse(await result.json());
     } catch (searchError) { setResponse(null); setError(searchError.message || 'Knowledge search failed.'); }
@@ -96,6 +106,64 @@ export default function App() {
   const [sessionOpen, setSessionOpen] = useState(false);
   const [detailsProject, setDetailsProject] = useState(null);
   const [skin, setSkin] = useState(() => normalizeSuiteSkin(localStorage.getItem(SUITE_SKIN_STORAGE_KEY) || DEFAULT_SUITE_SKIN));
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('datasnare:auth-token') || '');
+  const [accountProfile, setAccountProfile] = useState(null);
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+
+  const loadAccountProfile = async (token) => {
+    const response = await fetch('/api/auth/profile', { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error('Could not verify the shared identity session.');
+    setAccountProfile(await response.json());
+  };
+
+  useEffect(() => {
+    if (!authToken) return;
+    loadAccountProfile(authToken).catch(() => {
+      localStorage.removeItem('datasnare:auth-token');
+      setAuthToken('');
+      setAccountProfile(null);
+    });
+  }, []);
+
+  const signIn = async (event) => {
+    event.preventDefault();
+    setLoginBusy(true);
+    setLoginError('');
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'Sign in failed.');
+      localStorage.setItem('datasnare:auth-token', payload.token);
+      localStorage.setItem('actor', payload.actor);
+      localStorage.setItem('username', payload.username);
+      setAuthToken(payload.token);
+      await loadAccountProfile(payload.token);
+      setLoginPassword('');
+    } catch (error) {
+      setLoginError(error.message || 'Sign in failed.');
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const signOut = async () => {
+    if (authToken) {
+      await fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${authToken}` } }).catch(() => {});
+    }
+    localStorage.removeItem('datasnare:auth-token');
+    localStorage.removeItem('actor');
+    localStorage.removeItem('username');
+    setAuthToken('');
+    setAccountProfile(null);
+    setSessionOpen(false);
+  };
 
   const selectSkin = (nextSkin) => {
     const normalized = normalizeSuiteSkin(nextSkin);
@@ -142,7 +210,7 @@ export default function App() {
           <a href="#access" onClick={() => setMenuOpen(false)}>Access</a>
           <a href="#billing" onClick={() => setMenuOpen(false)}>Licensing</a>
           <button className="session-button" type="button" onClick={() => setSessionOpen(true)}>
-            <CircleUserRound size={17} /> Sign in
+            <CircleUserRound size={17} /> {accountProfile?.display_name || accountProfile?.username || 'Sign in'}
           </button>
         </nav>
         <div className="skin-picker" aria-label="Suite skin">
@@ -207,13 +275,14 @@ export default function App() {
         </section>
 
         <section className="license-section" id="billing">
-          <p className="eyebrow">Licensing</p><h2>Buy the capability you need.</h2><p>Licenses remain independent per project, with suite-level visibility here. Billing and entitlements will attach to an organization account when the Core service is connected.</p>
+          <p className="eyebrow">Product account</p><h2>Purchased products, in one place.</h2>
+          {accountProfile?.tenant_subscriptions?.length ? <div className="license-list">{accountProfile.tenant_subscriptions.map((subscription) => <article className="license-row" key={`${subscription.tenant_id}-${subscription.product_key}`}><div><strong>{subscription.tenant_name}</strong><span>{subscription.product_name || subscription.product_key} · {subscription.plan_name || subscription.plan_key || subscription.plan} · {subscription.account_status}</span></div><div><strong>{subscription.price_monthly != null ? `${subscription.currency || 'USD'} ${subscription.price_monthly}/mo` : 'Custom pricing'}</strong><span>{subscription.limits?.users_allocated ?? 0} users · {subscription.limits?.systems_allocated ?? 0} systems</span></div></article>)}</div> : <p>{authToken ? 'No purchased products are assigned to this account yet.' : 'Sign in to view your organization’s current product plans. Core is the planned home for suite identity, product entitlements, and billing; AIOps continues to operate its service during the transition.'}</p>}
         </section>
       </main>
 
       <footer className="footer"><span>DataSnare / app.datasnare.com</span><span>Core shell v0.1</span></footer>
 
-      {sessionOpen && <div className="modal-backdrop" role="presentation" onClick={() => setSessionOpen(false)}><section className="session-modal" role="dialog" aria-modal="true" aria-labelledby="session-title" onClick={(event) => event.stopPropagation()}><button className="modal-close" type="button" onClick={() => setSessionOpen(false)} aria-label="Close"><X size={18} /></button><p className="eyebrow">Shared identity</p><h2 id="session-title">Account connection is next.</h2><p>The shell is ready for the shared login contract. Connect the identity provider and organization licensing service here before production launch.</p><button className="primary-button" type="button" onClick={() => setSessionOpen(false)}>Close <Check size={17} /></button></section></div>}
+      {sessionOpen && <div className="modal-backdrop" role="presentation" onClick={() => setSessionOpen(false)}><section className="session-modal" role="dialog" aria-modal="true" aria-labelledby="session-title" onClick={(event) => event.stopPropagation()}><button className="modal-close" type="button" onClick={() => setSessionOpen(false)} aria-label="Close"><X size={18} /></button><p className="eyebrow">Shared identity</p><h2 id="session-title">{accountProfile ? 'Your DataSnare account.' : 'Sign in to DataSnare.'}</h2>{accountProfile ? <><p>Signed in as {accountProfile.display_name || accountProfile.username}.</p><button className="primary-button" type="button" onClick={signOut}>Sign out <KeyRound size={17} /></button></> : <form className="session-form" onSubmit={signIn}><label>Username<input value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} autoComplete="username" required /></label><label>Password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete="current-password" required /></label>{loginError && <p className="session-form__error" role="alert">{loginError}</p>}<button className="primary-button" type="submit" disabled={loginBusy}>{loginBusy ? 'Signing in…' : 'Sign in'} <KeyRound size={17} /></button></form>}</section></div>}
     </div>
   );
 }

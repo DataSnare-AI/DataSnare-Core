@@ -94,8 +94,12 @@ curl -fsS https://staging.api.datasnare.com/api/health/readiness
 Do not deploy this scaffold as production yet. The API creates and closes an asyncpg pool from Core-only `DATABASE_URL` when configured, and selects PostgreSQL adapters for ingest jobs, knowledge items, agent manifests, graph edges,
 retrieval audits, and vectors. The pool can be tuned with `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, and `DB_COMMAND_TIMEOUT_SECONDS`. Production readiness must remain `not_ready` until:
 
-- `pgvector` is installed and `backend/migrations/001_rag_foundation.sql` followed by `backend/migrations/002_ingest_jobs.sql` is applied to `datasnare_core`.
+- `pgvector` is installed and `backend/migrations/001_rag_foundation.sql` through `004_core_identity.sql` are applied to `datasnare_core`.
 - A real authentication provider is connected and tenant claims are enforced by Core authorization.
+- AIOps account data has been imported and reconciled into Core, including password hashes, memberships,
+    and product assignments. Plaintext passwords must never be exported or logged.
+- AIOps validates Core-issued sessions through Core's auth profile/introspection APIs; Core must not
+    use AIOps as its login dependency.
 - The in-memory site-query cache is assigned deliberate retention semantics or replaced if shared persistence is required.
 - Upload artifacts have tenant-scoped durable storage, size limits, retention policy, and audit logging; current job persistence stores metadata/results, not source bytes.
 - TLS ingress, host routing, CORS policy for any cross-origin API usage, secrets, health probes, backups, and rollback are configured.

@@ -18,7 +18,7 @@ async def add_edge(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.graph.manage")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.graph.manage")
     saved = edge.model_copy(update={"tenant_id": tenant_id, "metadata": {**edge.metadata, "created_by": actor.actor_id}})
     return await request.app.state.knowledge_graph.add_edge(saved)
 
@@ -30,7 +30,7 @@ async def list_edges(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.retrieve")
     return await request.app.state.knowledge_graph.list_edges(tenant_id)
 
 
@@ -46,7 +46,7 @@ async def find_path(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.retrieve")
     path = await request.app.state.knowledge_graph.find_path(tenant_id, start_type, start_id, end_type, end_id, max_hops)
     return {
         "schema": "datasnare-knowledge/path-v1",
@@ -68,7 +68,7 @@ async def related(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.retrieve")
     edges = await request.app.state.knowledge_graph.list_edges(tenant_id)
     selected = related_edges(edges, entity_type=entity_type, entity_id=entity_id, predicate=predicate, max_hops=max_hops)
     return {"schema": "datasnare-knowledge/related-v1", "tenant_id": tenant_id, "entity": {"type": entity_type, "id": entity_id}, "edges": [edge.model_dump(by_alias=True) for edge in selected]}

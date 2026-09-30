@@ -31,6 +31,7 @@ def test_database_pool_selects_postgres_knowledge_services():
     assert isinstance(app.state.retrieval_audit, PostgresRetrievalAuditRepository)
     assert app.state.database_pool is database_pool
     assert app.state.auth_provider is not None
+    assert app.state.product_accounts.pool is database_pool
 
 
 def test_database_url_creates_and_closes_pool(monkeypatch: pytest.MonkeyPatch):
@@ -65,3 +66,63 @@ def test_database_url_creates_and_closes_pool(monkeypatch: pytest.MonkeyPatch):
         assert isinstance(app.state.knowledge_graph, PostgresKnowledgeGraphRepository)
         assert isinstance(app.state.retrieval_audit, PostgresRetrievalAuditRepository)
     assert pool.closed
+
+
+def test_create_app_does_not_depend_on_aiops_auth_url(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AUTH_PROVIDER_URL", "https://auth.datasnare.example")
+
+    app = create_app()
+
+    assert app.state.auth_provider is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_actor_uses_configured_auth_provider(monkeypatch: pytest.MonkeyPatch):
+    class FakeProvider:
+        async def resolve_actor(self, tenant_id: int, x_actor: str | None = None, x_role: str | None = None, *, request=None, authorization: str | None = None):
+            assert tenant_id == 7
+            assert authorization == "Bearer aiops-token"
+            return type("Actor", (), {"actor_id": "aiops-user", "tenant_id": tenant_id, "role": "tenant_admin", "source": "single-auth-fabric"})()
+
+    app = create_app(auth_provider=FakeProvider())
+    actor = await main_module.resolve_actor(7, None, None, request=type("Req", (), {"app": app, "headers": {"authorization": "Bearer aiops-token"}})(), authorization="Bearer aiops-token")
+
+    assert actor.actor_id == "aiops-user"
+    assert actor.role == "tenant_admin"
+
+
+def test_core_auth_routes_proxy_login_and_profile():
+    class FakeProvider:
+        async def login(self, username: str, password: str):
+            assert (username, password) == ("alice", "secret")
+            return {"actor": "alice", "token": "opaque-session", "username": "alice"}
+
+        async def profile(self, authorization: str):
+            assert authorization == "Bearer opaque-session"
+            return {"username": "alice", "tenant_subscriptions": [{"plan_key": "growth"}]}
+
+        async def logout(self, authorization: str):
+            assert authorization == "Bearer opaque-session"
+            return {"status": "logged_out"}
+
+    client = TestClient(create_app(auth_provider=FakeProvider()))
+    login = client.post("/api/auth/login", json={"username": "alice", "password": "secret"})
+    profile = client.get("/api/auth/profile", headers={"Authorization": "Bearer opaque-session"})
+    logout = client.post("/api/auth/logout", headers={"Authorization": "Bearer opaque-session"})
+
+    assert login.status_code == 200
+    assert login.json()["token"] == "opaque-session"
+    assert profile.json()["account_source"] == "core-product-catalog"
+    assert profile.json()["tenant_subscriptions"] == []
+    assert logout.json()["status"] == "logged_out"
+
+
+def test_production_does_not_accept_legacy_actor_headers(monkeypatch: pytest.MonkeyPatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("DATASNARE_ENV", "production")
+    with pytest.raises(HTTPException) as error:
+        import asyncio
+        asyncio.run(main_module.resolve_actor(7, "spoofed", "platform_admin"))
+
+    assert error.value.status_code == 503

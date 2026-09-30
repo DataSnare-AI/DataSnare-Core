@@ -91,7 +91,7 @@ async def create_ingest_job(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor_context = require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    actor_context = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.create")
     support = SUPPORTED_NATIVE_ARTIFACTS.get(body.tool_id)
     conversion = _native_conversion(body.tool_id, body.artifact_type)
     record = IngestJobRecord(
@@ -109,14 +109,14 @@ async def create_ingest_job(
 
 @router.get("")
 async def list_ingest_jobs(tenant_id: int, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.view")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.view")
     records = await request.app.state.ingest_jobs.list_for_tenant(tenant_id)
     return {"schema": "datasnare-ingest/job-list-v1", "tenant_id": tenant_id, "jobs": [_job_payload(record) for record in records]}
 
 
 @router.get("/{job_id}")
 async def get_ingest_job(tenant_id: int, job_id: str, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.view")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.view")
     record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
     if not record:
         raise HTTPException(status_code=404, detail="Ingest job not found")

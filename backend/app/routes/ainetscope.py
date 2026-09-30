@@ -37,7 +37,7 @@ async def create_capture_job(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.create")
     support = SUPPORTED_NATIVE_ARTIFACTS["ainetscope"]
     if body.artifact_type not in support["artifact_types"]:
         raise HTTPException(status_code=400, detail="AINetScope accepts pcap, pcapng, or cap artifacts")
@@ -70,7 +70,7 @@ async def get_capture_job(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.view")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.view")
     record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
     if not record or record.tool_id != "ainetscope":
         raise HTTPException(status_code=404, detail="AINetScope capture job not found")
@@ -85,7 +85,7 @@ async def upload_capture_artifact(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.create")
     record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
     if not record or record.tool_id != "ainetscope":
         raise HTTPException(status_code=404, detail="AINetScope capture job not found")

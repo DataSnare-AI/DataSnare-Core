@@ -14,7 +14,7 @@ SUPPORTED_TOOLS = {"aiperf", "aiprocmon"}
 
 @router.post("/{tool_id}/jobs")
 async def create_tool_job(tenant_id: int, tool_id: str, body: dict, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.create")
     if tool_id not in SUPPORTED_TOOLS:
         raise HTTPException(status_code=404, detail="Tool job route not found")
     artifact_name = str(body.get("artifact_name", "")).strip()
@@ -33,7 +33,7 @@ async def create_tool_job(tenant_id: int, tool_id: str, body: dict, request: Req
 
 @router.get("/{tool_id}/jobs/{job_id}")
 async def get_tool_job(tenant_id: int, tool_id: str, job_id: str, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.view")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.view")
     if tool_id not in SUPPORTED_TOOLS:
         raise HTTPException(status_code=404, detail="Tool job route not found")
     record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
@@ -44,7 +44,7 @@ async def get_tool_job(tenant_id: int, tool_id: str, job_id: str, request: Reque
 
 @router.post("/{tool_id}/jobs/{job_id}/artifact")
 async def upload_tool_artifact(tenant_id: int, tool_id: str, job_id: str, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "ingest.jobs.create")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.create")
     if tool_id not in SUPPORTED_TOOLS:
         raise HTTPException(status_code=404, detail="Tool job route not found")
     record = await request.app.state.ingest_jobs.get(tenant_id, job_id)

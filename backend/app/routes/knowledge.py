@@ -38,7 +38,7 @@ async def ingest_document(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.ingest")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.ingest")
     item = KnowledgeItem(
         tenant_id=tenant_id,
         item_id=f"knowledge_{uuid4().hex}",
@@ -90,7 +90,7 @@ async def ingest_evidence(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.ingest")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.ingest")
     try:
         item_type = body.normalized_item_type()
     except ValueError as error:
@@ -107,7 +107,7 @@ async def list_documents(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.retrieve")
     return await request.app.state.knowledge_items.list_for_tenant(tenant_id)
 
 
@@ -118,7 +118,7 @@ async def knowledge_catalog(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.retrieve")
     items = await request.app.state.knowledge_items.list_for_tenant(tenant_id)
     by_type: dict[str, int] = {}
     by_classification: dict[str, int] = {}

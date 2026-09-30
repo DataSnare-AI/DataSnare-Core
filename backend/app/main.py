@@ -23,6 +23,9 @@ from app.services.aiprocmon_parser import ProcMonParser
 from app.repositories.postgres_knowledge_items import PostgresKnowledgeItemRepository
 from app.services.postgres_vector_store import PostgresVectorStore
 from app.repositories.partner_connections import InMemoryPartnerConnectionRepository
+from app.repositories.product_accounts import InMemoryProductAccountRepository, PostgresProductAccountRepository
+from app.security.core_identity import CoreIdentityProvider
+from app.security.authorization import resolve_actor
 from app.routes.ingest import router as ingest_router
 from app.routes.ninjaone import router as ninjaone_router
 from app.routes.rag import router as rag_router
@@ -34,6 +37,7 @@ from app.routes.ainetscope import router as ainetscope_router
 from app.routes.ailogscope import router as ailogscope_router
 from app.routes.tool_jobs import router as tool_jobs_router
 from app.routes.health import router as health_router
+from app.routes.auth import router as auth_router
 
 
 def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=None, embedding_provider=None, vector_store=None, agent_manifests=None, retrieval_audit=None, knowledge_graph=None, site_cache=None, capture_parser=None, log_parser=None, aiperf_parser=None, aiprocmon_parser=None, database_pool=None, auth_provider=None) -> FastAPI:
@@ -51,6 +55,8 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
             )
             pool = owned_pool
             app.state.database_pool = pool
+            if auth_provider is None:
+                app.state.auth_provider = CoreIdentityProvider(pool)
             if ingest_jobs is None:
                 app.state.ingest_jobs = PostgresIngestJobRepository(pool)
             if knowledge_items is None:
@@ -63,6 +69,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
                 app.state.retrieval_audit = PostgresRetrievalAuditRepository(pool)
             if knowledge_graph is None:
                 app.state.knowledge_graph = PostgresKnowledgeGraphRepository(pool)
+            app.state.product_accounts = PostgresProductAccountRepository(pool)
         try:
             yield
         finally:
@@ -71,7 +78,8 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
 
     app = FastAPI(title="DataSnare-Core API", lifespan=lifespan)
     app.state.database_pool = database_pool
-    app.state.auth_provider = auth_provider
+    app.state.auth_provider = auth_provider or (CoreIdentityProvider(database_pool) if database_pool is not None else None)
+    app.state.product_accounts = PostgresProductAccountRepository(database_pool) if database_pool is not None else InMemoryProductAccountRepository()
     app.state.partner_connections = partner_connections or InMemoryPartnerConnectionRepository()
     app.state.ingest_jobs = ingest_jobs or (PostgresIngestJobRepository(database_pool) if database_pool is not None else InMemoryIngestJobRepository())
     app.state.knowledge_items = knowledge_items or (PostgresKnowledgeItemRepository(database_pool) if database_pool is not None else InMemoryKnowledgeItemRepository())
@@ -108,6 +116,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.include_router(ailogscope_router)
     app.include_router(tool_jobs_router)
     app.include_router(health_router)
+    app.include_router(auth_router)
     return app
 
 

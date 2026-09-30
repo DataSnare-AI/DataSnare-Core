@@ -12,12 +12,28 @@ from app.services.migration_catalog import available_migrations
 def test_rag_foundation_migration_is_available():
     migrations = available_migrations()
 
-    assert [migration.name for migration in migrations] == ["001_rag_foundation.sql", "002_ingest_jobs.sql"]
+    assert [migration.name for migration in migrations] == [
+        "001_rag_foundation.sql",
+        "002_ingest_jobs.sql",
+        "003_core_product_accounts.sql",
+        "004_core_identity.sql",
+    ]
     rag_sql = migrations[0].read_text(encoding="utf-8")
     jobs_sql = migrations[1].read_text(encoding="utf-8")
+    accounts_sql = migrations[2].read_text(encoding="utf-8")
+    identity_sql = migrations[3].read_text(encoding="utf-8")
     assert "knowledge_items" in rag_sql
     assert "knowledge_chunks" in rag_sql
     assert "retrieval_audit_events" in rag_sql
     assert "CREATE EXTENSION IF NOT EXISTS vector" in rag_sql
     assert "CREATE TABLE IF NOT EXISTS ingest_jobs" in jobs_sql
     assert "tenant_id, job_id" in jobs_sql
+    assert "CREATE TABLE IF NOT EXISTS core_tenants" in accounts_sql
+    assert "CREATE TABLE IF NOT EXISTS core_tenant_memberships" in accounts_sql
+    assert "CREATE TABLE IF NOT EXISTS core_products" in accounts_sql
+    assert "CREATE TABLE IF NOT EXISTS core_product_plans" in accounts_sql
+    assert "CREATE TABLE IF NOT EXISTS core_tenant_product_entitlements" in accounts_sql
+    assert "('aiops', 'DataSnare AIOps'" in accounts_sql
+    assert "('airca', 'DataSnare AIRootCause'" in accounts_sql
+    assert "CREATE TABLE IF NOT EXISTS core_users" in identity_sql
+    assert "CREATE TABLE IF NOT EXISTS core_auth_sessions" in identity_sql

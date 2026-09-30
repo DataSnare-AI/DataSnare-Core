@@ -18,7 +18,7 @@ async def upsert_agent_manifest(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    actor = require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.manifest.manage")
+    actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.manifest.manage")
     manifest = AgentManifest(
         tenant_id=tenant_id,
         agent_id=agent_id,
@@ -41,5 +41,5 @@ async def list_agent_manifests(
     x_actor: str | None = Header(default=None),
     x_role: str | None = Header(default=None),
 ):
-    require_permission(resolve_actor(tenant_id, x_actor, x_role), "rag.retrieve")
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "rag.retrieve")
     return await request.app.state.agent_manifests.list_for_tenant(tenant_id)
