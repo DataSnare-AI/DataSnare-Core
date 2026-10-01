@@ -8,7 +8,7 @@ BACKEND_DIR = pathlib.Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.repositories.product_accounts import InMemoryProductAccountRepository
+from app.repositories.product_accounts import InMemoryProductAccountRepository, PostgresProductAccountRepository
 from app.routes.auth import router
 
 
@@ -74,3 +74,31 @@ def test_account_profile_uses_core_product_entitlements():
             "limits": {"users_allocated": 50, "systems_allocated": 250},
         }
     ]
+
+
+def test_postgres_product_account_repository_decodes_asyncpg_jsonb_strings():
+    class FakePool:
+        async def fetch(self, _query, *_args):
+            return [{
+                "tenant_id": 19,
+                "tenant_name": "Northwind",
+                "role_key": "tenant_admin",
+                "tenant_status": "active",
+                "product_key": "aiops",
+                "product_name": "DataSnare AIOps",
+                "plan_key": "growth",
+                "plan_name": "Growth",
+                "price_monthly": "399.00",
+                "currency": "USD",
+                "entitlements": '{"max_users":50,"max_systems":250}',
+                "entitlement_status": "active",
+                "effective_start_date": None,
+                "effective_end_date": None,
+                "limits_override": '{}',
+            }]
+
+    import asyncio
+    rows = asyncio.run(PostgresProductAccountRepository(FakePool()).list_for_actor("alice"))
+
+    assert rows[0]["entitlements"] == {"max_users": 50, "max_systems": 250}
+    assert rows[0]["limits_override"] == {}

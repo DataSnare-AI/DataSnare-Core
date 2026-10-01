@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Protocol
 
 
@@ -53,4 +54,18 @@ class PostgresProductAccountRepository:
             """,
             actor_id,
         )
-        return [dict(row) for row in rows]
+        records = []
+        for row in rows:
+            record = dict(row)
+            for field in ("entitlements", "limits_override"):
+                value = record.get(field)
+                if isinstance(value, str):
+                    try:
+                        decoded = json.loads(value)
+                        record[field] = decoded if isinstance(decoded, dict) else {}
+                    except json.JSONDecodeError:
+                        record[field] = {}
+                elif value is None:
+                    record[field] = {}
+            records.append(record)
+        return records
