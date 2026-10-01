@@ -124,7 +124,16 @@ export default function App() {
 
   const loadAccountProfile = async (token) => {
     const response = await fetch('/api/auth/profile', { headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok) throw new Error('Could not verify the shared identity session.');
+    if (!response.ok) {
+      let detail = `Could not verify the shared identity session (${response.status}).`;
+      try {
+        const payload = await response.json();
+        if (payload?.detail) detail = `${detail} ${payload.detail}`;
+      } catch (_) {
+        // Keep the HTTP status when the API response is not JSON.
+      }
+      throw new Error(detail);
+    }
     setAccountProfile(await response.json());
   };
 
