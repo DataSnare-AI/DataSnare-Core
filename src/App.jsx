@@ -6,6 +6,7 @@ import { DEFAULT_SUITE_SKIN, normalizeSuiteSkin, SUITE_SKINS, SUITE_SKIN_STORAGE
 import AINetScopeWorkbench from './tools/AINetScopeWorkbench';
 import AILogScopeWorkbench from './tools/AILogScopeWorkbench';
 import NativeToolWorkbench from './tools/NativeToolWorkbench';
+import AdminConsole from './admin/AdminConsole';
 
 const partnerIntegrations = [
   {
@@ -209,6 +210,7 @@ export default function App() {
           <a href="#knowledge" onClick={() => setMenuOpen(false)}>Knowledge</a>
           <a href="#access" onClick={() => setMenuOpen(false)}>Access</a>
           <a href="#billing" onClick={() => setMenuOpen(false)}>Licensing</a>
+          {accountProfile?.role === 'platform_admin' && <a href="#admin" onClick={() => setMenuOpen(false)}>Admin</a>}
           <button className="session-button" type="button" onClick={() => setSessionOpen(true)}>
             <CircleUserRound size={17} /> {accountProfile?.display_name || accountProfile?.username || 'Sign in'}
           </button>
@@ -249,6 +251,7 @@ export default function App() {
         </section></>}
 
         <SuiteStatus />
+        {accountProfile?.role === 'platform_admin' && authToken && <AdminConsole token={authToken} />}
         <KnowledgeSearch />
         <div id="tool-ainetscope"><AINetScopeWorkbench /></div>
         <div id="tool-ailogscope"><AILogScopeWorkbench /></div>

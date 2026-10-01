@@ -39,6 +39,7 @@ from app.routes.tool_jobs import router as tool_jobs_router
 from app.routes.health import router as health_router
 from app.routes.auth import router as auth_router
 from app.routes.admin_users import router as admin_users_router
+from app.routes.admin_tenants import router as admin_tenants_router
 
 
 def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=None, embedding_provider=None, vector_store=None, agent_manifests=None, retrieval_audit=None, knowledge_graph=None, site_cache=None, capture_parser=None, log_parser=None, aiperf_parser=None, aiprocmon_parser=None, database_pool=None, auth_provider=None) -> FastAPI:
@@ -119,6 +120,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(admin_users_router)
+    app.include_router(admin_tenants_router)
     return app
 
 
