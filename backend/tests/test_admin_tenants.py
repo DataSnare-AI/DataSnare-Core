@@ -60,6 +60,23 @@ def test_admin_serializer_decodes_jsonb_limit_fields():
     assert payload["limits_override"] == {"max_systems": 20}
 
 
+def test_product_display_name_can_be_edited_in_core_catalog():
+    pool = FakeTenantPool(row={
+        "product_key": "ainetscope", "display_name": "AI NetScope", "description": "Network analysis", "is_active": True,
+    })
+    client = build_client(pool)
+
+    response = client.patch(
+        "/api/admin/catalog/ainetscope",
+        headers=AUTH,
+        json={"display_name": "AI NetScope", "description": "Network analysis"},
+    )
+
+    assert response.status_code == 200
+    args = next(args for query, args in pool.calls if "UPDATE core_products" in query)
+    assert args[:3] == ("ainetscope", "AI NetScope", "Network analysis")
+
+
 def test_tenant_administration_requires_platform_admin():
     client = build_client(FakeTenantPool(), role="tenant_admin")
 

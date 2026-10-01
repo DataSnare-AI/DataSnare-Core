@@ -77,6 +77,12 @@ class PlanUpsertRequest(BaseModel):
     is_active: bool = True
 
 
+class ProductUpdateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1024)
+    is_active: bool = True
+
+
 def _validate_role(role: str) -> str:
     normalized = role.strip().lower()
     if normalized not in ASSIGNABLE_ROLES:
@@ -110,10 +116,12 @@ async def list_tenants(request: Request):
                e.product_key, e.plan_key, e.status AS entitlement_status,
                e.effective_start_date, e.effective_end_date, e.limits_override,
                pl.entitlements AS plan_entitlements,
+               p.display_name AS product_name, pl.display_name AS plan_name,
                (SELECT count(*) FROM core_tenant_memberships m
                  WHERE m.tenant_id = t.tenant_id AND m.status = 'active') AS member_count
         FROM core_tenants t
         LEFT JOIN core_tenant_product_entitlements e ON e.tenant_id = t.tenant_id
+        LEFT JOIN core_products p ON p.product_key = e.product_key
         LEFT JOIN core_product_plans pl ON pl.product_key = e.product_key AND pl.plan_key = e.plan_key
         ORDER BY t.tenant_id, e.product_key
         """
@@ -209,7 +217,8 @@ async def list_catalog(request: Request):
     await _require_platform_admin(request)
     rows = await request.app.state.database_pool.fetch(
         """
-        SELECT p.product_key, p.display_name AS product_name, p.is_active AS product_active,
+         SELECT p.product_key, p.display_name AS product_name, p.description AS product_description,
+             p.is_active AS product_active,
              pl.plan_key, pl.display_name AS plan_name, pl.description AS plan_description,
              pl.price_monthly, pl.currency,
                pl.entitlements, pl.is_active AS plan_active
@@ -219,6 +228,23 @@ async def list_catalog(request: Request):
         """
     )
     return {"schema": "datasnare-core/catalog-v1", "entries": [_serialize(row) for row in rows]}
+
+
+@router.patch("/catalog/{product_key}")
+async def update_product(product_key: str, body: ProductUpdateRequest, request: Request):
+    await _require_platform_admin(request)
+    row = await request.app.state.database_pool.fetchrow(
+        """
+        UPDATE core_products
+        SET display_name = $2, description = $3, is_active = $4, updated_at = NOW()
+        WHERE product_key = $1
+        RETURNING product_key, display_name, description, is_active, updated_at
+        """,
+        product_key, body.display_name.strip(), body.description, body.is_active,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return _serialize(row)
 
 
 @router.put("/catalog/{product_key}/plans/{plan_key}")

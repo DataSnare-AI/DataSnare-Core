@@ -187,7 +187,18 @@ function TenantsPanel({ token, onError, onNotice }) {
     } catch (error) { onError(error.message); }
   };
 
-  const uniqueTenants = [...new Map(tenants.map((row) => [row.tenant_id, row])).values()];
+  const groupedTenants = [...tenants.reduce((groups, row) => {
+    const tenant = groups.get(row.tenant_id) || { ...row, products: [] };
+    if (row.product_key) tenant.products.push({
+      product_key: row.product_key,
+      product_name: row.product_name || row.product_key,
+      plan_key: row.plan_key,
+      plan_name: row.plan_name || row.plan_key,
+      entitlement_status: row.entitlement_status,
+    });
+    groups.set(row.tenant_id, tenant);
+    return groups;
+  }, new Map()).values()];
 
   return (
     <div className="admin-panel">
@@ -195,17 +206,16 @@ function TenantsPanel({ token, onError, onNotice }) {
       <div className="admin-toolbar"><span>Organizations registered with Core</span><button className="primary-button" type="button" onClick={() => setOnboardOpen(true)}><Building2 size={15} /> Onboard tenant</button></div>
       {loading ? <p className="admin-empty">Loading tenants…</p> : (
         <table className="admin-table">
-          <thead><tr><th>Tenant</th><th>Product</th><th>Plan</th><th>Members</th></tr></thead>
+          <thead><tr><th>Tenant</th><th>Products</th><th>Members</th></tr></thead>
           <tbody>
-            {tenants.map((row) => (
-              <tr key={`${row.tenant_id}-${row.product_key || 'none'}`}>
+            {groupedTenants.map((row) => (
+              <tr key={row.tenant_id}>
                 <td><strong>{row.display_name}</strong><small>#{row.tenant_id}</small><span className={`admin-pill ${row.status === 'active' ? 'admin-pill--good' : 'admin-pill--bad'}`}>{row.status}</span></td>
-                <td>{row.product_key ? <PlanTag planKey={row.product_key}>{row.product_key}</PlanTag> : <span className="admin-empty">—</span>}</td>
-                <td>{row.plan_key ? <PlanTag planKey={row.plan_key}>{row.plan_key}</PlanTag> : <span className="admin-pill admin-pill--warn">no plan</span>}</td>
+                <td>{row.products.length ? <div className="tenant-product-tags">{row.products.map((product) => <span className="tenant-product-tag" key={`${product.product_key}-${product.plan_key}`}><PlanTag planKey={product.product_key}>{product.product_name}</PlanTag><PlanTag planKey={product.plan_key}>{product.plan_name}</PlanTag></span>)}</div> : <span className="admin-pill admin-pill--warn">no products</span>}</td>
                 <td>{row.member_count}</td>
               </tr>
             ))}
-            {!tenants.length && <tr><td colSpan={4} className="admin-empty">No tenants yet.</td></tr>}
+            {!groupedTenants.length && <tr><td colSpan={3} className="admin-empty">No tenants yet.</td></tr>}
           </tbody>
         </table>
       )}
@@ -250,6 +260,9 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [planDraft, setPlanDraft] = useState({ product_key: '', plan_key: '', display_name: '', description: '', price_monthly: '', max_users: '', max_systems: '', is_active: true });
+  const [productDialogOpen, setProductDialogOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [productDraft, setProductDraft] = useState({ display_name: '', description: '', is_active: true });
   const [assignment, setAssignment] = useState(null);
   const [assignmentDraft, setAssignmentDraft] = useState({ plan_key: '', status: 'active', max_users: '', max_systems: '', effective_start_date: '', effective_end_date: '' });
 
@@ -263,7 +276,7 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
       if (!tenantResponse.ok) throw new Error(await readError(tenantResponse, 'Could not load tenants.'));
       if (!catalogResponse.ok) throw new Error(await readError(catalogResponse, 'Could not load the product catalog.'));
       setTenants((await tenantResponse.json()).tenants || []);
-      setCatalog(((await catalogResponse.json()).entries || []).filter((entry) => entry.plan_key));
+      setCatalog((await catalogResponse.json()).entries || []);
     } catch (error) {
       onError(error.message);
     } finally {
@@ -291,6 +304,11 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
 
   const uniqueTenants = [...new Map(tenants.map((row) => [row.tenant_id, row])).values()];
   const products = [...new Map(catalog.map((entry) => [entry.product_key, entry])).values()];
+  const plans = catalog.filter((entry) => entry.plan_key);
+  const productGroups = products.map((product) => ({
+    ...product,
+    plans: plans.filter((plan) => plan.product_key === product.product_key),
+  }));
 
   const savePlan = async (event) => {
     event.preventDefault();
@@ -339,6 +357,27 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
     setPlanDialogOpen(true);
   };
 
+  const openEditProduct = (product) => {
+    setEditingProduct(product);
+    setProductDraft({ display_name: product.product_name || '', description: product.product_description || '', is_active: product.product_active !== false });
+    setProductDialogOpen(true);
+  };
+
+  const saveProduct = async (event) => {
+    event.preventDefault();
+    if (!editingProduct || !productDraft.display_name.trim()) { onError('Product display name is required.'); return; }
+    try {
+      const response = await authFetch(token, `/api/admin/catalog/${encodeURIComponent(editingProduct.product_key)}`, {
+        method: 'PATCH', body: JSON.stringify({ ...productDraft, display_name: productDraft.display_name.trim(), description: productDraft.description || null }),
+      });
+      if (!response.ok) throw new Error(await readError(response, 'Could not update the product.'));
+      onNotice(`Updated ${productDraft.display_name}.`);
+      setProductDialogOpen(false);
+      setEditingProduct(null);
+      load();
+    } catch (error) { onError(error.message); }
+  };
+
   const openAssignment = (tenant, productKey = '') => {
     const key = productKey || 'aiops';
     const current = tenants.find((entry) => entry.tenant_id === tenant.tenant_id && entry.product_key === key);
@@ -379,18 +418,16 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
       <section className="admin-panel plans-section">
         <div className="admin-panel__heading"><span>Plans</span><div className="admin-heading-actions"><button className="admin-secondary-button" type="button" onClick={openNewPlan}><Plus size={14} /> New / Update Plan</button><button className="icon-button" type="button" onClick={load} aria-label="Refresh plans"><RefreshCw size={14} /></button></div></div>
         <div className="plan-info"><Info size={18} /><div><strong>Plan limits drive tenant allocation</strong><p>Assigning a plan sets a tenant’s user and system limits. Tenant-specific overrides take precedence. System usage is not yet synchronized into Core.</p></div></div>
-        {loading ? <p className="admin-empty">Loading plans…</p> : <div className="admin-table-scroll"><table className="admin-table plans-table">
-          <thead><tr><th>Plan</th><th>Name</th><th>Users</th><th>Systems</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>{catalog.map((plan) => <tr key={`${plan.product_key}-${plan.plan_key}`}>
-            <td><PlanTag planKey={plan.plan_key}>{plan.plan_key}</PlanTag></td>
-            <td><strong>{plan.plan_name}</strong><small>{plan.plan_description || plan.product_name}</small></td>
-            <td>{plan.entitlements?.max_users ?? '—'}</td>
-            <td>{plan.entitlements?.max_systems ?? '—'}</td>
+        {loading ? <p className="admin-empty">Loading plans…</p> : <div className="product-plan-groups">{productGroups.map((product) => <section className="product-plan-group" key={product.product_key}>
+          <header className="product-plan-group__header"><div className="product-plan-group__identity"><PlanTag planKey={product.product_key}>{product.product_key}</PlanTag><div><h3>{product.product_name}</h3><small>{product.product_description || 'Product description not set'}</small></div></div><div className="product-plan-group__actions"><span className={`admin-pill ${product.product_active ? 'admin-pill--good' : 'admin-pill--bad'}`}>{product.product_active ? 'active' : 'inactive'}</span><button className="quiet-button quiet-button--small" type="button" onClick={() => openEditProduct(product)}>Edit product</button></div></header>
+          {product.plans.length ? <div className="admin-table-scroll"><table className="admin-table plans-table"><thead><tr><th>Plan</th><th>Name</th><th>Users</th><th>Systems</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead><tbody>{product.plans.map((plan) => <tr key={`${plan.product_key}-${plan.plan_key}`}>
+            <td><PlanTag planKey={plan.plan_key}>{plan.plan_key}</PlanTag></td><td><strong>{plan.plan_name}</strong><small>{plan.plan_description || 'Purpose not set'}</small></td>
+            <td>{plan.entitlements?.max_users ?? '—'}</td><td>{plan.entitlements?.max_systems ?? '—'}</td>
             <td>{plan.price_monthly == null ? '—' : `${plan.currency === 'USD' ? '$' : `${plan.currency} `}${plan.price_monthly}`}{plan.price_monthly != null && <small>/ month</small>}</td>
             <td><span className={`admin-pill ${plan.plan_active ? 'admin-pill--good' : 'admin-pill--bad'}`}>{plan.plan_active ? 'active' : 'inactive'}</span></td>
             <td><button className="quiet-button quiet-button--small" type="button" onClick={() => openEditPlan(plan)}>Edit</button></td>
-          </tr>)}{!catalog.length && <tr><td colSpan={7} className="admin-empty">No plans in the catalog.</td></tr>}</tbody>
-        </table></div>}
+          </tr>)}</tbody></table></div> : <p className="product-plan-group__empty">No plans configured for this product.</p>}
+        </section>)}</div>}
       </section>
 
       <section className="admin-panel assignments-section">
@@ -429,9 +466,18 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
         </form>
       </Dialog>}
 
+      {productDialogOpen && <Dialog title="Update Product" eyebrow="Product catalog" onClose={() => setProductDialogOpen(false)} actions={<><button className="quiet-button" type="button" onClick={() => setProductDialogOpen(false)}>Cancel</button><button className="primary-button" type="submit" form="core-product-form"><Check size={15} /> Save Product</button></>}>
+        <form id="core-product-form" className="admin-dialog__form" onSubmit={saveProduct}>
+          <label>Product key<input value={editingProduct?.product_key || ''} disabled /></label>
+          <label>Display name<input value={productDraft.display_name} onChange={(event) => setProductDraft({ ...productDraft, display_name: event.target.value })} required /></label>
+          <label>Description<textarea rows={3} value={productDraft.description} onChange={(event) => setProductDraft({ ...productDraft, description: event.target.value })} /></label>
+          <label>Status<select value={String(productDraft.is_active)} onChange={(event) => setProductDraft({ ...productDraft, is_active: event.target.value === 'true' })}><option value="true">Active</option><option value="false">Inactive</option></select><span className={`admin-pill ${productDraft.is_active ? 'admin-pill--good' : 'admin-pill--bad'}`}>{productDraft.is_active ? 'active' : 'inactive'}</span></label>
+        </form>
+      </Dialog>}
+
       {assignment && <Dialog title={`Assign Plan · ${assignment.tenant_name}`} eyebrow="Tenant product access" onClose={() => setAssignment(null)} actions={<><button className="quiet-button" type="button" onClick={() => setAssignment(null)}>Cancel</button><button className="primary-button" type="submit" form="core-assignment-form"><Check size={15} /> Save Assignment</button></>}>
         <form id="core-assignment-form" className="admin-dialog__form" onSubmit={saveAssignment}>
-          <label>Plan<select value={assignmentDraft.plan_key} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, plan_key: event.target.value })} required><option value="">Select plan…</option>{catalog.filter((entry) => entry.product_key === assignment.product_key && entry.plan_active).map((entry) => <option key={entry.plan_key} value={entry.plan_key}>{entry.plan_name}</option>)}</select>{assignmentDraft.plan_key && <PlanTag planKey={assignmentDraft.plan_key}>{assignmentDraft.plan_key}</PlanTag>}</label>
+          <label>Plan<select value={assignmentDraft.plan_key} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, plan_key: event.target.value })} required><option value="">Select plan…</option>{plans.filter((entry) => entry.product_key === assignment.product_key && entry.plan_active).map((entry) => <option key={entry.plan_key} value={entry.plan_key}>{entry.plan_name}</option>)}</select>{assignmentDraft.plan_key && <PlanTag planKey={assignmentDraft.plan_key}>{assignmentDraft.plan_key}</PlanTag>}</label>
           <div className="admin-dialog__field-grid"><label>User limit override<input type="number" min="0" value={assignmentDraft.max_users} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, max_users: event.target.value })} placeholder="Use plan limit" /></label><label>System limit override<input type="number" min="0" value={assignmentDraft.max_systems} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, max_systems: event.target.value })} placeholder="Use plan limit" /></label><label>Effective from<input type="date" value={assignmentDraft.effective_start_date} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, effective_start_date: event.target.value })} /></label><label>Effective until<input type="date" value={assignmentDraft.effective_end_date} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, effective_end_date: event.target.value })} /></label></div>
           <label>Status<select value={assignmentDraft.status} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, status: event.target.value })}><option value="active">Active</option><option value="trial">Trial</option><option value="suspended">Suspended</option></select></label>
         </form>
