@@ -188,14 +188,19 @@ function TenantsPanel({ token, onError, onNotice }) {
   };
 
   const groupedTenants = [...tenants.reduce((groups, row) => {
-    const tenant = groups.get(row.tenant_id) || { ...row, products: [] };
-    if (row.product_key) tenant.products.push({
+    const tenant = groups.get(row.tenant_id) || { ...row, products: [], plans: [] };
+    if (row.product_key) {
+      tenant.products.push({
       product_key: row.product_key,
       product_name: row.product_name || row.product_key,
-      plan_key: row.plan_key,
-      plan_name: row.plan_name || row.plan_key,
       entitlement_status: row.entitlement_status,
-    });
+      });
+      tenant.plans.push({
+        product_key: row.product_key,
+        plan_key: row.plan_key,
+        plan_name: row.plan_name || row.plan_key,
+      });
+    }
     groups.set(row.tenant_id, tenant);
     return groups;
   }, new Map()).values()];
@@ -206,16 +211,17 @@ function TenantsPanel({ token, onError, onNotice }) {
       <div className="admin-toolbar"><span>Organizations registered with Core</span><button className="primary-button" type="button" onClick={() => setOnboardOpen(true)}><Building2 size={15} /> Onboard tenant</button></div>
       {loading ? <p className="admin-empty">Loading tenants…</p> : (
         <table className="admin-table">
-          <thead><tr><th>Tenant</th><th>Products</th><th>Members</th></tr></thead>
+          <thead><tr><th>Tenant</th><th>Products</th><th>Plan</th><th>Members</th></tr></thead>
           <tbody>
             {groupedTenants.map((row) => (
               <tr key={row.tenant_id}>
                 <td><strong>{row.display_name}</strong><small>#{row.tenant_id}</small><span className={`admin-pill ${row.status === 'active' ? 'admin-pill--good' : 'admin-pill--bad'}`}>{row.status}</span></td>
-                <td>{row.products.length ? <div className="tenant-product-tags">{row.products.map((product) => <span className="tenant-product-tag" key={`${product.product_key}-${product.plan_key}`}><PlanTag planKey={product.product_key}>{product.product_name}</PlanTag><PlanTag planKey={product.plan_key}>{product.plan_name}</PlanTag></span>)}</div> : <span className="admin-pill admin-pill--warn">no products</span>}</td>
+                <td>{row.products.length ? <div className="tenant-product-tags">{row.products.map((product) => <PlanTag key={product.product_key} planKey={product.product_key}>{product.product_name}</PlanTag>)}</div> : <span className="admin-pill admin-pill--warn">no products</span>}</td>
+                <td>{row.plans.length ? <div className="tenant-product-tags">{row.plans.map((plan) => <PlanTag key={`${plan.product_key}-${plan.plan_key}`} planKey={plan.plan_key}>{plan.plan_name}</PlanTag>)}</div> : <span className="admin-empty">—</span>}</td>
                 <td>{row.member_count}</td>
               </tr>
             ))}
-            {!groupedTenants.length && <tr><td colSpan={3} className="admin-empty">No tenants yet.</td></tr>}
+            {!groupedTenants.length && <tr><td colSpan={4} className="admin-empty">No tenants yet.</td></tr>}
           </tbody>
         </table>
       )}
@@ -420,7 +426,7 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
         <div className="plan-info"><Info size={18} /><div><strong>Plan limits drive tenant allocation</strong><p>Assigning a plan sets a tenant’s user and system limits. Tenant-specific overrides take precedence. System usage is not yet synchronized into Core.</p></div></div>
         {loading ? <p className="admin-empty">Loading plans…</p> : <div className="product-plan-groups">{productGroups.map((product) => <section className="product-plan-group" key={product.product_key}>
           <header className="product-plan-group__header"><div className="product-plan-group__identity"><PlanTag planKey={product.product_key}>{product.product_key}</PlanTag><div><h3>{product.product_name}</h3><small>{product.product_description || 'Product description not set'}</small></div></div><div className="product-plan-group__actions"><span className={`admin-pill ${product.product_active ? 'admin-pill--good' : 'admin-pill--bad'}`}>{product.product_active ? 'active' : 'inactive'}</span><button className="quiet-button quiet-button--small" type="button" onClick={() => openEditProduct(product)}>Edit product</button></div></header>
-          {product.plans.length ? <div className="admin-table-scroll"><table className="admin-table plans-table"><thead><tr><th>Plan</th><th>Name</th><th>Users</th><th>Systems</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead><tbody>{product.plans.map((plan) => <tr key={`${plan.product_key}-${plan.plan_key}`}>
+          {product.plans.length ? <div className="admin-table-scroll"><table className="admin-table plans-table"><colgroup><col className="plans-col-tier" /><col className="plans-col-name" /><col className="plans-col-users" /><col className="plans-col-systems" /><col className="plans-col-price" /><col className="plans-col-status" /><col className="plans-col-actions" /></colgroup><thead><tr><th>Plan</th><th>Name</th><th>Users</th><th>Systems</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead><tbody>{product.plans.map((plan) => <tr key={`${plan.product_key}-${plan.plan_key}`}>
             <td><PlanTag planKey={plan.plan_key}>{plan.plan_key}</PlanTag></td><td><strong>{plan.plan_name}</strong><small>{plan.plan_description || 'Purpose not set'}</small></td>
             <td>{plan.entitlements?.max_users ?? '—'}</td><td>{plan.entitlements?.max_systems ?? '—'}</td>
             <td>{plan.price_monthly == null ? '—' : `${plan.currency === 'USD' ? '$' : `${plan.currency} `}${plan.price_monthly}`}{plan.price_monthly != null && <small>/ month</small>}</td>
