@@ -18,12 +18,36 @@ DEFAULT_IDENTITY_ISSUER = "datasnare-core-local"
 
 class TenantCreateRequest(BaseModel):
     tenant_id: int | None = None
-    display_name: str = Field(min_length=1, max_length=255)
+    tenant_name: str = Field(min_length=1, max_length=255)
+    company_name: str = Field(min_length=1, max_length=255)
+    primary_address: str | None = Field(default=None, max_length=1024)
+    phone: str | None = Field(default=None, max_length=64)
+    contact_email: str | None = Field(default=None, max_length=320)
+    primary_contact_name: str | None = Field(default=None, max_length=255)
+    billing_contact_name: str | None = Field(default=None, max_length=255)
+    billing_contact_email: str | None = Field(default=None, max_length=320)
+    max_users: int = Field(default=10, ge=1, le=10000)
+    max_systems: int = Field(default=50, ge=1, le=100000)
+    contract_start_date: date | None = None
+    contract_end_date: date | None = None
+    notes: str | None = Field(default=None, max_length=10000)
     status: str = Field(default="active")
 
 
 class TenantUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
+    company_name: str | None = Field(default=None, max_length=255)
+    primary_address: str | None = Field(default=None, max_length=1024)
+    phone: str | None = Field(default=None, max_length=64)
+    contact_email: str | None = Field(default=None, max_length=320)
+    primary_contact_name: str | None = Field(default=None, max_length=255)
+    billing_contact_name: str | None = Field(default=None, max_length=255)
+    billing_contact_email: str | None = Field(default=None, max_length=320)
+    max_users: int | None = Field(default=None, ge=1, le=10000)
+    max_systems: int | None = Field(default=None, ge=1, le=100000)
+    contract_start_date: date | None = None
+    contract_end_date: date | None = None
+    notes: str | None = Field(default=None, max_length=10000)
     status: str | None = None
 
 
@@ -73,7 +97,11 @@ async def list_tenants(request: Request):
     await _require_platform_admin(request)
     rows = await request.app.state.database_pool.fetch(
         """
-        SELECT t.tenant_id, t.display_name, t.status, t.source_system, t.created_at,
+         SELECT t.tenant_id, t.tenant_name, t.display_name, t.company_name,
+             t.primary_address, t.phone, t.contact_email, t.primary_contact_name,
+             t.billing_contact_name, t.billing_contact_email, t.max_users, t.max_systems,
+             t.contract_start_date, t.contract_end_date, t.notes,
+             t.status, t.source_system, t.created_at,
                e.product_key, e.plan_key, e.status AS entitlement_status,
                e.effective_start_date, e.effective_end_date, e.limits_override,
                (SELECT count(*) FROM core_tenant_memberships m
@@ -91,6 +119,17 @@ async def create_tenant(body: TenantCreateRequest, request: Request):
     await _require_platform_admin(request)
     pool = request.app.state.database_pool
 
+    if body.contract_start_date and body.contract_end_date and body.contract_end_date < body.contract_start_date:
+        raise HTTPException(status_code=400, detail="Contract end date cannot be earlier than contract start date")
+
+    tenant_name = body.tenant_name.strip()
+    company_name = body.company_name.strip()
+    if not tenant_name or not company_name:
+        raise HTTPException(status_code=400, detail="Tenant name and company name are required")
+
+    if await pool.fetchval("SELECT 1 FROM core_tenants WHERE lower(tenant_name) = lower($1)", tenant_name):
+        raise HTTPException(status_code=409, detail="A tenant with that name already exists")
+
     # Tenant IDs stay compatible with existing product identifiers, so allow an explicit value.
     tenant_id = body.tenant_id
     if tenant_id is None:
@@ -100,11 +139,21 @@ async def create_tenant(body: TenantCreateRequest, request: Request):
 
     row = await pool.fetchrow(
         """
-        INSERT INTO core_tenants (tenant_id, display_name, status, source_system)
-        VALUES ($1, $2, $3, 'core')
-        RETURNING tenant_id, display_name, status, source_system, created_at
+        INSERT INTO core_tenants (
+            tenant_id, tenant_name, display_name, company_name, primary_address, phone, contact_email,
+            primary_contact_name, billing_contact_name, billing_contact_email, max_users, max_systems,
+            contract_start_date, contract_end_date, notes, status, source_system
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'core')
+        RETURNING tenant_id, tenant_name, display_name, company_name, primary_address, phone,
+                  contact_email, primary_contact_name, billing_contact_name, billing_contact_email,
+                  max_users, max_systems, contract_start_date, contract_end_date, notes,
+                  status, source_system, created_at
         """,
-        tenant_id, body.display_name.strip(), body.status.strip().lower(),
+        tenant_id, tenant_name, tenant_name, company_name, body.primary_address, body.phone,
+        body.contact_email, body.primary_contact_name, body.billing_contact_name,
+        body.billing_contact_email, body.max_users, body.max_systems,
+        body.contract_start_date, body.contract_end_date, body.notes, body.status.strip().lower(),
     )
     return _serialize(row)
 
@@ -115,6 +164,14 @@ async def update_tenant(tenant_id: int, body: TenantUpdateRequest, request: Requ
     updates: dict[str, object] = {}
     if body.display_name is not None:
         updates["display_name"] = body.display_name.strip()
+    for field in (
+        "company_name", "primary_address", "phone", "contact_email", "primary_contact_name",
+        "billing_contact_name", "billing_contact_email", "max_users", "max_systems",
+        "contract_start_date", "contract_end_date", "notes",
+    ):
+        value = getattr(body, field)
+        if value is not None:
+            updates[field] = value
     if body.status is not None:
         updates["status"] = body.status.strip().lower()
     if not updates:
@@ -122,11 +179,16 @@ async def update_tenant(tenant_id: int, body: TenantUpdateRequest, request: Requ
 
     assignments = ", ".join(f"{column} = ${index}" for index, column in enumerate(updates, start=1))
     values = [*updates.values(), tenant_id]
+    if updates.get("contract_start_date") and updates.get("contract_end_date") and updates["contract_end_date"] < updates["contract_start_date"]:
+        raise HTTPException(status_code=400, detail="Contract end date cannot be earlier than contract start date")
     row = await request.app.state.database_pool.fetchrow(
         f"""
         UPDATE core_tenants SET {assignments}, updated_at = NOW()
         WHERE tenant_id = ${len(values)}
-        RETURNING tenant_id, display_name, status, source_system, created_at
+        RETURNING tenant_id, tenant_name, display_name, company_name, primary_address, phone,
+              contact_email, primary_contact_name, billing_contact_name, billing_contact_email,
+              max_users, max_systems, contract_start_date, contract_end_date, notes,
+              status, source_system, created_at
         """,
         *values,
     )

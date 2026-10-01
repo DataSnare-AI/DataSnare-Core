@@ -99,7 +99,12 @@ function UsersPanel({ token, onError, onNotice }) {
 function TenantsPanel({ token, onError, onNotice }) {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [draft, setDraft] = useState({ display_name: '', tenant_id: '' });
+  const [onboardOpen, setOnboardOpen] = useState(false);
+  const [draft, setDraft] = useState({
+    tenant_name: '', company_name: '', primary_address: '', phone: '', contact_email: '',
+    primary_contact_name: '', billing_contact_name: '', billing_contact_email: '',
+    max_users: '10', max_systems: '50', contract_start_date: '', contract_end_date: '', notes: '', tenant_id: '',
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,12 +124,23 @@ function TenantsPanel({ token, onError, onNotice }) {
   const createTenant = async (event) => {
     event.preventDefault();
     try {
-      const body = { display_name: draft.display_name };
+      const body = {
+        ...draft,
+        tenant_name: draft.tenant_name.trim(),
+        company_name: draft.company_name.trim(),
+        max_users: Number(draft.max_users),
+        max_systems: Number(draft.max_systems),
+      };
       if (draft.tenant_id) body.tenant_id = Number(draft.tenant_id);
+      else delete body.tenant_id;
+      for (const field of ['primary_address', 'phone', 'contact_email', 'primary_contact_name', 'billing_contact_name', 'billing_contact_email', 'contract_start_date', 'contract_end_date', 'notes']) {
+        if (!body[field]) body[field] = null;
+      }
       const response = await authFetch(token, '/api/admin/tenants', { method: 'POST', body: JSON.stringify(body) });
       if (!response.ok) throw new Error(await readError(response, 'Could not create the tenant.'));
-      setDraft({ display_name: '', tenant_id: '' });
-      onNotice(`Created ${body.display_name}.`);
+      setDraft({ tenant_name: '', company_name: '', primary_address: '', phone: '', contact_email: '', primary_contact_name: '', billing_contact_name: '', billing_contact_email: '', max_users: '10', max_systems: '50', contract_start_date: '', contract_end_date: '', notes: '', tenant_id: '' });
+      setOnboardOpen(false);
+      onNotice(`Created ${body.company_name}.`);
       load();
     } catch (error) { onError(error.message); }
   };
@@ -134,11 +150,7 @@ function TenantsPanel({ token, onError, onNotice }) {
   return (
     <div className="admin-panel">
       <div className="admin-panel__heading"><span><Building2 size={16} /> Tenant directory</span><button className="icon-button" type="button" onClick={load} aria-label="Refresh tenants"><RefreshCw size={14} /></button></div>
-      <form className="admin-form" onSubmit={createTenant}>
-        <label>Tenant name<input value={draft.display_name} onChange={(e) => setDraft({ ...draft, display_name: e.target.value })} required /></label>
-        <label>Tenant ID<input inputMode="numeric" value={draft.tenant_id} onChange={(e) => setDraft({ ...draft, tenant_id: e.target.value })} placeholder="Optional" /></label>
-        <button className="primary-button" type="submit"><Building2 size={15} /> Add tenant</button>
-      </form>
+      <div className="admin-toolbar"><span>Organizations registered with Core</span><button className="primary-button" type="button" onClick={() => setOnboardOpen(true)}><Building2 size={15} /> Onboard tenant</button></div>
       {loading ? <p className="admin-empty">Loading tenants…</p> : (
         <table className="admin-table">
           <thead><tr><th>Tenant</th><th>Product</th><th>Plan</th><th>Members</th></tr></thead>
@@ -155,6 +167,36 @@ function TenantsPanel({ token, onError, onNotice }) {
           </tbody>
         </table>
       )}
+      {onboardOpen && <div className="modal-backdrop tenant-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOnboardOpen(false); }}>
+        <section className="tenant-onboard-modal" role="dialog" aria-modal="true" aria-labelledby="tenant-onboard-title">
+          <div className="tenant-onboard-modal__header"><div><p className="eyebrow">Organization setup</p><h2 id="tenant-onboard-title">Onboard new tenant</h2></div><button className="icon-button" type="button" onClick={() => setOnboardOpen(false)} aria-label="Cancel onboarding">×</button></div>
+          <form className="tenant-onboard-form" onSubmit={createTenant}>
+            <fieldset><legend>Basic information</legend><div className="tenant-onboard-grid">
+              <label>Tenant name <span className="required-mark">*</span><input value={draft.tenant_name} onChange={(e) => setDraft({ ...draft, tenant_name: e.target.value })} placeholder="e.g. acme-corp" required /></label>
+              <label>Company name <span className="required-mark">*</span><input value={draft.company_name} onChange={(e) => setDraft({ ...draft, company_name: e.target.value })} placeholder="e.g. ACME Corporation" required /></label>
+              <label>Tenant ID <small>Optional; use an existing product ID to link records</small><input inputMode="numeric" min="1" value={draft.tenant_id} onChange={(e) => setDraft({ ...draft, tenant_id: e.target.value })} placeholder="Assigned automatically" /></label>
+            </div></fieldset>
+            <fieldset><legend>Contact information</legend><div className="tenant-onboard-grid">
+              <label>Contact email<input type="email" value={draft.contact_email} onChange={(e) => setDraft({ ...draft, contact_email: e.target.value })} placeholder="contact@company.com" /></label>
+              <label>Phone<input type="tel" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} placeholder="+1 555 123 4567" /></label>
+              <label>Primary contact<input value={draft.primary_contact_name} onChange={(e) => setDraft({ ...draft, primary_contact_name: e.target.value })} placeholder="Contact name" /></label>
+              <label className="tenant-onboard-grid__wide">Address<input value={draft.primary_address} onChange={(e) => setDraft({ ...draft, primary_address: e.target.value })} placeholder="Street, city, region, postal code" /></label>
+            </div></fieldset>
+            <fieldset><legend>Billing information</legend><div className="tenant-onboard-grid">
+              <label>Billing contact<input value={draft.billing_contact_name} onChange={(e) => setDraft({ ...draft, billing_contact_name: e.target.value })} placeholder="Billing contact" /></label>
+              <label>Billing email<input type="email" value={draft.billing_contact_email} onChange={(e) => setDraft({ ...draft, billing_contact_email: e.target.value })} placeholder="billing@company.com" /></label>
+            </div></fieldset>
+            <fieldset><legend>Capacity and contract</legend><div className="tenant-onboard-grid">
+              <label>Maximum users <span className="required-mark">*</span><input type="number" min="1" max="10000" value={draft.max_users} onChange={(e) => setDraft({ ...draft, max_users: e.target.value })} required /></label>
+              <label>Maximum systems / devices <span className="required-mark">*</span><input type="number" min="1" max="100000" value={draft.max_systems} onChange={(e) => setDraft({ ...draft, max_systems: e.target.value })} required /></label>
+              <label>Contract start date<input type="date" value={draft.contract_start_date} onChange={(e) => setDraft({ ...draft, contract_start_date: e.target.value })} /></label>
+              <label>Contract end date<input type="date" value={draft.contract_end_date} onChange={(e) => setDraft({ ...draft, contract_end_date: e.target.value })} /></label>
+              <label className="tenant-onboard-grid__wide">Notes<textarea rows={3} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} placeholder="Internal notes" /></label>
+            </div></fieldset>
+            <div className="tenant-onboard-modal__actions"><button className="quiet-button" type="button" onClick={() => setOnboardOpen(false)}>Cancel</button><button className="primary-button" type="submit"><Building2 size={15} /> OK · Create tenant</button></div>
+          </form>
+        </section>
+      </div>}
     </div>
   );
 }

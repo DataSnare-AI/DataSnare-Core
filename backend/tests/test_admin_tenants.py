@@ -12,10 +12,11 @@ from app.routes.admin_tenants import router
 
 
 class FakeTenantPool:
-    def __init__(self, *, exists=1, rows=None, row=None):
+    def __init__(self, *, exists=1, rows=None, row=None, values=None):
         self.exists = exists
         self.rows = rows or []
         self.row = row
+        self.values = list(values or [])
         self.calls = []
 
     async def fetch(self, query, *args):
@@ -24,6 +25,8 @@ class FakeTenantPool:
 
     async def fetchval(self, query, *args):
         self.calls.append((query, args))
+        if self.values:
+            return self.values.pop(0)
         return self.exists
 
     async def fetchrow(self, query, *args):
@@ -54,6 +57,60 @@ def test_tenant_administration_requires_platform_admin():
     client = build_client(FakeTenantPool(), role="tenant_admin")
 
     assert client.get("/api/admin/tenants", headers=AUTH).status_code == 403
+
+
+def test_onboard_tenant_persists_required_and_optional_account_details():
+    pool = FakeTenantPool(
+        values=[None, 27],
+        row={
+            "tenant_id": 27, "tenant_name": "acme", "display_name": "acme", "company_name": "Acme Inc",
+            "primary_address": "1 Main St", "phone": "+1 555 0100", "contact_email": "ops@acme.test",
+            "primary_contact_name": "Alex", "billing_contact_name": "Pat", "billing_contact_email": "billing@acme.test",
+            "max_users": 12, "max_systems": 80, "contract_start_date": None, "contract_end_date": None,
+            "notes": "Managed account", "status": "active", "source_system": "core", "created_at": None,
+        },
+    )
+    client = build_client(pool)
+
+    response = client.post(
+        "/api/admin/tenants",
+        headers=AUTH,
+        json={
+            "tenant_name": "acme", "company_name": "Acme Inc", "primary_address": "1 Main St",
+            "phone": "+1 555 0100", "contact_email": "ops@acme.test", "primary_contact_name": "Alex",
+            "billing_contact_name": "Pat", "billing_contact_email": "billing@acme.test",
+            "max_users": 12, "max_systems": 80, "notes": "Managed account",
+        },
+    )
+
+    assert response.status_code == 201
+    args = next(args for query, args in pool.calls if "INSERT INTO core_tenants" in query)
+    assert args[1:4] == ("acme", "acme", "Acme Inc")
+    assert args[10:12] == (12, 80)
+    assert args[14] == "Managed account"
+
+
+def test_onboard_tenant_requires_company_name():
+    client = build_client(FakeTenantPool())
+
+    response = client.post("/api/admin/tenants", headers=AUTH, json={"tenant_name": "acme"})
+
+    assert response.status_code == 422
+
+
+def test_onboard_tenant_rejects_contract_end_before_start():
+    client = build_client(FakeTenantPool())
+
+    response = client.post(
+        "/api/admin/tenants",
+        headers=AUTH,
+        json={
+            "tenant_name": "acme", "company_name": "Acme Inc", "max_users": 10, "max_systems": 50,
+            "contract_start_date": "2026-10-10", "contract_end_date": "2026-10-01",
+        },
+    )
+
+    assert response.status_code == 400
 
 
 def test_assigning_an_unknown_plan_is_rejected():
