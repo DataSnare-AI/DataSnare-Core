@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import os
 import re
 import uuid
@@ -10,6 +11,9 @@ from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException
+
+
+logger = logging.getLogger(__name__)
 
 
 class CoreArtifactStorage:
@@ -101,6 +105,12 @@ class CoreArtifactStorage:
             credential = settings.get("azure_account_key") or settings.get("azure_sas_token")
             if settings.get("azure_sas_token") and credential == settings.get("azure_sas_token"):
                 credential = str(credential).lstrip("?")
+                fingerprint = hashlib.sha256(credential.encode()).hexdigest()[:12]
+                logger.info(
+                    "Azure Blob client selected SAS credential fingerprint=%s length=%d",
+                    fingerprint,
+                    len(credential),
+                )
             if not credential:
                 credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
             service = BlobServiceClient(account_url=account_url, credential=credential)

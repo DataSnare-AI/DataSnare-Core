@@ -287,3 +287,20 @@ def test_azure_probe_error_includes_safe_diagnostic_without_credentials(monkeypa
     assert "ErrorCode:AuthenticationFailed" in result["detail"]
     assert sas_token not in result["detail"]
     assert "[redacted]" in result["detail"]
+
+
+def test_azure_client_logs_sas_fingerprint_without_token(caplog):
+    sas_token = "?sv=version&si=policy&sig=secret-signature"
+    expected_fingerprint = hashlib.sha256(sas_token.lstrip("?").encode()).hexdigest()[:12]
+    service = CoreArtifactStorage(FakePool())
+
+    with caplog.at_level("INFO", logger="app.services.artifact_storage"):
+        service._azure_clients({
+            "azure_account_url": "https://storage.example.test",
+            "azure_sas_token": sas_token,
+        })
+
+    assert expected_fingerprint in caplog.text
+    assert "length=" in caplog.text
+    assert sas_token not in caplog.text
+    assert "secret-signature" not in caplog.text
