@@ -122,7 +122,7 @@ class CoreArtifactStorage:
             r"\1?[redacted]",
             detail,
         )
-        return f"Azure Blob probe failed: {type(error).__name__} · {detail[:240]}"
+        return f"Azure Blob probe failed: {type(error).__name__} · {detail[:600]}"
 
     async def test_connection(
         self, settings_override: dict[str, Any] | None = None

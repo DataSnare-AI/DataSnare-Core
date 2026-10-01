@@ -83,6 +83,63 @@ def test_core_storage_admin_encrypts_secrets_and_never_returns_them(monkeypatch)
     assert Fernet(encryption_key.encode()).decrypt(stored_secret.encode()).decode() == "account-secret-value"
 
 
+def test_saving_sas_replaces_other_saved_credentials(monkeypatch):
+    encryption_key = Fernet.generate_key().decode()
+    monkeypatch.setenv("CORE_STORAGE_ENCRYPTION_KEY", encryption_key)
+    pool = FakePool()
+    pool.settings_row = {
+        "backend": "azure_blob",
+        "azure_connection_string_enc": CoreArtifactStorage.encrypt_secret("stale-connection"),
+        "azure_account_key_enc": CoreArtifactStorage.encrypt_secret("stale-account-key"),
+        "azure_sas_token_enc": None,
+    }
+    app = FastAPI()
+    app.state.database_pool = pool
+    app.state.artifact_storage = CoreArtifactStorage(pool)
+    app.state.auth_provider = FakeProvider()
+    app.include_router(router)
+
+    response = TestClient(app).put(
+        "/api/admin/storage",
+        headers={"Authorization": "Bearer session"},
+        json={
+            "backend": "azure_blob",
+            "azure_container": "shared-docs",
+            "azure_account_url": "https://storage.example.test",
+            "azure_sas_token": "sv=version&sig=new-signature",
+        },
+    )
+
+    assert response.status_code == 200
+    assert pool.settings_row["azure_connection_string_enc"] is None
+    assert pool.settings_row["azure_account_key_enc"] is None
+    assert CoreArtifactStorage.decrypt_secret(pool.settings_row["azure_sas_token_enc"]) == "sv=version&sig=new-signature"
+
+
+def test_storage_admin_rejects_multiple_new_credentials(monkeypatch):
+    monkeypatch.setenv("CORE_STORAGE_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    pool = FakePool()
+    app = FastAPI()
+    app.state.database_pool = pool
+    app.state.artifact_storage = CoreArtifactStorage(pool)
+    app.state.auth_provider = FakeProvider()
+    app.include_router(router)
+
+    response = TestClient(app).put(
+        "/api/admin/storage",
+        headers={"Authorization": "Bearer session"},
+        json={
+            "backend": "azure_blob",
+            "azure_container": "shared-docs",
+            "azure_account_key": "account-key",
+            "azure_sas_token": "sv=version&sig=token",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"].startswith("Provide only one Azure credential")
+
+
 def test_only_platform_admin_can_view_shared_storage_configuration():
     pool = FakePool()
     app = FastAPI()
@@ -204,7 +261,7 @@ def test_azure_probe_error_includes_safe_diagnostic_without_credentials(monkeypa
     class FailingContainer:
         def exists(self):
             raise ValueError(
-                f"Invalid SAS token in https://storage.example.test/?{sas_token}"
+                f"Invalid SAS token in https://storage.example.test/?{sas_token}; ErrorCode:AuthenticationFailed"
             )
 
     class FakeBlobService:
@@ -227,5 +284,6 @@ def test_azure_probe_error_includes_safe_diagnostic_without_credentials(monkeypa
     assert result["healthy"] is False
     assert "Invalid SAS token" in result["detail"]
     assert "ValueError" in result["detail"]
+    assert "ErrorCode:AuthenticationFailed" in result["detail"]
     assert sas_token not in result["detail"]
     assert "[redacted]" in result["detail"]

@@ -71,14 +71,24 @@ async def save_storage_settings(body: StorageSettingsRequest, request: Request):
         "azure_account_key": "azure_account_key_enc",
         "azure_sas_token": "azure_sas_token_enc",
     }
-    encrypted = {}
-    for incoming, stored in secret_fields.items():
-        value = getattr(body, incoming)
-        encrypted[stored] = (
-            service.encrypt_secret(value)
-            if value and value.strip()
-            else existing.get(stored)
+    supplied_secrets = {
+        incoming: getattr(body, incoming).strip()
+        for incoming in secret_fields
+        if getattr(body, incoming) and getattr(body, incoming).strip()
+    }
+    if len(supplied_secrets) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide only one Azure credential: connection string, account key, or SAS token",
         )
+    encrypted = {
+        stored: (
+            service.encrypt_secret(supplied_secrets[incoming])
+            if incoming in supplied_secrets
+            else None if supplied_secrets else existing.get(stored)
+        )
+        for incoming, stored in secret_fields.items()
+    }
 
     await pool.execute(
         """
@@ -125,11 +135,12 @@ async def test_storage_connection(
 
     overrides = body.model_dump()
     current = await service.settings()
-    for field in (
+    credential_fields = (
         "azure_connection_string",
         "azure_account_key",
         "azure_sas_token",
-    ):
-        if not overrides[field]:
+    )
+    if not any(str(overrides[field] or "").strip() for field in credential_fields):
+        for field in credential_fields:
             overrides[field] = current.get(field)
     return await service.test_connection(overrides)
