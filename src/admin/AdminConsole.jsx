@@ -98,22 +98,15 @@ function UsersPanel({ token, onError, onNotice }) {
 
 function TenantsPanel({ token, onError, onNotice }) {
   const [tenants, setTenants] = useState([]);
-  const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState({ display_name: '', tenant_id: '' });
-  const [assignment, setAssignment] = useState({ tenant_id: '', product_key: '', plan_key: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [tenantResponse, catalogResponse] = await Promise.all([
-        authFetch(token, '/api/admin/tenants'),
-        authFetch(token, '/api/admin/catalog'),
-      ]);
+      const tenantResponse = await authFetch(token, '/api/admin/tenants');
       if (!tenantResponse.ok) throw new Error(await readError(tenantResponse, 'Could not load tenants.'));
-      if (!catalogResponse.ok) throw new Error(await readError(catalogResponse, 'Could not load the catalog.'));
       setTenants((await tenantResponse.json()).tenants || []);
-      setCatalog(((await catalogResponse.json()).entries || []).filter((entry) => entry.plan_key));
     } catch (error) {
       onError(error.message);
     } finally {
@@ -136,46 +129,15 @@ function TenantsPanel({ token, onError, onNotice }) {
     } catch (error) { onError(error.message); }
   };
 
-  const assignPlan = async (event) => {
-    event.preventDefault();
-    const [product_key, plan_key] = assignment.plan_key.split('::');
-    if (!assignment.tenant_id || !product_key) { onError('Select a tenant and a plan.'); return; }
-    try {
-      const response = await authFetch(token, `/api/admin/tenants/${assignment.tenant_id}/entitlements`, {
-        method: 'PUT',
-        body: JSON.stringify({ product_key, plan_key }),
-      });
-      if (!response.ok) throw new Error(await readError(response, 'Could not assign the plan.'));
-      onNotice(`Assigned ${plan_key} to tenant ${assignment.tenant_id}.`);
-      setAssignment({ tenant_id: '', product_key: '', plan_key: '' });
-      load();
-    } catch (error) { onError(error.message); }
-  };
-
   const uniqueTenants = [...new Map(tenants.map((row) => [row.tenant_id, row])).values()];
 
   return (
     <div className="admin-panel">
-      <div className="admin-panel__heading"><span><Building2 size={16} /> Tenants and plans</span><button className="icon-button" type="button" onClick={load} aria-label="Refresh tenants"><RefreshCw size={14} /></button></div>
+      <div className="admin-panel__heading"><span><Building2 size={16} /> Tenant directory</span><button className="icon-button" type="button" onClick={load} aria-label="Refresh tenants"><RefreshCw size={14} /></button></div>
       <form className="admin-form" onSubmit={createTenant}>
         <label>Tenant name<input value={draft.display_name} onChange={(e) => setDraft({ ...draft, display_name: e.target.value })} required /></label>
         <label>Tenant ID<input inputMode="numeric" value={draft.tenant_id} onChange={(e) => setDraft({ ...draft, tenant_id: e.target.value })} placeholder="Optional" /></label>
         <button className="primary-button" type="submit"><Building2 size={15} /> Add tenant</button>
-      </form>
-      <form className="admin-form" onSubmit={assignPlan}>
-        <label>Tenant
-          <select value={assignment.tenant_id} onChange={(e) => setAssignment({ ...assignment, tenant_id: e.target.value })}>
-            <option value="">Select…</option>
-            {uniqueTenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.display_name}</option>)}
-          </select>
-        </label>
-        <label>Plan
-          <select value={assignment.plan_key} onChange={(e) => setAssignment({ ...assignment, plan_key: e.target.value })}>
-            <option value="">Select…</option>
-            {catalog.map((entry) => <option key={`${entry.product_key}::${entry.plan_key}`} value={`${entry.product_key}::${entry.plan_key}`}>{entry.product_name} · {entry.plan_name}</option>)}
-          </select>
-        </label>
-        <button className="primary-button" type="submit"><Package size={15} /> Assign plan</button>
       </form>
       {loading ? <p className="admin-empty">Loading tenants…</p> : (
         <table className="admin-table">
@@ -197,24 +159,154 @@ function TenantsPanel({ token, onError, onNotice }) {
   );
 }
 
+function SubscriptionsPanel({ token, onError, onNotice }) {
+  const [tenants, setTenants] = useState([]);
+  const [catalog, setCatalog] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [assignment, setAssignment] = useState({ tenant_id: '', plan_key: '' });
+  const [planDraft, setPlanDraft] = useState({ product_key: '', plan_key: '', display_name: '', price_monthly: '', max_users: '', max_systems: '' });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [tenantResponse, catalogResponse] = await Promise.all([
+        authFetch(token, '/api/admin/tenants'),
+        authFetch(token, '/api/admin/catalog'),
+      ]);
+      if (!tenantResponse.ok) throw new Error(await readError(tenantResponse, 'Could not load tenants.'));
+      if (!catalogResponse.ok) throw new Error(await readError(catalogResponse, 'Could not load the product catalog.'));
+      setTenants((await tenantResponse.json()).tenants || []);
+      setCatalog(((await catalogResponse.json()).entries || []).filter((entry) => entry.plan_key));
+    } catch (error) {
+      onError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, onError]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const assignPlan = async (event) => {
+    event.preventDefault();
+    const [product_key, plan_key] = assignment.plan_key.split('::');
+    if (!assignment.tenant_id || !product_key) { onError('Select a tenant and a plan.'); return; }
+    try {
+      const response = await authFetch(token, `/api/admin/tenants/${assignment.tenant_id}/entitlements`, {
+        method: 'PUT',
+        body: JSON.stringify({ product_key, plan_key }),
+      });
+      if (!response.ok) throw new Error(await readError(response, 'Could not assign the plan.'));
+      onNotice(`Assigned ${plan_key} to tenant ${assignment.tenant_id}.`);
+      setAssignment({ tenant_id: '', plan_key: '' });
+      load();
+    } catch (error) { onError(error.message); }
+  };
+
+  const uniqueTenants = [...new Map(tenants.map((row) => [row.tenant_id, row])).values()];
+  const products = [...new Map(catalog.map((entry) => [entry.product_key, entry])).values()];
+
+  const savePlan = async (event) => {
+    event.preventDefault();
+    if (!planDraft.product_key || !planDraft.plan_key || !planDraft.display_name) {
+      onError('Choose a product and enter a plan key and display name.');
+      return;
+    }
+    const body = {
+      display_name: planDraft.display_name,
+      price_monthly: planDraft.price_monthly === '' ? null : Number(planDraft.price_monthly),
+      max_users: planDraft.max_users === '' ? null : Number(planDraft.max_users),
+      max_systems: planDraft.max_systems === '' ? null : Number(planDraft.max_systems),
+    };
+    try {
+      const response = await authFetch(token, `/api/admin/catalog/${encodeURIComponent(planDraft.product_key)}/plans/${encodeURIComponent(planDraft.plan_key)}`, {
+        method: 'PUT', body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(await readError(response, 'Could not save the plan.'));
+      onNotice(`Saved ${planDraft.display_name}.`);
+      setPlanDraft({ product_key: '', plan_key: '', display_name: '', price_monthly: '', max_users: '', max_systems: '' });
+      load();
+    } catch (error) { onError(error.message); }
+  };
+
+  return (
+    <div className="admin-panel">
+      <div className="admin-panel__heading"><span><Package size={16} /> Plans and subscriptions</span><button className="icon-button" type="button" onClick={load} aria-label="Refresh plans"><RefreshCw size={14} /></button></div>
+      <form className="admin-form" onSubmit={savePlan}>
+        <label>Product<select value={planDraft.product_key} onChange={(e) => setPlanDraft({ ...planDraft, product_key: e.target.value })}><option value="">Select…</option>{products.map((product) => <option key={product.product_key} value={product.product_key}>{product.product_name}</option>)}</select></label>
+        <label>Plan key<input value={planDraft.plan_key} onChange={(e) => setPlanDraft({ ...planDraft, plan_key: e.target.value.trim().toLowerCase() })} placeholder="starter" required /></label>
+        <label>Display name<input value={planDraft.display_name} onChange={(e) => setPlanDraft({ ...planDraft, display_name: e.target.value })} required /></label>
+        <label>Monthly price<input type="number" min="0" step="0.01" value={planDraft.price_monthly} onChange={(e) => setPlanDraft({ ...planDraft, price_monthly: e.target.value })} placeholder="Not set" /></label>
+        <label>User limit<input type="number" min="0" step="1" value={planDraft.max_users} onChange={(e) => setPlanDraft({ ...planDraft, max_users: e.target.value })} placeholder="Not set" /></label>
+        <label>System limit<input type="number" min="0" step="1" value={planDraft.max_systems} onChange={(e) => setPlanDraft({ ...planDraft, max_systems: e.target.value })} placeholder="Not set" /></label>
+        <button className="primary-button" type="submit"><Package size={15} /> Save plan</button>
+      </form>
+      <form className="admin-form" onSubmit={assignPlan}>
+        <label>Tenant<select value={assignment.tenant_id} onChange={(e) => setAssignment({ ...assignment, tenant_id: e.target.value })}><option value="">Select…</option>{uniqueTenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.display_name}</option>)}</select></label>
+        <label>Product plan<select value={assignment.plan_key} onChange={(e) => setAssignment({ ...assignment, plan_key: e.target.value })}><option value="">Select…</option>{catalog.map((entry) => <option key={`${entry.product_key}::${entry.plan_key}`} value={`${entry.product_key}::${entry.plan_key}`}>{entry.product_name} · {entry.plan_name}</option>)}</select></label>
+        <button className="primary-button" type="submit"><Package size={15} /> Assign plan</button>
+      </form>
+      {loading ? <p className="admin-empty">Loading subscriptions…</p> : (
+        <table className="admin-table">
+          <thead><tr><th>Tenant</th><th>Product</th><th>Plan</th><th>State</th><th>Members</th></tr></thead>
+          <tbody>{tenants.filter((row) => row.product_key).map((row) => (
+            <tr key={`${row.tenant_id}-${row.product_key}`}>
+              <td><strong>{row.display_name}</strong><small>#{row.tenant_id}</small></td>
+              <td>{row.product_key}</td>
+              <td>{row.plan_key}</td>
+              <td><span className={row.entitlement_status === 'active' ? 'admin-pill admin-pill--good' : 'admin-pill'}>{row.entitlement_status}</span></td>
+              <td>{row.member_count}</td>
+            </tr>
+          ))}{!tenants.some((row) => row.product_key) && <tr><td colSpan={5} className="admin-empty">No product subscriptions assigned.</td></tr>}</tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export default function AdminConsole({ token }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [activeTab, setActiveTab] = useState(() => {
+    const requested = window.location.hash.split('/')[1];
+    return ['tenants', 'users', 'plans'].includes(requested) ? requested : 'tenants';
+  });
 
   const report = (message) => { setError(message); setNotice(''); };
   const announce = (message) => { setNotice(message); setError(''); };
 
+  useEffect(() => {
+    const syncTab = () => {
+      const requested = window.location.hash.split('/')[1];
+      if (['tenants', 'users', 'plans'].includes(requested)) setActiveTab(requested);
+    };
+    window.addEventListener('hashchange', syncTab);
+    return () => window.removeEventListener('hashchange', syncTab);
+  }, []);
+
+  const selectTab = (tab) => {
+    setActiveTab(tab);
+    if (window.location.hash !== `#admin/${tab}`) window.location.hash = `admin/${tab}`;
+  };
+
   return (
-    <section className="admin-console" id="admin">
-      <div className="section-heading">
-        <div><p className="eyebrow">Platform administration</p><h2>Accounts, tenants, and plans.</h2></div>
-        <p>Core owns suite identity and product entitlements. Changes here apply to every DataSnare product.</p>
+    <section className="admin-console" aria-label="Platform administration">
+      <div className="admin-page-heading">
+        <div><a className="admin-back-link" href="#projects">← Workspace</a><p className="eyebrow">Core control plane</p><h1>Administration</h1></div>
+        <p>Manage suite accounts, organizations, and product access.</p>
       </div>
       {error && <p className="admin-alert admin-alert--error" role="alert"><KeyRound size={14} /> {error}</p>}
       {notice && <p className="admin-alert" role="status">{notice}</p>}
-      <div className="admin-grid">
-        <UsersPanel token={token} onError={report} onNotice={announce} />
-        <TenantsPanel token={token} onError={report} onNotice={announce} />
+      <div className="admin-tabs" role="tablist" aria-label="Administration sections">
+        {[
+          { id: 'tenants', label: 'Tenants' },
+          { id: 'users', label: 'Users' },
+          { id: 'plans', label: 'Plans' },
+        ].map((tab) => <button key={tab.id} className={activeTab === tab.id ? 'admin-tab admin-tab--active' : 'admin-tab'} id={`admin-tab-${tab.id}`} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls="admin-tab-panel" onClick={() => selectTab(tab.id)}>{tab.label}</button>)}
+      </div>
+      <div className="admin-tab-panel" id="admin-tab-panel" role="tabpanel" aria-labelledby={`admin-tab-${activeTab}`}>
+        {activeTab === 'tenants' && <TenantsPanel token={token} onError={report} onNotice={announce} />}
+        {activeTab === 'users' && <UsersPanel token={token} onError={report} onNotice={announce} />}
+        {activeTab === 'plans' && <SubscriptionsPanel token={token} onError={report} onNotice={announce} />}
       </div>
     </section>
   );

@@ -18,12 +18,14 @@ def test_rag_foundation_migration_is_available():
         "003_core_product_accounts.sql",
         "004_core_identity.sql",
         "005_core_password_setup.sql",
+        "006_product_starter_plans.sql",
     ]
     rag_sql = migrations[0].read_text(encoding="utf-8")
     jobs_sql = migrations[1].read_text(encoding="utf-8")
     accounts_sql = migrations[2].read_text(encoding="utf-8")
     identity_sql = migrations[3].read_text(encoding="utf-8")
     setup_sql = migrations[4].read_text(encoding="utf-8")
+    plans_sql = migrations[5].read_text(encoding="utf-8")
     assert "knowledge_items" in rag_sql
     assert "knowledge_chunks" in rag_sql
     assert "retrieval_audit_events" in rag_sql
@@ -40,3 +42,5 @@ def test_rag_foundation_migration_is_available():
     assert "CREATE TABLE IF NOT EXISTS core_users" in identity_sql
     assert "CREATE TABLE IF NOT EXISTS core_auth_sessions" in identity_sql
     assert "CREATE TABLE IF NOT EXISTS core_password_setup_tokens" in setup_sql
+    for product_key in ("ailogscope", "aiperf", "aiprocmon", "airca", "ainetscope"):
+        assert f"('{product_key}', 'starter'" in plans_sql

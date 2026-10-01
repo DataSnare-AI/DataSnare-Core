@@ -106,6 +106,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sessionOpen, setSessionOpen] = useState(false);
   const [detailsProject, setDetailsProject] = useState(null);
+  const [locationHash, setLocationHash] = useState(() => window.location.hash);
   const [skin, setSkin] = useState(() => normalizeSuiteSkin(localStorage.getItem(SUITE_SKIN_STORAGE_KEY) || DEFAULT_SUITE_SKIN));
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('datasnare:auth-token') || '');
   const [accountProfile, setAccountProfile] = useState(null);
@@ -113,6 +114,13 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
+  const isAdminPage = locationHash.startsWith('#admin') && accountProfile?.role === 'platform_admin' && Boolean(authToken);
+
+  useEffect(() => {
+    const updateLocation = () => setLocationHash(window.location.hash);
+    window.addEventListener('hashchange', updateLocation);
+    return () => window.removeEventListener('hashchange', updateLocation);
+  }, []);
 
   const loadAccountProfile = async (token) => {
     const response = await fetch('/api/auth/profile', { headers: { Authorization: `Bearer ${token}` } });
@@ -210,7 +218,7 @@ export default function App() {
           <a href="#knowledge" onClick={() => setMenuOpen(false)}>Knowledge</a>
           <a href="#access" onClick={() => setMenuOpen(false)}>Access</a>
           <a href="#billing" onClick={() => setMenuOpen(false)}>Licensing</a>
-          {accountProfile?.role === 'platform_admin' && <a href="#admin" onClick={() => setMenuOpen(false)}>Admin</a>}
+          {accountProfile?.role === 'platform_admin' && <a href="#admin/tenants" onClick={() => setMenuOpen(false)}>Admin</a>}
           <button className="session-button" type="button" onClick={() => setSessionOpen(true)}>
             <CircleUserRound size={17} /> {accountProfile?.display_name || accountProfile?.username || 'Sign in'}
           </button>
@@ -222,6 +230,7 @@ export default function App() {
       </header>
 
       <main id="top">
+        {isAdminPage ? <AdminConsole token={authToken} /> : <>
         <section className="hero">
           <div className="hero__copy">
             <p className="eyebrow">The DataSnare control plane</p>
@@ -251,7 +260,6 @@ export default function App() {
         </section></>}
 
         <SuiteStatus />
-        {accountProfile?.role === 'platform_admin' && authToken && <AdminConsole token={authToken} />}
         <KnowledgeSearch />
         <div id="tool-ainetscope"><AINetScopeWorkbench /></div>
         <div id="tool-ailogscope"><AILogScopeWorkbench /></div>
@@ -281,6 +289,7 @@ export default function App() {
           <p className="eyebrow">Product account</p><h2>Purchased products, in one place.</h2>
           {accountProfile?.tenant_subscriptions?.length ? <div className="license-list">{accountProfile.tenant_subscriptions.map((subscription) => <article className="license-row" key={`${subscription.tenant_id}-${subscription.product_key}`}><div><strong>{subscription.tenant_name}</strong><span>{subscription.product_name || subscription.product_key} · {subscription.plan_name || subscription.plan_key || subscription.plan} · {subscription.account_status}</span></div><div><strong>{subscription.price_monthly != null ? `${subscription.currency || 'USD'} ${subscription.price_monthly}/mo` : 'Custom pricing'}</strong><span>{subscription.limits?.users_allocated ?? 0} users · {subscription.limits?.systems_allocated ?? 0} systems</span></div></article>)}</div> : <p>{authToken ? 'No purchased products are assigned to this account yet.' : 'Sign in to view your organization’s current product plans. Core is the planned home for suite identity, product entitlements, and billing; AIOps continues to operate its service during the transition.'}</p>}
         </section>
+        </>}
       </main>
 
       <footer className="footer"><span>DataSnare / app.datasnare.com</span><span>Core shell v0.1</span></footer>
