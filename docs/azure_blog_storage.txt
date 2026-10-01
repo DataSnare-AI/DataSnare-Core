@@ -1,0 +1,22 @@
+Core Azure Blob storage setup
+
+Core uses a distinct Fernet key from AIOps. Generate a key and store it in the
+deployment secret store; do not commit or paste the key into documentation.
+
+The SAS credential and Fernet key were exposed during troubleshooting. Revoke or
+rotate the SAS through its stored access policy in Azure. If the Fernet key was
+used to save credentials, re-save replacement credentials under a new key before
+discarding the old key; changing it first makes existing encrypted values unreadable.
+
+In Core Admin > Storage, use:
+- Backend: Azure Blob Storage
+- Container: dscoreartifacts
+- Blob prefix: core-artifacts
+- Account URL: https://forensicit.blob.core.windows.net
+- SAS token: query-string token only, not the complete SAS URL
+
+Set CORE_STORAGE_ENCRYPTION_KEY in Core's .env.core before saving Azure secrets.
+Keep the key stable across Core restarts and rebuilds. Start Core staging separately
+from AIOps with:
+
+docker compose -p datasnare-core --env-file .env.core -f docker-compose.staging.yml up --build -d

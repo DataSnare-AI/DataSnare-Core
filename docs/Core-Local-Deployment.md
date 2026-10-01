@@ -8,9 +8,15 @@ From the Core repository root:
 
 ```powershell
 Copy-Item .env.core.example .env.core
+# Generate a Fernet key, then add CORE_STORAGE_ENCRYPTION_KEY=<key> to .env.core.
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Keep this key private and unchanged; saved Azure credentials depend on it.
 # Edit .env.core if you want non-default hostnames/port.
 docker compose --env-file .env.core -f docker-compose.core.yml up --build -d
 ```
+
+`CORE_STORAGE_ENCRYPTION_KEY` is required when saving Azure connection strings, account keys,
+or SAS tokens in Core Admin > Storage. The local Compose service passes this value to the API.
 
 Local URLs:
 

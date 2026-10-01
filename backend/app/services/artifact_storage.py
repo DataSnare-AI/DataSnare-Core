@@ -106,6 +106,24 @@ class CoreArtifactStorage:
             service = BlobServiceClient(account_url=account_url, credential=credential)
         return service, ContentSettings
 
+    @staticmethod
+    def _safe_probe_error(error: Exception, settings: dict[str, Any]) -> str:
+        detail = str(error)
+        for field in (
+            "azure_connection_string",
+            "azure_account_key",
+            "azure_sas_token",
+        ):
+            secret = settings.get(field)
+            if secret:
+                detail = detail.replace(str(secret), "[redacted]")
+        detail = re.sub(
+            r"(?i)(https?://[^\s?'\"]+)\?[^\s'\"]+",
+            r"\1?[redacted]",
+            detail,
+        )
+        return f"Azure Blob probe failed: {type(error).__name__} · {detail[:240]}"
+
     async def test_connection(
         self, settings_override: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -135,7 +153,12 @@ class CoreArtifactStorage:
         except HTTPException:
             raise
         except Exception as error:
-            return {"backend": backend, "healthy": False, "container": container, "detail": f"Azure Blob probe failed: {type(error).__name__}"}
+            return {
+                "backend": backend,
+                "healthy": False,
+                "container": container,
+                "detail": self._safe_probe_error(error, settings),
+            }
 
     async def store(
         self,

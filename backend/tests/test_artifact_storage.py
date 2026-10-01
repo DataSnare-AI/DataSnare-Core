@@ -196,3 +196,36 @@ def test_storage_test_uses_unsaved_backend_and_retains_blank_saved_secret(monkey
     assert received_settings["azure_container"] == "new-container"
     assert received_settings["azure_account_key"] == "stored-account-key"
     assert pool.settings_row["backend"] == "local"
+
+
+def test_azure_probe_error_includes_safe_diagnostic_without_credentials(monkeypatch):
+    sas_token = "sv=version&sig=secret-signature"
+
+    class FailingContainer:
+        def exists(self):
+            raise ValueError(
+                f"Invalid SAS token in https://storage.example.test/?{sas_token}"
+            )
+
+    class FakeBlobService:
+        def get_container_client(self, container):
+            return FailingContainer()
+
+    monkeypatch.setattr(
+        CoreArtifactStorage,
+        "_azure_clients",
+        staticmethod(lambda settings: (FakeBlobService(), None)),
+    )
+    service = CoreArtifactStorage(FakePool())
+
+    result = asyncio.run(service.test_connection({
+        "backend": "azure_blob",
+        "azure_container": "artifacts",
+        "azure_sas_token": sas_token,
+    }))
+
+    assert result["healthy"] is False
+    assert "Invalid SAS token" in result["detail"]
+    assert "ValueError" in result["detail"]
+    assert sas_token not in result["detail"]
+    assert "[redacted]" in result["detail"]

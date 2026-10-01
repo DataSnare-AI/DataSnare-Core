@@ -5,6 +5,7 @@ services:
       target: api
     environment:
       DATASNARE_ENV: development
+      CORE_STORAGE_ENCRYPTION_KEY: ${CORE_STORAGE_ENCRYPTION_KEY:-}
     expose:
       - "8000"
     restart: unless-stopped
