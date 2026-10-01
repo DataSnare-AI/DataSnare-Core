@@ -259,7 +259,8 @@ def test_azure_probe_error_includes_safe_diagnostic_without_credentials(monkeypa
     sas_token = "sv=version&sig=secret-signature"
 
     class FailingContainer:
-        def list_blobs(self):
+        def list_blobs(self, results_per_page):
+            assert results_per_page == 1
             raise ValueError(
                 f"Invalid SAS token in https://storage.example.test/?{sas_token}; ErrorCode:AuthenticationFailed"
             )
@@ -295,12 +296,12 @@ def test_azure_probe_checks_list_access_with_one_item_page(monkeypatch):
             return iter([])
 
     class FakePager:
-        def by_page(self, results_per_page):
-            assert results_per_page == 1
+        def by_page(self):
             return iter([FakePage()])
 
     class FakeContainer:
-        def list_blobs(self):
+        def list_blobs(self, results_per_page):
+            assert results_per_page == 1
             return FakePager()
 
     class FakeBlobService:

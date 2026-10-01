@@ -158,7 +158,7 @@ class CoreArtifactStorage:
             client = service.get_container_client(container)
             def probe_list_access():
                 first_page = next(
-                    iter(client.list_blobs().by_page(results_per_page=1)), None
+                    iter(client.list_blobs(results_per_page=1).by_page()), None
                 )
                 if first_page is not None:
                     next(iter(first_page), None)
