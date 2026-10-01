@@ -62,6 +62,15 @@ async def upload_tool_artifact(tenant_id: int, tool_id: str, job_id: str, reques
     data = await request.body()
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Tool uploads are limited to 25 MiB")
+    artifact = None
+    storage = getattr(request.app.state, "artifact_storage", None)
+    if storage is not None:
+        artifact = await storage.store(
+            tenant_id=tenant_id, product_key=tool_id, job_id=job_id,
+            artifact_name=record.artifact_name,
+            content_type=request.headers.get("content-type", "application/octet-stream"),
+            content=data, uploaded_by=actor.actor_id,
+        )
     conversion = record.native_conversion or {}
     await request.app.state.ingest_jobs.update(tenant_id, job_id, state="running")
     try:
@@ -81,7 +90,7 @@ async def upload_tool_artifact(tenant_id: int, tool_id: str, job_id: str, reques
         knowledge = build_knowledge_item(tenant_id, actor.actor_id, item_type="metric" if tool_id == "aiperf" else "event", source_id=job_id, source_name=record.artifact_name, title=record.artifact_name, text=knowledge_text or f"{tool_id} parser completed with {summary}", agent_id=None, site_id=None, area_id=None, classification="internal", metadata={"tool_id": tool_id, "normalized_schema": normalized, **summary})
         await store_knowledge_item(request, tenant_id=tenant_id, actor_id=actor.actor_id, item=knowledge)
         updated = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**conversion, "status": parser_status, "analysis": summary, "knowledge_item_id": knowledge.item_id})
-        return {"schema": f"datasnare-{tool_id}/job-result-v1", "job": _job_payload(updated), "analysis": summary, "normalized_schema": normalized, "knowledge_item_id": knowledge.item_id}
+        return {"schema": f"datasnare-{tool_id}/job-result-v1", "job": _job_payload(updated), "analysis": summary, "normalized_schema": normalized, "knowledge_item_id": knowledge.item_id, "artifact": artifact}
     except (ValueError, UnicodeError) as error:
         updated = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="failed", native_conversion={**(record.native_conversion or {}), "status": "failed", "error": str(error)})
         raise HTTPException(status_code=422, detail=str(error)) from error

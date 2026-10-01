@@ -6,6 +6,9 @@ pytest
 pytest-asyncio
 asyncpg
 bcrypt
+azure-storage-blob
+azure-identity
+cryptography
 PyYAML
 pypdf
 scapy

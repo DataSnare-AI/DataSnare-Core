@@ -367,8 +367,9 @@ and System Diagnostics XML into `datasnare-aiperf/events-v1`; AIProcMon parses C
 `datasnare-aiprocmon/events-v1`, requiring explicit capture date and UTC offset for time-of-day CSV.
 Both publish normalized summaries to tenant knowledge. Native BLG/PML jobs remain accepted but require
 the Windows `relog.exe`/ProcMon converters; Core returns an explicit converter-required response rather
-than attempting unsupported Linux binary decoding. All four tools now have reachable web job surfaces;
-durable artifact upload/result persistence and production auth wiring remain deployment blockers.
+than attempting unsupported Linux binary decoding. All four tools now have reachable web job surfaces.
+Original uploaded files are persisted through Core's tenant-scoped artifact store when configured;
+parser results continue to live in ingest-job metadata and the knowledge index.
 
 Core now exposes `GET /api/health/readiness` as a deployment gate. Development reports ready with
 in-memory services and development headers; production reports `not_ready` until a configured auth
@@ -383,7 +384,10 @@ pool behavior.
 
 Persistent ingest-job storage uses `PostgresIngestJobRepository` and the separate
 `backend/migrations/002_ingest_jobs.sql` migration. Its `(tenant_id, job_id)` key stores lifecycle state
-and parser result metadata in JSONB. The existing RAG migration stores manifests, which now use
-`PostgresAgentManifestRepository` under the same tenant-scoped contract. Apply migrations 001 then 002
-before enabling database-backed writes. Site-query caching remains in memory; uploaded source bytes
-are not durably stored.
+and parser result metadata in JSONB. Migration `008_core_artifact_storage.sql` adds Core-owned storage
+settings and tenant/product-scoped artifact metadata. Configure Core Admin > Storage to use the same
+Azure account/container as AIOps with the separate `core-artifacts` prefix; existing AIOps Help blobs
+remain untouched. Azure secrets are encrypted in Core's database using `CORE_STORAGE_ENCRYPTION_KEY`.
+The staging compose file mounts a persistent volume for local-backend mode. Core readiness requires
+Azure Blob configuration in production. Artifact expiry/retention enforcement is still a follow-up.
+Site-query caching remains in memory.

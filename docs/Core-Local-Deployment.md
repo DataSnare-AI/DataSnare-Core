@@ -94,14 +94,16 @@ curl -fsS https://staging.api.datasnare.com/api/health/readiness
 Do not deploy this scaffold as production yet. The API creates and closes an asyncpg pool from Core-only `DATABASE_URL` when configured, and selects PostgreSQL adapters for ingest jobs, knowledge items, agent manifests, graph edges,
 retrieval audits, and vectors. The pool can be tuned with `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE`, and `DB_COMMAND_TIMEOUT_SECONDS`. Production readiness must remain `not_ready` until:
 
-- `pgvector` is installed and `backend/migrations/001_rag_foundation.sql` through `004_core_identity.sql` are applied to `datasnare_core`.
+- `pgvector` is installed and `backend/migrations/001_rag_foundation.sql` through `008_core_artifact_storage.sql` are applied to `datasnare_core`.
 - A real authentication provider is connected and tenant claims are enforced by Core authorization.
 - AIOps account data has been imported and reconciled into Core, including password hashes, memberships,
     and product assignments. Plaintext passwords must never be exported or logged.
 - AIOps validates Core-issued sessions through Core's auth profile/introspection APIs; Core must not
     use AIOps as its login dependency.
 - The in-memory site-query cache is assigned deliberate retention semantics or replaced if shared persistence is required.
-- Upload artifacts have tenant-scoped durable storage, size limits, retention policy, and audit logging; current job persistence stores metadata/results, not source bytes.
+- Core Admin > Storage is configured for Azure Blob and passes its connectivity test. Core uses its own prefix in the configured account/container; existing AIOps Help files and AIOps Help Storage settings remain unchanged during this transition.
+- `CORE_STORAGE_ENCRYPTION_KEY` is set in the Core environment before storing connection strings, account keys, or SAS tokens. Keep the same key across rebuilds and backups. Managed identity can be used without stored Azure secrets.
+- Core upload records retain tenant/product/job metadata, size, checksum, uploader, and storage reference. Retention scheduling/policy enforcement still needs to be configured before production.
 - TLS ingress, host routing, CORS policy for any cross-origin API usage, secrets, health probes, backups, and rollback are configured.
 
 Production hostnames remain `app.datasnare.com` and `api.datasnare.com`; staging validation should pass first. The existing AIOps database must remain isolated: Core connects to `datasnare_core` and consumes AIOps knowledge through its authenticated API/event boundary, not direct AIOps table access.

@@ -41,6 +41,15 @@ async def upload_log_artifact(tenant_id: int, job_id: str, request: Request, x_a
     data = await request.body()
     if len(data) > MAX_LOG_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="AILogScope staging uploads are limited to 25 MiB")
+    artifact = None
+    storage = getattr(request.app.state, "artifact_storage", None)
+    if storage is not None:
+        artifact = await storage.store(
+            tenant_id=tenant_id, product_key="ailogscope", job_id=job_id,
+            artifact_name=record.artifact_name,
+            content_type=request.headers.get("content-type", "application/octet-stream"),
+            content=data, uploaded_by=actor.actor_id,
+        )
     await request.app.state.ingest_jobs.update(tenant_id, job_id, state="running")
     try:
         analysis = await request.app.state.log_parser.analyze(data, record.artifact_name)
@@ -52,4 +61,4 @@ async def upload_log_artifact(tenant_id: int, job_id: str, request: Request, x_a
     analysis_payload = asdict(analysis)
     analysis_payload.pop("knowledge_text", None)
     completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis_payload, "knowledge_item_id": item.item_id})
-    return {"schema": "datasnare-ailogscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "knowledge_item_id": item.item_id}
+    return {"schema": "datasnare-ailogscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "knowledge_item_id": item.item_id, "artifact": artifact}

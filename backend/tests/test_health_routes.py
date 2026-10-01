@@ -20,6 +20,7 @@ def test_development_readiness_reports_contracts_and_in_memory_mode():
     assert payload["status"] == "ready"
     assert payload["environment"] == "development"
     assert payload["storage_mode"] == "in-memory"
+    assert payload["checks"]["durable_artifact_storage"] is True
     assert payload["checks"]["tool_contracts"] is True
 
 
@@ -32,3 +33,4 @@ def test_production_readiness_requires_auth_provider_and_database(monkeypatch):
     assert payload["status"] == "not_ready"
     assert payload["checks"]["tenant_authentication"] is False
     assert payload["checks"]["persistent_storage"] is False
+    assert payload["checks"]["durable_artifact_storage"] is False

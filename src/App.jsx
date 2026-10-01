@@ -7,6 +7,7 @@ import AINetScopeWorkbench from './tools/AINetScopeWorkbench';
 import AILogScopeWorkbench from './tools/AILogScopeWorkbench';
 import NativeToolWorkbench from './tools/NativeToolWorkbench';
 import AdminConsole from './admin/AdminConsole';
+import ArtifactLibrary from './admin/ArtifactLibrary';
 
 const partnerIntegrations = [
   {
@@ -115,6 +116,9 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const isAdminPage = locationHash.startsWith('#admin') && accountProfile?.role === 'platform_admin' && Boolean(authToken);
+  const hasTenantAdminMembership = Object.values(accountProfile?.tenant_roles || {}).some((roles) => roles.includes('tenant_admin'));
+  const canManageArtifacts = accountProfile?.role === 'platform_admin' || hasTenantAdminMembership;
+  const isArtifactPage = locationHash === '#artifacts' && canManageArtifacts && Boolean(authToken);
 
   useEffect(() => {
     const updateLocation = () => setLocationHash(window.location.hash);
@@ -228,6 +232,7 @@ export default function App() {
           <a href="#access" onClick={() => setMenuOpen(false)}>Access</a>
           <a href="#billing" onClick={() => setMenuOpen(false)}>Licensing</a>
           {accountProfile?.role === 'platform_admin' && <a href="#admin/tenants" onClick={() => setMenuOpen(false)}>Admin</a>}
+          {canManageArtifacts && <a href="#artifacts" onClick={() => setMenuOpen(false)}>Artifacts</a>}
           <button className="session-button" type="button" onClick={() => setSessionOpen(true)}>
             <CircleUserRound size={17} /> {accountProfile?.display_name || accountProfile?.username || 'Sign in'}
           </button>
@@ -239,7 +244,7 @@ export default function App() {
       </header>
 
       <main id="top">
-        {isAdminPage ? <AdminConsole token={authToken} /> : <>
+        {isArtifactPage ? <ArtifactLibrary token={authToken} profile={accountProfile} /> : isAdminPage ? <AdminConsole token={authToken} /> : <>
         <section className="hero">
           <div className="hero__copy">
             <p className="eyebrow">The DataSnare control plane</p>

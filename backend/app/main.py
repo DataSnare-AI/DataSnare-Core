@@ -40,6 +40,9 @@ from app.routes.health import router as health_router
 from app.routes.auth import router as auth_router
 from app.routes.admin_users import router as admin_users_router
 from app.routes.admin_tenants import router as admin_tenants_router
+from app.routes.admin_storage import router as admin_storage_router
+from app.routes.artifacts import router as artifacts_router
+from app.services.artifact_storage import CoreArtifactStorage
 
 
 def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=None, embedding_provider=None, vector_store=None, agent_manifests=None, retrieval_audit=None, knowledge_graph=None, site_cache=None, capture_parser=None, log_parser=None, aiperf_parser=None, aiprocmon_parser=None, database_pool=None, auth_provider=None) -> FastAPI:
@@ -57,6 +60,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
             )
             pool = owned_pool
             app.state.database_pool = pool
+            app.state.artifact_storage = CoreArtifactStorage(pool)
             if auth_provider is None:
                 app.state.auth_provider = CoreIdentityProvider(pool)
             if ingest_jobs is None:
@@ -80,6 +84,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
 
     app = FastAPI(title="DataSnare-Core API", lifespan=lifespan)
     app.state.database_pool = database_pool
+    app.state.artifact_storage = CoreArtifactStorage(database_pool) if database_pool is not None else None
     app.state.auth_provider = auth_provider or (CoreIdentityProvider(database_pool) if database_pool is not None else None)
     app.state.product_accounts = PostgresProductAccountRepository(database_pool) if database_pool is not None else InMemoryProductAccountRepository()
     app.state.partner_connections = partner_connections or InMemoryPartnerConnectionRepository()
@@ -121,6 +126,8 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.include_router(auth_router)
     app.include_router(admin_users_router)
     app.include_router(admin_tenants_router)
+    app.include_router(admin_storage_router)
+    app.include_router(artifacts_router)
     return app
 
 

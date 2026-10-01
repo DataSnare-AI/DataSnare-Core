@@ -1,20 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Building2, Check, Info, KeyRound, Package, Plus, RefreshCw, UserPlus, Users, X } from 'lucide-react';
+import { Building2, Check, Cloud, Info, KeyRound, Package, Plus, RefreshCw, Save, UserPlus, Users, X } from 'lucide-react';
+import { PlanTag } from './adminTags';
 
 const ROLES = ['viewer', 'operator', 'approver', 'tenant_admin', 'platform_admin'];
-const PLAN_COLORS = ['green', 'blue', 'violet', 'amber', 'coral', 'teal'];
-const PLAN_TIER_COLORS = { starter: 'green', growth: 'blue', enterprise: 'violet' };
-
-function planColor(planKey = '') {
-  if (PLAN_TIER_COLORS[planKey.toLowerCase()]) return PLAN_TIER_COLORS[planKey.toLowerCase()];
-  let hash = 0;
-  for (const char of planKey) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return PLAN_COLORS[hash % PLAN_COLORS.length];
-}
-
-function PlanTag({ planKey, children }) {
-  return <span className={`plan-tag plan-tag--${planColor(planKey)}`}>{children || planKey}</span>;
-}
 
 function Dialog({ title, eyebrow, onClose, children, actions, wide = false }) {
   return <div className="modal-backdrop admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -142,6 +130,11 @@ function TenantsPanel({ token, onError, onNotice }) {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [onboardOpen, setOnboardOpen] = useState(false);
+  const [memberTenant, setMemberTenant] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [memberUsers, setMemberUsers] = useState([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [memberDraft, setMemberDraft] = useState({ actor_id: '', role_key: 'viewer' });
   const [draft, setDraft] = useState({
     tenant_name: '', company_name: '', primary_address: '', phone: '', contact_email: '',
     primary_contact_name: '', billing_contact_name: '', billing_contact_email: '',
@@ -187,6 +180,52 @@ function TenantsPanel({ token, onError, onNotice }) {
     } catch (error) { onError(error.message); }
   };
 
+  const loadMembers = useCallback(async (tenantId) => {
+    setMembersLoading(true);
+    try {
+      const [membersResponse, usersResponse] = await Promise.all([
+        authFetch(token, `/api/admin/tenants/${tenantId}/members`),
+        authFetch(token, '/api/admin/users'),
+      ]);
+      if (!membersResponse.ok) throw new Error(await readError(membersResponse, 'Could not load tenant members.'));
+      if (!usersResponse.ok) throw new Error(await readError(usersResponse, 'Could not load Core users.'));
+      setMembers((await membersResponse.json()).members || []);
+      setMemberUsers(((await usersResponse.json()).users || []).filter((user) => user.is_active));
+    } catch (error) { onError(error.message); }
+    finally { setMembersLoading(false); }
+  }, [token, onError]);
+
+  const openMembers = (tenant) => {
+    setMemberTenant(tenant);
+    setMemberDraft({ actor_id: '', role_key: 'viewer' });
+    loadMembers(tenant.tenant_id);
+  };
+
+  const assignMember = async (event) => {
+    event.preventDefault();
+    if (!memberTenant || !memberDraft.actor_id) { onError('Choose a user to add.'); return; }
+    try {
+      const response = await authFetch(token, `/api/admin/tenants/${memberTenant.tenant_id}/members`, {
+        method: 'PUT', body: JSON.stringify(memberDraft),
+      });
+      if (!response.ok) throw new Error(await readError(response, 'Could not assign the tenant role.'));
+      onNotice(`Assigned ${memberDraft.role_key} to ${memberDraft.actor_id} for ${memberTenant.display_name}.`);
+      setMemberDraft({ actor_id: '', role_key: 'viewer' });
+      loadMembers(memberTenant.tenant_id);
+      load();
+    } catch (error) { onError(error.message); }
+  };
+
+  const deactivateMember = async (actorId) => {
+    try {
+      const response = await authFetch(token, `/api/admin/tenants/${memberTenant.tenant_id}/members/${encodeURIComponent(actorId)}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error(await readError(response, 'Could not remove the tenant member.'));
+      onNotice(`Removed ${actorId} from ${memberTenant.display_name}.`);
+      loadMembers(memberTenant.tenant_id);
+      load();
+    } catch (error) { onError(error.message); }
+  };
+
   const groupedTenants = [...tenants.reduce((groups, row) => {
     const tenant = groups.get(row.tenant_id) || { ...row, products: [], plans: [] };
     if (row.product_key) {
@@ -211,17 +250,18 @@ function TenantsPanel({ token, onError, onNotice }) {
       <div className="admin-toolbar"><span>Organizations registered with Core</span><button className="primary-button" type="button" onClick={() => setOnboardOpen(true)}><Building2 size={15} /> Onboard tenant</button></div>
       {loading ? <p className="admin-empty">Loading tenants…</p> : (
         <table className="admin-table">
-          <thead><tr><th>Tenant</th><th>Products</th><th>Plan</th><th>Members</th></tr></thead>
+          <thead><tr><th>Tenant</th><th>Products</th><th>Plan</th><th>Members</th><th>Actions</th></tr></thead>
           <tbody>
             {groupedTenants.map((row) => (
               <tr key={row.tenant_id}>
                 <td><strong>{row.display_name}</strong><small>#{row.tenant_id}</small><span className={`admin-pill ${row.status === 'active' ? 'admin-pill--good' : 'admin-pill--bad'}`}>{row.status}</span></td>
-                <td>{row.products.length ? <div className="tenant-product-tags">{row.products.map((product) => <PlanTag key={product.product_key} planKey={product.product_key}>{product.product_name}</PlanTag>)}</div> : <span className="admin-pill admin-pill--warn">no products</span>}</td>
-                <td>{row.plans.length ? <div className="tenant-product-tags">{row.plans.map((plan) => <PlanTag key={`${plan.product_key}-${plan.plan_key}`} planKey={plan.plan_key}>{plan.plan_name}</PlanTag>)}</div> : <span className="admin-empty">—</span>}</td>
+                <td>{row.products.length ? <div className="tenant-product-stack">{row.products.map((product) => <div className="tenant-product-stack__row" key={product.product_key}><PlanTag planKey={product.product_key}>{product.product_name}</PlanTag></div>)}</div> : <span className="admin-pill admin-pill--warn">no products</span>}</td>
+                <td>{row.plans.length ? <div className="tenant-product-stack">{row.plans.map((plan) => <div className="tenant-product-stack__row" key={`${plan.product_key}-${plan.plan_key}`}>{plan.plan_key ? <PlanTag planKey={plan.plan_key}>{plan.plan_name}</PlanTag> : <span className="admin-pill admin-pill--warn">no plan</span>}</div>)}</div> : <span className="admin-empty">—</span>}</td>
                 <td>{row.member_count}</td>
+                <td><button className="quiet-button quiet-button--small" type="button" onClick={() => openMembers(row)}>Manage Members</button></td>
               </tr>
             ))}
-            {!groupedTenants.length && <tr><td colSpan={4} className="admin-empty">No tenants yet.</td></tr>}
+            {!groupedTenants.length && <tr><td colSpan={5} className="admin-empty">No tenants yet.</td></tr>}
           </tbody>
         </table>
       )}
@@ -255,6 +295,17 @@ function TenantsPanel({ token, onError, onNotice }) {
           </form>
         </section>
       </div>}
+      {memberTenant && <Dialog title={`Members · ${memberTenant.display_name}`} eyebrow={`Tenant #${memberTenant.tenant_id}`} onClose={() => setMemberTenant(null)} wide actions={<button className="quiet-button" type="button" onClick={() => setMemberTenant(null)}>Close</button>}>
+        <form className="admin-dialog__form member-assignment-form" onSubmit={assignMember}>
+          <label>User<select value={memberDraft.actor_id} onChange={(event) => setMemberDraft({ ...memberDraft, actor_id: event.target.value })} required><option value="">Select user…</option>{memberUsers.map((user) => <option key={user.username} value={user.username}>{user.display_name || user.username} · {user.username}</option>)}</select></label>
+          <label>Tenant role<select value={memberDraft.role_key} onChange={(event) => setMemberDraft({ ...memberDraft, role_key: event.target.value })}>{ROLES.filter((role) => role !== 'platform_admin').map((role) => <option key={role} value={role}>{role.replace('_', ' ')}</option>)}</select><span className={`admin-pill admin-pill--role admin-pill--role-${memberDraft.role_key}`}>{memberDraft.role_key.replace('_', ' ')}</span></label>
+          <button className="primary-button" type="submit"><UserPlus size={15} /> Assign role</button>
+        </form>
+        {membersLoading ? <p className="admin-empty">Loading members…</p> : <div className="admin-dialog__table-wrap"><table className="admin-table"><thead><tr><th>Member</th><th>Tenant role</th><th>Identity</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          {members.map((member) => <tr key={`${member.identity_issuer}-${member.identity_subject}`}><td><strong>{member.display_name || member.actor_id}</strong><small>{member.actor_id}</small></td><td><span className={`admin-pill admin-pill--role admin-pill--role-${member.role_key}`}>{member.role_key.replace('_', ' ')}</span></td><td><small>{member.identity_issuer}</small></td><td><span className={`admin-pill ${member.status === 'active' && member.user_active !== false ? 'admin-pill--good' : 'admin-pill--bad'}`}>{member.user_active === false ? 'user disabled' : member.status}</span></td><td>{member.status === 'active' && <button className="quiet-button quiet-button--small" type="button" onClick={() => deactivateMember(member.actor_id)}>Remove</button>}</td></tr>)}
+          {!members.length && <tr><td colSpan={5} className="admin-empty">No tenant members assigned.</td></tr>}
+        </tbody></table></div>}
+      </Dialog>}
     </div>
   );
 }
@@ -492,21 +543,117 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
   );
 }
 
+function StoragePanel({ token, onError, onNotice }) {
+  const [settings, setSettings] = useState({
+    backend: 'local', local_upload_dir: '', upload_max_bytes: 262144000,
+    blob_prefix: 'core-artifacts', azure_container: '', azure_account_url: '',
+    azure_connection_string: '', azure_account_key: '', azure_sas_token: '',
+  });
+  const [secretFlags, setSecretFlags] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [health, setHealth] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await authFetch(token, '/api/admin/storage');
+      if (!response.ok) throw new Error(await readError(response, 'Could not load storage settings.'));
+      const result = await response.json();
+      setSecretFlags({
+        azure_connection_string: result.has_azure_connection_string,
+        azure_account_key: result.has_azure_account_key,
+        azure_sas_token: result.has_azure_sas_token,
+      });
+      setSettings({
+        backend: result.backend || 'local', local_upload_dir: result.local_upload_dir || '',
+        upload_max_bytes: Number(result.upload_max_bytes || 262144000),
+        blob_prefix: result.blob_prefix || 'core-artifacts', azure_container: result.azure_container || '',
+        azure_account_url: result.azure_account_url || '', azure_connection_string: '',
+        azure_account_key: '', azure_sas_token: '',
+      });
+    } catch (error) { onError(error.message); }
+    finally { setLoading(false); }
+  }, [token, onError]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const update = (field, value) => setSettings((current) => ({ ...current, [field]: value }));
+
+  const save = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const body = {
+        ...settings,
+        upload_max_bytes: Number(settings.upload_max_bytes),
+        local_upload_dir: settings.local_upload_dir || null,
+        azure_container: settings.azure_container || null,
+        azure_account_url: settings.azure_account_url || null,
+        azure_connection_string: settings.azure_connection_string || null,
+        azure_account_key: settings.azure_account_key || null,
+        azure_sas_token: settings.azure_sas_token || null,
+      };
+      const response = await authFetch(token, '/api/admin/storage', { method: 'PUT', body: JSON.stringify(body) });
+      if (!response.ok) throw new Error(await readError(response, 'Could not save storage settings.'));
+      onNotice('Artifact storage settings saved.');
+      await load();
+    } catch (error) { onError(error.message); }
+    finally { setSaving(false); }
+  };
+
+  const testConnection = async () => {
+    setTesting(true);
+    try {
+      const response = await authFetch(token, '/api/admin/storage/test', { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || 'Storage connection test failed.');
+      setHealth(result);
+      if (result.healthy) onNotice('Storage connection is healthy.');
+      else onError(result.detail || 'Storage connection failed.');
+    } catch (error) { setHealth(null); onError(error.message); }
+    finally { setTesting(false); }
+  };
+
+  const setSecret = (field, label) => <label>{label}<input type="password" autoComplete="new-password" value={settings[field]} onChange={(event) => update(field, event.target.value)} placeholder={secretFlags[field] ? 'Stored securely; leave blank to keep current' : 'Optional'} /></label>;
+
+  return <div className="admin-panel storage-panel">
+    <div className="admin-panel__heading"><span><Cloud size={16} /> Artifact storage</span><div className="admin-heading-actions"><button className="admin-secondary-button" type="button" onClick={testConnection} disabled={testing || loading}>{testing ? 'Testing…' : 'Test connectivity'}</button><button className="icon-button" type="button" onClick={load} aria-label="Refresh storage settings"><RefreshCw size={14} /></button></div></div>
+    <div className="plan-info"><Info size={18} /><div><strong>Core uses an isolated path in the configured storage account</strong><p>You may use the same Azure account and container as AIOps. Core stores objects below its own prefix and records tenant-scoped metadata in the Core database. Existing AIOps Help files are not moved or modified.</p></div></div>
+    {health && <p className={`admin-storage-health ${health.healthy ? 'admin-storage-health--good' : 'admin-storage-health--bad'}`} role="status"><span className={`admin-pill ${health.healthy ? 'admin-pill--good' : 'admin-pill--bad'}`}>{health.healthy ? 'healthy' : 'attention'}</span> {health.detail}{health.container ? ` · ${health.container}` : ''}</p>}
+    <form className="admin-storage-form" onSubmit={save}>
+      <label>Storage backend<select value={settings.backend} onChange={(event) => update('backend', event.target.value)}><option value="local">Local filesystem</option><option value="azure_blob">Azure Blob Storage</option></select></label>
+      <label>Maximum upload size (bytes)<input type="number" min="1024" max="5368709120" value={settings.upload_max_bytes} onChange={(event) => update('upload_max_bytes', event.target.value)} required /></label>
+      {settings.backend === 'local' ? <label className="admin-storage-form__wide">Upload directory<input value={settings.local_upload_dir} onChange={(event) => update('local_upload_dir', event.target.value)} placeholder="/var/lib/datasnare-core/artifacts" /></label> : <>
+        <label>Azure container<input value={settings.azure_container} onChange={(event) => update('azure_container', event.target.value)} placeholder="help-repository" required /></label>
+        <label>Core blob prefix<input value={settings.blob_prefix} onChange={(event) => update('blob_prefix', event.target.value)} placeholder="core-artifacts" required /></label>
+        <label className="admin-storage-form__wide">Azure account URL<input value={settings.azure_account_url} onChange={(event) => update('azure_account_url', event.target.value)} placeholder="https://account.blob.core.windows.net" /></label>
+        {setSecret('azure_connection_string', 'Azure connection string')}
+        {setSecret('azure_account_key', 'Azure account key')}
+        {setSecret('azure_sas_token', 'Azure SAS token')}
+        <p className="admin-storage-form__note">Leave all credential fields blank to use the Core host’s managed identity, or leave an existing secret blank to retain it. Credentials are encrypted in Core’s database.</p>
+      </>}
+      <div className="admin-storage-form__actions"><button className="primary-button" type="submit" disabled={saving || loading}><Save size={15} /> {saving ? 'Saving…' : 'Save storage settings'}</button></div>
+    </form>
+  </div>;
+}
+
 export default function AdminConsole({ token }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [activeTab, setActiveTab] = useState(() => {
     const requested = window.location.hash.split('/')[1];
-    return ['tenants', 'users', 'plans'].includes(requested) ? requested : 'tenants';
+    return ['tenants', 'users', 'plans', 'storage'].includes(requested) ? requested : 'tenants';
   });
 
-  const report = (message) => { setError(message); setNotice(''); };
-  const announce = (message) => { setNotice(message); setError(''); };
+  const report = useCallback((message) => { setError(message); setNotice(''); }, []);
+  const announce = useCallback((message) => { setNotice(message); setError(''); }, []);
 
   useEffect(() => {
     const syncTab = () => {
       const requested = window.location.hash.split('/')[1];
-      if (['tenants', 'users', 'plans'].includes(requested)) setActiveTab(requested);
+      if (['tenants', 'users', 'plans', 'storage'].includes(requested)) setActiveTab(requested);
     };
     window.addEventListener('hashchange', syncTab);
     return () => window.removeEventListener('hashchange', syncTab);
@@ -530,12 +677,14 @@ export default function AdminConsole({ token }) {
           { id: 'tenants', label: 'Tenants' },
           { id: 'users', label: 'Users' },
           { id: 'plans', label: 'Plans' },
+          { id: 'storage', label: 'Storage' },
         ].map((tab) => <button key={tab.id} className={activeTab === tab.id ? 'admin-tab admin-tab--active' : 'admin-tab'} id={`admin-tab-${tab.id}`} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls="admin-tab-panel" onClick={() => selectTab(tab.id)}>{tab.label}</button>)}
       </div>
       <div className="admin-tab-panel" id="admin-tab-panel" role="tabpanel" aria-labelledby={`admin-tab-${activeTab}`}>
         {activeTab === 'tenants' && <TenantsPanel token={token} onError={report} onNotice={announce} />}
         {activeTab === 'users' && <UsersPanel token={token} onError={report} onNotice={announce} />}
         {activeTab === 'plans' && <SubscriptionsPanel token={token} onError={report} onNotice={announce} />}
+        {activeTab === 'storage' && <StoragePanel token={token} onError={report} onNotice={announce} />}
       </div>
     </section>
   );

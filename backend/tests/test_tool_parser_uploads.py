@@ -44,6 +44,35 @@ def test_aiperf_csv_upload_returns_normalized_threshold_event_and_indexes_it():
     assert catalog["item_count"] == 1
 
 
+def test_tool_upload_persists_raw_artifact_when_storage_is_enabled():
+    class FakeArtifactStorage:
+        stored = None
+
+        async def store(self, **values):
+            self.stored = values
+            return {"artifact_id": "artifact-1", "size_bytes": len(values["content"]), "sha256": "abc"}
+
+    app = create_app()
+    storage = FakeArtifactStorage()
+    app.state.artifact_storage = storage
+    client = TestClient(app)
+    job_id = _create(client, "aiperf", "cpu.csv", "csv")
+    csv_data = b"Timestamp,CPU\n2026-09-28T10:00:00Z,20\n"
+
+    response = client.post(
+        f"/api/tenants/7/tools/aiperf/jobs/{job_id}/artifact",
+        headers={**HEADERS, "Content-Type": "text/csv"},
+        content=csv_data,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["artifact"]["artifact_id"] == "artifact-1"
+    assert storage.stored["tenant_id"] == 7
+    assert storage.stored["product_key"] == "aiperf"
+    assert storage.stored["job_id"] == job_id
+    assert storage.stored["content"] == csv_data
+
+
 def test_aiprocmon_csv_requires_capture_context_and_indexes_events():
     client = TestClient(create_app())
     missing_context_job = _create(client, "aiprocmon", "trace.csv", "csv")

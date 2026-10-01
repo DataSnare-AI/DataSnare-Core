@@ -9,6 +9,9 @@ services:
       DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-1}
       DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-8}
       DB_COMMAND_TIMEOUT_SECONDS: ${DB_COMMAND_TIMEOUT_SECONDS:-60}
+      CORE_STORAGE_ENCRYPTION_KEY: ${CORE_STORAGE_ENCRYPTION_KEY:-}
+    volumes:
+      - core_artifacts:/var/lib/datasnare-core/artifacts
     expose:
       - "8000"
     networks:
@@ -38,3 +41,6 @@ networks:
   edge:
     external: true
     name: ${CORE_EDGE_NETWORK:?Set CORE_EDGE_NETWORK to the existing AIOps/Caddy Docker network}
+
+volumes:
+  core_artifacts:

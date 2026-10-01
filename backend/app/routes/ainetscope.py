@@ -99,6 +99,15 @@ async def upload_capture_artifact(
     data = await request.body()
     if len(data) > MAX_CAPTURE_BYTES:
         raise HTTPException(status_code=413, detail="AINetScope staging captures are limited to 250 MiB")
+    artifact = None
+    storage = getattr(request.app.state, "artifact_storage", None)
+    if storage is not None:
+        artifact = await storage.store(
+            tenant_id=tenant_id, product_key="ainetscope", job_id=job_id,
+            artifact_name=record.artifact_name,
+            content_type=request.headers.get("content-type", "application/octet-stream"),
+            content=data, uploaded_by=actor.actor_id,
+        )
     await request.app.state.ingest_jobs.update(tenant_id, job_id, state="running")
     try:
         analysis = await request.app.state.capture_parser.analyze(data, record.artifact_name)
@@ -107,7 +116,7 @@ async def upload_capture_artifact(
         item = build_knowledge_item(tenant_id, actor.actor_id, item_type="event", source_id=job_id, source_name=record.artifact_name, title=record.artifact_name, text=knowledge_text or analysis.message, agent_id=None, site_id=None, area_id=None, classification="internal", metadata={"tool_id": "ainetscope", "packet_count": analysis.packets, "flow_count": analysis.flows, "host_count": analysis.hosts, "protocols": analysis.protocols, "findings": analysis.findings})
         await store_knowledge_item(request, tenant_id=tenant_id, actor_id=actor.actor_id, item=item)
         completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis_payload, "knowledge_item_id": item.item_id})
-        return {"schema": "datasnare-ainetscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "knowledge_item_id": item.item_id}
+        return {"schema": "datasnare-ainetscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "knowledge_item_id": item.item_id, "artifact": artifact}
     except ValueError as error:
         failed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="failed", native_conversion={**(record.native_conversion or {}), "status": "failed", "error": str(error)})
         raise HTTPException(status_code=422, detail=str(error)) from error
