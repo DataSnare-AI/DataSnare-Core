@@ -20,3 +20,64 @@ Keep the key stable across Core restarts and rebuilds. Start Core staging separa
 from AIOps with:
 
 docker compose -p datasnare-core --env-file .env.core -f docker-compose.staging.yml up --build -d
+
+cd /opt/datasnare-core
+git fetch origin
+git checkout main
+git pull --ff-only origin main
+git rev-parse --short HEAD
+docker compose -p datasnare-core --env-file .env.core -f docker-compose.staging.yml up -d --build core-api
+
+Test fingerprint:
+python -c "import getpass,hashlib; s=getpass.getpass('Enter SAS token (hidden): ').lstrip('?'); print(f'fingerprint={hashlib.sha256(s.encode()).hexdigest()[:12]} length={len(s)}')"
+
+StorageBlobLogs
+| where TimeGenerated > ago(1h)
+| where OperationName == "GetContainerProperties"
+| extend Container = case(
+    Uri contains "/dscoreartifacts", "dscoreartifacts",
+    Uri contains "/dsaiopshelprepository", "dsaiopshelprepository",
+    "other")
+| where Container != "other"
+| extend ClientIp = extract(@"^([^:]+)", 1, CallerIpAddress)
+| summarize
+    Requests = count(),
+    Successes = countif(toint(StatusCode) < 400),
+    Failures = countif(toint(StatusCode) >= 400),
+    Results = make_set(strcat(StatusCode, " ", StatusText)),
+    AuthTypes = make_set(AuthenticationType)
+  by Container, ClientIp
+| order by Container asc
+
+StorageBlobLogs
+| where TimeGenerated between (datetime(2026-10-01T20:34:05Z) .. datetime(2026-10-01T22:04:05Z))
+| where OperationName == "GetContainerProperties"
+| extend Container = case(
+    Uri contains "/dscoreartifacts", "dscoreartifacts",
+    Uri contains "/dsaiopshelprepository", "dsaiopshelprepository",
+    "other")
+| where Container in~ ("dscoreartifacts", "dsaiopshelprepository")
+| project TimeGenerated, Container, CallerIpAddress, Status = strcat(StatusCode, " ", StatusText), AuthType = AuthenticationType, ClientRequestId
+| order by TimeGenerated asc
+| take 5000
+
+StorageBlobLogs
+| where TimeGenerated > ago(1h)
+| where OperationName == "GetContainerProperties"
+| where Uri contains "/dscoreartifacts"
+| extend UriPath = tostring(split(Uri, "?")[0])
+| project TimeGenerated, StatusCode, StatusText, AuthenticationType,
+          AuthorizationDetails, UriPath, CallerIpAddress, ClientRequestId
+| order by TimeGenerated desc
+
+Lookup specific requestID 
+StorageBlobLogs
+| where RequestIdHeader == "2b8a5960-001e-004d-70f7-511d43000000"
+| project TimeGenerated, OperationName, StatusCode, StatusText,
+          AuthenticationType, CallerIpAddress, UriPath = tostring(split(Uri, "?")[0]),
+          RequestIdHeader, ClientRequestId
+
+
+Sign into powershell
+az login
+az storage container show --account-name forensicit --name dscoreartifacts --auth-mode login --query name --output tsv

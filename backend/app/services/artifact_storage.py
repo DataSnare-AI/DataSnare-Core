@@ -156,9 +156,14 @@ class CoreArtifactStorage:
         try:
             service, _ = self._azure_clients(settings)
             client = service.get_container_client(container)
-            exists = await asyncio.to_thread(client.exists)
-            if not exists:
-                return {"backend": backend, "healthy": False, "container": container, "detail": "Azure Blob container was not found"}
+            def probe_list_access():
+                first_page = next(
+                    iter(client.list_blobs().by_page(results_per_page=1)), None
+                )
+                if first_page is not None:
+                    next(iter(first_page), None)
+
+            await asyncio.to_thread(probe_list_access)
             return {"backend": backend, "healthy": True, "container": container, "blob_prefix": settings.get("blob_prefix"), "detail": "Azure Blob storage is reachable"}
         except HTTPException:
             raise

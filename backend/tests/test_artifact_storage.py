@@ -259,7 +259,7 @@ def test_azure_probe_error_includes_safe_diagnostic_without_credentials(monkeypa
     sas_token = "sv=version&sig=secret-signature"
 
     class FailingContainer:
-        def exists(self):
+        def list_blobs(self):
             raise ValueError(
                 f"Invalid SAS token in https://storage.example.test/?{sas_token}; ErrorCode:AuthenticationFailed"
             )
@@ -287,6 +287,42 @@ def test_azure_probe_error_includes_safe_diagnostic_without_credentials(monkeypa
     assert "ErrorCode:AuthenticationFailed" in result["detail"]
     assert sas_token not in result["detail"]
     assert "[redacted]" in result["detail"]
+
+
+def test_azure_probe_checks_list_access_with_one_item_page(monkeypatch):
+    class FakePage:
+        def __iter__(self):
+            return iter([])
+
+    class FakePager:
+        def by_page(self, results_per_page):
+            assert results_per_page == 1
+            return iter([FakePage()])
+
+    class FakeContainer:
+        def list_blobs(self):
+            return FakePager()
+
+    class FakeBlobService:
+        def get_container_client(self, container):
+            assert container == "artifacts"
+            return FakeContainer()
+
+    monkeypatch.setattr(
+        CoreArtifactStorage,
+        "_azure_clients",
+        staticmethod(lambda settings: (FakeBlobService(), None)),
+    )
+    service = CoreArtifactStorage(FakePool())
+
+    result = asyncio.run(service.test_connection({
+        "backend": "azure_blob",
+        "azure_container": "artifacts",
+        "blob_prefix": "core-artifacts",
+    }))
+
+    assert result["healthy"] is True
+    assert result["detail"] == "Azure Blob storage is reachable"
 
 
 def test_azure_client_logs_sas_fingerprint_without_token(caplog):
