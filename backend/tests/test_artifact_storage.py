@@ -294,7 +294,7 @@ def test_azure_client_logs_sas_fingerprint_without_token(caplog):
     expected_fingerprint = hashlib.sha256(sas_token.lstrip("?").encode()).hexdigest()[:12]
     service = CoreArtifactStorage(FakePool())
 
-    with caplog.at_level("INFO", logger="app.services.artifact_storage"):
+    with caplog.at_level("INFO", logger="uvicorn.error"):
         service._azure_clients({
             "azure_account_url": "https://storage.example.test",
             "azure_sas_token": sas_token,

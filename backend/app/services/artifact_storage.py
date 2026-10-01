@@ -13,7 +13,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 class CoreArtifactStorage:
