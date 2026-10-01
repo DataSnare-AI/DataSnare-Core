@@ -148,3 +148,51 @@ def test_storage_health_reports_writable_local_directory(tmp_path, monkeypatch):
     assert result["backend"] == "local"
     assert result["healthy"] is True
     assert (tmp_path / "artifacts").is_dir()
+
+
+def test_storage_test_uses_unsaved_backend_and_retains_blank_saved_secret(monkeypatch):
+    encryption_key = Fernet.generate_key().decode()
+    monkeypatch.setenv("CORE_STORAGE_ENCRYPTION_KEY", encryption_key)
+    pool = FakePool()
+    service = CoreArtifactStorage(pool)
+    encrypted_key = service.encrypt_secret("stored-account-key")
+    pool.settings_row = {
+        "backend": "local",
+        "local_upload_dir": "/tmp/artifacts",
+        "upload_max_bytes": 262144000,
+        "blob_prefix": "core-artifacts",
+        "azure_container": "old-container",
+        "azure_account_url": "https://storage.example.test",
+        "azure_connection_string_enc": None,
+        "azure_account_key_enc": encrypted_key,
+        "azure_sas_token_enc": None,
+    }
+    app = FastAPI()
+    app.state.database_pool = pool
+    app.state.artifact_storage = service
+    app.state.auth_provider = FakeProvider()
+    app.include_router(router)
+    received_settings = {}
+
+    async def capture_test_connection(settings_override=None):
+        received_settings.update(settings_override or {})
+        return {"backend": received_settings["backend"], "healthy": True, "detail": "probe ok"}
+
+    service.test_connection = capture_test_connection
+    response = TestClient(app).post(
+        "/api/admin/storage/test",
+        headers={"Authorization": "Bearer session"},
+        json={
+            "backend": "azure_blob",
+            "azure_container": "new-container",
+            "azure_account_url": "https://storage.example.test",
+            "azure_account_key": "",
+            "blob_prefix": "core-artifacts",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["backend"] == "azure_blob"
+    assert received_settings["azure_container"] == "new-container"
+    assert received_settings["azure_account_key"] == "stored-account-key"
+    assert pool.settings_row["backend"] == "local"

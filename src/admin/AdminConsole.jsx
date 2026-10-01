@@ -579,7 +579,10 @@ function StoragePanel({ token, onError, onNotice }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const update = (field, value) => setSettings((current) => ({ ...current, [field]: value }));
+  const update = (field, value) => {
+    setHealth(null);
+    setSettings((current) => ({ ...current, [field]: value }));
+  };
 
   const save = async (event) => {
     event.preventDefault();
@@ -606,7 +609,19 @@ function StoragePanel({ token, onError, onNotice }) {
   const testConnection = async () => {
     setTesting(true);
     try {
-      const response = await authFetch(token, '/api/admin/storage/test', { method: 'POST' });
+      const body = {
+        ...settings,
+        upload_max_bytes: Number(settings.upload_max_bytes),
+        local_upload_dir: settings.local_upload_dir || null,
+        azure_container: settings.azure_container || null,
+        azure_account_url: settings.azure_account_url || null,
+        azure_connection_string: settings.azure_connection_string || null,
+        azure_account_key: settings.azure_account_key || null,
+        azure_sas_token: settings.azure_sas_token || null,
+      };
+      const response = await authFetch(token, '/api/admin/storage/test', {
+        method: 'POST', body: JSON.stringify(body),
+      });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || 'Storage connection test failed.');
       setHealth(result);
@@ -621,7 +636,7 @@ function StoragePanel({ token, onError, onNotice }) {
   return <div className="admin-panel storage-panel">
     <div className="admin-panel__heading"><span><Cloud size={16} /> Artifact storage</span><div className="admin-heading-actions"><button className="admin-secondary-button" type="button" onClick={testConnection} disabled={testing || loading}>{testing ? 'Testing…' : 'Test connectivity'}</button><button className="icon-button" type="button" onClick={load} aria-label="Refresh storage settings"><RefreshCw size={14} /></button></div></div>
     <div className="plan-info"><Info size={18} /><div><strong>Core uses an isolated path in the configured storage account</strong><p>You may use the same Azure account and container as AIOps. Core stores objects below its own prefix and records tenant-scoped metadata in the Core database. Existing AIOps Help files are not moved or modified.</p></div></div>
-    {health && <p className={`admin-storage-health ${health.healthy ? 'admin-storage-health--good' : 'admin-storage-health--bad'}`} role="status"><span className={`admin-pill ${health.healthy ? 'admin-pill--good' : 'admin-pill--bad'}`}>{health.healthy ? 'healthy' : 'attention'}</span> {health.detail}{health.container ? ` · ${health.container}` : ''}</p>}
+    {health && <p className={`admin-storage-health ${health.healthy ? 'admin-storage-health--good' : 'admin-storage-health--bad'}`} role="status"><span className={`admin-pill ${health.healthy ? 'admin-pill--good' : 'admin-pill--bad'}`}>{health.healthy ? 'healthy' : 'attention'}</span> <strong>{health.backend === 'azure_blob' ? 'Azure Blob Storage' : 'Local filesystem'}</strong> · {health.detail}{health.container ? ` · ${health.container}` : ''}</p>}
     <form className="admin-storage-form" onSubmit={save}>
       <label>Storage backend<select value={settings.backend} onChange={(event) => update('backend', event.target.value)}><option value="local">Local filesystem</option><option value="azure_blob">Azure Blob Storage</option></select></label>
       <label>Maximum upload size (bytes)<input type="number" min="1024" max="5368709120" value={settings.upload_max_bytes} onChange={(event) => update('upload_max_bytes', event.target.value)} required /></label>

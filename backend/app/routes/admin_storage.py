@@ -115,6 +115,21 @@ async def save_storage_settings(body: StorageSettingsRequest, request: Request):
 
 
 @router.post("/test")
-async def test_storage_connection(request: Request):
+async def test_storage_connection(
+    request: Request, body: StorageSettingsRequest | None = None
+):
     await _require_platform_admin(request)
-    return await _storage(request).test_connection()
+    service = _storage(request)
+    if body is None:
+        return await service.test_connection()
+
+    overrides = body.model_dump()
+    current = await service.settings()
+    for field in (
+        "azure_connection_string",
+        "azure_account_key",
+        "azure_sas_token",
+    ):
+        if not overrides[field]:
+            overrides[field] = current.get(field)
+    return await service.test_connection(overrides)

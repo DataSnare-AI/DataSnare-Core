@@ -106,8 +106,12 @@ class CoreArtifactStorage:
             service = BlobServiceClient(account_url=account_url, credential=credential)
         return service, ContentSettings
 
-    async def test_connection(self) -> dict[str, Any]:
+    async def test_connection(
+        self, settings_override: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         settings = await self.settings()
+        if settings_override:
+            settings.update(settings_override)
         backend = settings["backend"]
         if backend == "local":
             path = Path(settings.get("local_upload_dir") or "/var/lib/datasnare-core/artifacts")
