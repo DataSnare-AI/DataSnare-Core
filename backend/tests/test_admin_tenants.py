@@ -8,7 +8,7 @@ BACKEND_DIR = pathlib.Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.routes.admin_tenants import router
+from app.routes.admin_tenants import _serialize, router
 
 
 class FakeTenantPool:
@@ -51,6 +51,13 @@ def build_client(pool, role="platform_admin"):
 
 
 AUTH = {"Authorization": "Bearer session"}
+
+
+def test_admin_serializer_decodes_jsonb_limit_fields():
+    payload = _serialize({"entitlements": '{"max_users":10}', "limits_override": '{"max_systems":20}'})
+
+    assert payload["entitlements"] == {"max_users": 10}
+    assert payload["limits_override"] == {"max_systems": 20}
 
 
 def test_tenant_administration_requires_platform_admin():

@@ -89,6 +89,11 @@ def _serialize(row) -> dict:
     for key, value in record.items():
         if hasattr(value, "isoformat"):
             record[key] = value.isoformat()
+        elif key in {"entitlements", "limits_override"} and isinstance(value, str):
+            try:
+                record[key] = json.loads(value)
+            except json.JSONDecodeError:
+                record[key] = {}
     return record
 
 
@@ -104,10 +109,12 @@ async def list_tenants(request: Request):
              t.status, t.source_system, t.created_at,
                e.product_key, e.plan_key, e.status AS entitlement_status,
                e.effective_start_date, e.effective_end_date, e.limits_override,
+               pl.entitlements AS plan_entitlements,
                (SELECT count(*) FROM core_tenant_memberships m
                  WHERE m.tenant_id = t.tenant_id AND m.status = 'active') AS member_count
         FROM core_tenants t
         LEFT JOIN core_tenant_product_entitlements e ON e.tenant_id = t.tenant_id
+        LEFT JOIN core_product_plans pl ON pl.product_key = e.product_key AND pl.plan_key = e.plan_key
         ORDER BY t.tenant_id, e.product_key
         """
     )
@@ -203,7 +210,8 @@ async def list_catalog(request: Request):
     rows = await request.app.state.database_pool.fetch(
         """
         SELECT p.product_key, p.display_name AS product_name, p.is_active AS product_active,
-               pl.plan_key, pl.display_name AS plan_name, pl.price_monthly, pl.currency,
+             pl.plan_key, pl.display_name AS plan_name, pl.description AS plan_description,
+             pl.price_monthly, pl.currency,
                pl.entitlements, pl.is_active AS plan_active
         FROM core_products p
         LEFT JOIN core_product_plans pl ON pl.product_key = p.product_key

@@ -1,7 +1,30 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Building2, KeyRound, Package, RefreshCw, UserPlus, Users } from 'lucide-react';
+import { Building2, Check, Info, KeyRound, Package, Plus, RefreshCw, UserPlus, Users, X } from 'lucide-react';
 
 const ROLES = ['viewer', 'operator', 'approver', 'tenant_admin', 'platform_admin'];
+const PLAN_COLORS = ['green', 'blue', 'violet', 'amber', 'coral', 'teal'];
+const PLAN_TIER_COLORS = { starter: 'green', growth: 'blue', enterprise: 'violet' };
+
+function planColor(planKey = '') {
+  if (PLAN_TIER_COLORS[planKey.toLowerCase()]) return PLAN_TIER_COLORS[planKey.toLowerCase()];
+  let hash = 0;
+  for (const char of planKey) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return PLAN_COLORS[hash % PLAN_COLORS.length];
+}
+
+function PlanTag({ planKey, children }) {
+  return <span className={`plan-tag plan-tag--${planColor(planKey)}`}>{children || planKey}</span>;
+}
+
+function Dialog({ title, eyebrow, onClose, children, actions, wide = false }) {
+  return <div className="modal-backdrop admin-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className={`admin-dialog${wide ? ' admin-dialog--wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      <header className="admin-dialog__header"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close"><X size={17} /></button></header>
+      {children}
+      <footer className="admin-dialog__actions">{actions}</footer>
+    </section>
+  </div>;
+}
 
 function authFetch(token, path, options = {}) {
   return fetch(path, {
@@ -22,6 +45,8 @@ async function readError(response, fallback) {
 function UsersPanel({ token, onError, onNotice }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
   const [draft, setDraft] = useState({ username: '', display_name: '', email: '', password: '', global_role: 'viewer' });
 
   const load = useCallback(async () => {
@@ -39,15 +64,34 @@ function UsersPanel({ token, onError, onNotice }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const createUser = async (event) => {
+  const openCreate = () => {
+    setEditingUser(null);
+    setDraft({ username: '', display_name: '', email: '', password: '', global_role: 'viewer' });
+    setDialogOpen(true);
+  };
+
+  const openEdit = (user) => {
+    setEditingUser(user);
+    setDraft({ username: user.username, display_name: user.display_name || '', email: user.email || '', password: '', global_role: user.global_role || 'viewer' });
+    setDialogOpen(true);
+  };
+
+  const saveUser = async (event) => {
     event.preventDefault();
     try {
-      const body = { ...draft };
-      if (!body.password) delete body.password;
-      const response = await authFetch(token, '/api/admin/users', { method: 'POST', body: JSON.stringify(body) });
-      if (!response.ok) throw new Error(await readError(response, 'Could not create the user.'));
-      setDraft({ username: '', display_name: '', email: '', password: '', global_role: 'viewer' });
-      onNotice(`Created ${body.username}.`);
+      let response;
+      if (editingUser) {
+        const body = { display_name: draft.display_name, email: draft.email, global_role: draft.global_role };
+        if (draft.password) body.password = draft.password;
+        response = await authFetch(token, `/api/admin/users/${encodeURIComponent(editingUser.username)}`, { method: 'PATCH', body: JSON.stringify(body) });
+      } else {
+        const body = { ...draft };
+        if (!body.password) delete body.password;
+        response = await authFetch(token, '/api/admin/users', { method: 'POST', body: JSON.stringify(body) });
+      }
+      if (!response.ok) throw new Error(await readError(response, editingUser ? 'Could not update the user.' : 'Could not create the user.'));
+      onNotice(`${editingUser ? 'Updated' : 'Created'} ${draft.username}.`);
+      setDialogOpen(false);
       load();
     } catch (error) { onError(error.message); }
   };
@@ -63,35 +107,33 @@ function UsersPanel({ token, onError, onNotice }) {
 
   return (
     <div className="admin-panel">
-      <div className="admin-panel__heading"><span><Users size={16} /> Users</span><button className="icon-button" type="button" onClick={load} aria-label="Refresh users"><RefreshCw size={14} /></button></div>
-      <form className="admin-form" onSubmit={createUser}>
-        <label>Username<input value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} required /></label>
-        <label>Display name<input value={draft.display_name} onChange={(e) => setDraft({ ...draft, display_name: e.target.value })} /></label>
-        <label>Email<input type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} /></label>
-        <label>Password<input type="password" minLength={12} value={draft.password} onChange={(e) => setDraft({ ...draft, password: e.target.value })} placeholder="Leave blank to invite" /></label>
-        <label>Role<select value={draft.global_role} onChange={(e) => setDraft({ ...draft, global_role: e.target.value })}>{ROLES.map((role) => <option key={role} value={role}>{role}</option>)}</select></label>
-        <button className="primary-button" type="submit"><UserPlus size={15} /> Add user</button>
-      </form>
+      <div className="admin-panel__heading"><span><Users size={16} /> Users</span><div className="admin-heading-actions"><button className="admin-secondary-button" type="button" onClick={openCreate}><Plus size={14} /> New User</button><button className="icon-button" type="button" onClick={load} aria-label="Refresh users"><RefreshCw size={14} /></button></div></div>
       {loading ? <p className="admin-empty">Loading users…</p> : (
         <table className="admin-table">
-          <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
             {users.map((user) => (
               <tr key={user.username}>
                 <td><strong>{user.display_name || user.username}</strong><small>{user.username}{user.source_system === 'aiops' ? ' · imported' : ''}</small></td>
-                <td>
-                  <select value={user.global_role} onChange={(e) => patchUser(user.username, { global_role: e.target.value }, `Updated role for ${user.username}.`)}>
-                    {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
-                  </select>
-                </td>
+                <td>{user.email || <span className="admin-empty">—</span>}</td>
+                <td><span className={`admin-pill admin-pill--role admin-pill--role-${user.global_role}`}>{user.global_role}</span></td>
                 <td>{user.invite_pending ? <span className="admin-pill admin-pill--warn">invite pending</span> : <span className={user.is_active ? 'admin-pill admin-pill--good' : 'admin-pill'}>{user.is_active ? 'active' : 'disabled'}</span>}</td>
-                <td><button className="quiet-button quiet-button--small" type="button" onClick={() => patchUser(user.username, { is_active: !user.is_active }, `${user.is_active ? 'Disabled' : 'Enabled'} ${user.username}.`)}>{user.is_active ? 'Disable' : 'Enable'}</button></td>
+                <td><div className="admin-row-actions"><button className="quiet-button quiet-button--small" type="button" onClick={() => openEdit(user)}>Edit</button><button className="quiet-button quiet-button--small" type="button" onClick={() => patchUser(user.username, { is_active: !user.is_active }, `${user.is_active ? 'Disabled' : 'Enabled'} ${user.username}.`)}>{user.is_active ? 'Disable' : 'Enable'}</button></div></td>
               </tr>
             ))}
-            {!users.length && <tr><td colSpan={4} className="admin-empty">No users yet.</td></tr>}
+            {!users.length && <tr><td colSpan={5} className="admin-empty">No users yet.</td></tr>}
           </tbody>
         </table>
       )}
+      {dialogOpen && <Dialog title={editingUser ? 'Update User' : 'Add User'} eyebrow="Account administration" onClose={() => setDialogOpen(false)} actions={<><button className="quiet-button" type="button" onClick={() => setDialogOpen(false)}>Cancel</button><button className="primary-button" type="submit" form="core-user-form"><Check size={15} /> OK</button></>}>
+        <form id="core-user-form" className="admin-dialog__form" onSubmit={saveUser}>
+          <label>Username<input value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} required disabled={Boolean(editingUser)} autoComplete="username" /></label>
+          <label>Display name<input value={draft.display_name} onChange={(e) => setDraft({ ...draft, display_name: e.target.value })} /></label>
+          <label>Email<input type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} autoComplete="email" /></label>
+          <label>Password<input type="password" minLength={12} value={draft.password} onChange={(e) => setDraft({ ...draft, password: e.target.value })} placeholder={editingUser ? 'Leave blank to keep current password' : 'Leave blank for invitation setup'} autoComplete="new-password" /></label>
+          <label>Role<select value={draft.global_role} onChange={(e) => setDraft({ ...draft, global_role: e.target.value })}>{ROLES.map((role) => <option key={role} value={role}>{role}</option>)}</select><span className={`admin-pill admin-pill--role admin-pill--role-${draft.global_role}`}>{draft.global_role.replace('_', ' ')}</span></label>
+        </form>
+      </Dialog>}
     </div>
   );
 }
@@ -157,9 +199,9 @@ function TenantsPanel({ token, onError, onNotice }) {
           <tbody>
             {tenants.map((row) => (
               <tr key={`${row.tenant_id}-${row.product_key || 'none'}`}>
-                <td><strong>{row.display_name}</strong><small>#{row.tenant_id} · {row.status}</small></td>
-                <td>{row.product_key || <span className="admin-empty">—</span>}</td>
-                <td>{row.plan_key ? <span className="admin-pill admin-pill--good">{row.plan_key}</span> : <span className="admin-pill admin-pill--warn">no plan</span>}</td>
+                <td><strong>{row.display_name}</strong><small>#{row.tenant_id}</small><span className={`admin-pill ${row.status === 'active' ? 'admin-pill--good' : 'admin-pill--bad'}`}>{row.status}</span></td>
+                <td>{row.product_key ? <PlanTag planKey={row.product_key}>{row.product_key}</PlanTag> : <span className="admin-empty">—</span>}</td>
+                <td>{row.plan_key ? <PlanTag planKey={row.plan_key}>{row.plan_key}</PlanTag> : <span className="admin-pill admin-pill--warn">no plan</span>}</td>
                 <td>{row.member_count}</td>
               </tr>
             ))}
@@ -205,8 +247,11 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
   const [tenants, setTenants] = useState([]);
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [assignment, setAssignment] = useState({ tenant_id: '', plan_key: '' });
-  const [planDraft, setPlanDraft] = useState({ product_key: '', plan_key: '', display_name: '', price_monthly: '', max_users: '', max_systems: '' });
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [planDraft, setPlanDraft] = useState({ product_key: '', plan_key: '', display_name: '', description: '', price_monthly: '', max_users: '', max_systems: '', is_active: true });
+  const [assignment, setAssignment] = useState(null);
+  const [assignmentDraft, setAssignmentDraft] = useState({ plan_key: '', status: 'active', max_users: '', max_systems: '', effective_start_date: '', effective_end_date: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -255,9 +300,11 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
     }
     const body = {
       display_name: planDraft.display_name,
+        description: planDraft.description || null,
       price_monthly: planDraft.price_monthly === '' ? null : Number(planDraft.price_monthly),
       max_users: planDraft.max_users === '' ? null : Number(planDraft.max_users),
       max_systems: planDraft.max_systems === '' ? null : Number(planDraft.max_systems),
+        is_active: planDraft.is_active,
     };
     try {
       const response = await authFetch(token, `/api/admin/catalog/${encodeURIComponent(planDraft.product_key)}/plans/${encodeURIComponent(planDraft.plan_key)}`, {
@@ -265,42 +312,130 @@ function SubscriptionsPanel({ token, onError, onNotice }) {
       });
       if (!response.ok) throw new Error(await readError(response, 'Could not save the plan.'));
       onNotice(`Saved ${planDraft.display_name}.`);
-      setPlanDraft({ product_key: '', plan_key: '', display_name: '', price_monthly: '', max_users: '', max_systems: '' });
+      setPlanDialogOpen(false);
+      setEditingPlan(null);
+      load();
+    } catch (error) { onError(error.message); }
+  };
+
+  const openNewPlan = () => {
+    setEditingPlan(null);
+    setPlanDraft({ product_key: '', plan_key: '', display_name: '', description: '', price_monthly: '', max_users: '', max_systems: '', is_active: true });
+    setPlanDialogOpen(true);
+  };
+
+  const openEditPlan = (plan) => {
+    setEditingPlan(plan);
+    setPlanDraft({
+      product_key: plan.product_key,
+      plan_key: plan.plan_key,
+      display_name: plan.plan_name || '',
+      description: plan.plan_description || '',
+      price_monthly: plan.price_monthly ?? '',
+      max_users: plan.entitlements?.max_users ?? '',
+      max_systems: plan.entitlements?.max_systems ?? '',
+      is_active: plan.plan_active !== false,
+    });
+    setPlanDialogOpen(true);
+  };
+
+  const openAssignment = (tenant, productKey = '') => {
+    const key = productKey || 'aiops';
+    const current = tenants.find((entry) => entry.tenant_id === tenant.tenant_id && entry.product_key === key);
+    setAssignment({ tenant_id: tenant.tenant_id, tenant_name: tenant.display_name, product_key: key });
+    setAssignmentDraft({
+      plan_key: current?.plan_key || '',
+      status: current?.entitlement_status || 'active',
+      max_users: current?.limits_override?.max_users ?? '',
+      max_systems: current?.limits_override?.max_systems ?? '',
+      effective_start_date: current?.effective_start_date || '',
+      effective_end_date: current?.effective_end_date || '',
+    });
+  };
+
+  const saveAssignment = async (event) => {
+    event.preventDefault();
+    if (!assignment || !assignmentDraft.plan_key) { onError('Select a plan.'); return; }
+    const body = {
+      product_key: assignment.product_key,
+      plan_key: assignmentDraft.plan_key,
+      status: assignmentDraft.status,
+      effective_start_date: assignmentDraft.effective_start_date || null,
+      effective_end_date: assignmentDraft.effective_end_date || null,
+      max_users: assignmentDraft.max_users === '' ? null : Number(assignmentDraft.max_users),
+      max_systems: assignmentDraft.max_systems === '' ? null : Number(assignmentDraft.max_systems),
+    };
+    try {
+      const response = await authFetch(token, `/api/admin/tenants/${assignment.tenant_id}/entitlements`, { method: 'PUT', body: JSON.stringify(body) });
+      if (!response.ok) throw new Error(await readError(response, 'Could not assign the plan.'));
+      onNotice(`Assigned ${body.plan_key} to ${assignment.tenant_name}.`);
+      setAssignment(null);
       load();
     } catch (error) { onError(error.message); }
   };
 
   return (
-    <div className="admin-panel">
-      <div className="admin-panel__heading"><span><Package size={16} /> Plans and subscriptions</span><button className="icon-button" type="button" onClick={load} aria-label="Refresh plans"><RefreshCw size={14} /></button></div>
-      <form className="admin-form" onSubmit={savePlan}>
-        <label>Product<select value={planDraft.product_key} onChange={(e) => setPlanDraft({ ...planDraft, product_key: e.target.value })}><option value="">Select…</option>{products.map((product) => <option key={product.product_key} value={product.product_key}>{product.product_name}</option>)}</select></label>
-        <label>Plan key<input value={planDraft.plan_key} onChange={(e) => setPlanDraft({ ...planDraft, plan_key: e.target.value.trim().toLowerCase() })} placeholder="starter" required /></label>
-        <label>Display name<input value={planDraft.display_name} onChange={(e) => setPlanDraft({ ...planDraft, display_name: e.target.value })} required /></label>
-        <label>Monthly price<input type="number" min="0" step="0.01" value={planDraft.price_monthly} onChange={(e) => setPlanDraft({ ...planDraft, price_monthly: e.target.value })} placeholder="Not set" /></label>
-        <label>User limit<input type="number" min="0" step="1" value={planDraft.max_users} onChange={(e) => setPlanDraft({ ...planDraft, max_users: e.target.value })} placeholder="Not set" /></label>
-        <label>System limit<input type="number" min="0" step="1" value={planDraft.max_systems} onChange={(e) => setPlanDraft({ ...planDraft, max_systems: e.target.value })} placeholder="Not set" /></label>
-        <button className="primary-button" type="submit"><Package size={15} /> Save plan</button>
-      </form>
-      <form className="admin-form" onSubmit={assignPlan}>
-        <label>Tenant<select value={assignment.tenant_id} onChange={(e) => setAssignment({ ...assignment, tenant_id: e.target.value })}><option value="">Select…</option>{uniqueTenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.display_name}</option>)}</select></label>
-        <label>Product plan<select value={assignment.plan_key} onChange={(e) => setAssignment({ ...assignment, plan_key: e.target.value })}><option value="">Select…</option>{catalog.map((entry) => <option key={`${entry.product_key}::${entry.plan_key}`} value={`${entry.product_key}::${entry.plan_key}`}>{entry.product_name} · {entry.plan_name}</option>)}</select></label>
-        <button className="primary-button" type="submit"><Package size={15} /> Assign plan</button>
-      </form>
-      {loading ? <p className="admin-empty">Loading subscriptions…</p> : (
-        <table className="admin-table">
-          <thead><tr><th>Tenant</th><th>Product</th><th>Plan</th><th>State</th><th>Members</th></tr></thead>
-          <tbody>{tenants.filter((row) => row.product_key).map((row) => (
-            <tr key={`${row.tenant_id}-${row.product_key}`}>
-              <td><strong>{row.display_name}</strong><small>#{row.tenant_id}</small></td>
-              <td>{row.product_key}</td>
-              <td>{row.plan_key}</td>
-              <td><span className={row.entitlement_status === 'active' ? 'admin-pill admin-pill--good' : 'admin-pill'}>{row.entitlement_status}</span></td>
-              <td>{row.member_count}</td>
-            </tr>
-          ))}{!tenants.some((row) => row.product_key) && <tr><td colSpan={5} className="admin-empty">No product subscriptions assigned.</td></tr>}</tbody>
-        </table>
-      )}
+    <div className="plans-workspace">
+      <section className="admin-panel plans-section">
+        <div className="admin-panel__heading"><span>Plans</span><div className="admin-heading-actions"><button className="admin-secondary-button" type="button" onClick={openNewPlan}><Plus size={14} /> New / Update Plan</button><button className="icon-button" type="button" onClick={load} aria-label="Refresh plans"><RefreshCw size={14} /></button></div></div>
+        <div className="plan-info"><Info size={18} /><div><strong>Plan limits drive tenant allocation</strong><p>Assigning a plan sets a tenant’s user and system limits. Tenant-specific overrides take precedence. System usage is not yet synchronized into Core.</p></div></div>
+        {loading ? <p className="admin-empty">Loading plans…</p> : <div className="admin-table-scroll"><table className="admin-table plans-table">
+          <thead><tr><th>Plan</th><th>Name</th><th>Users</th><th>Systems</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>{catalog.map((plan) => <tr key={`${plan.product_key}-${plan.plan_key}`}>
+            <td><PlanTag planKey={plan.plan_key}>{plan.plan_key}</PlanTag></td>
+            <td><strong>{plan.plan_name}</strong><small>{plan.plan_description || plan.product_name}</small></td>
+            <td>{plan.entitlements?.max_users ?? '—'}</td>
+            <td>{plan.entitlements?.max_systems ?? '—'}</td>
+            <td>{plan.price_monthly == null ? '—' : `${plan.currency === 'USD' ? '$' : `${plan.currency} `}${plan.price_monthly}`}{plan.price_monthly != null && <small>/ month</small>}</td>
+            <td><span className={`admin-pill ${plan.plan_active ? 'admin-pill--good' : 'admin-pill--bad'}`}>{plan.plan_active ? 'active' : 'inactive'}</span></td>
+            <td><button className="quiet-button quiet-button--small" type="button" onClick={() => openEditPlan(plan)}>Edit</button></td>
+          </tr>)}{!catalog.length && <tr><td colSpan={7} className="admin-empty">No plans in the catalog.</td></tr>}</tbody>
+        </table></div>}
+      </section>
+
+      <section className="admin-panel assignments-section">
+        <div className="admin-panel__heading"><span>Tenant Plan Assignments</span></div>
+        {loading ? <p className="admin-empty">Loading assignments…</p> : <div className="admin-table-scroll"><table className="admin-table assignments-table">
+          <thead><tr><th>Tenant</th><th>Plan</th><th>Users</th><th>Systems</th><th>Allocation</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>{tenants.filter((row) => row.product_key).map((row) => {
+            const plan = catalog.find((entry) => entry.product_key === row.product_key && entry.plan_key === row.plan_key);
+            const userLimit = row.limits_override?.max_users ?? plan?.entitlements?.max_users;
+            const systemLimit = row.limits_override?.max_systems ?? plan?.entitlements?.max_systems;
+            const usersUsed = Number(row.member_count || 0);
+            const userOver = userLimit != null && usersUsed > userLimit;
+            const systemKnown = row.systems_in_use != null;
+            const allocation = userOver ? ['admin-pill--bad', 'Over user allocation'] : userLimit == null || systemLimit == null ? ['admin-pill--warn', 'Needs allocation'] : ['admin-pill--good', 'Within allocation'];
+            return <tr key={`${row.tenant_id}-${row.product_key}`}>
+              <td><strong>{row.display_name}</strong></td>
+              <td><PlanTag planKey={row.plan_key}>{row.plan_key}</PlanTag></td>
+              <td className={userOver ? 'allocation-over' : ''}>{usersUsed} / {userLimit ?? '—'}</td>
+              <td>{systemKnown ? `${row.systems_in_use} / ${systemLimit ?? '—'}` : `— / ${systemLimit ?? '—'}`}</td>
+              <td><span className={`admin-pill ${allocation[0]}`}>{allocation[1]}</span></td>
+              <td><span className={`admin-pill ${row.entitlement_status === 'active' ? 'admin-pill--good' : 'admin-pill--bad'}`}>{row.entitlement_status || 'unknown'}</span></td>
+              <td><button className="quiet-button quiet-button--small" type="button" onClick={() => openAssignment(row)}>Assign Plan</button></td>
+            </tr>;
+          })}{!tenants.some((row) => row.product_key) && <tr><td colSpan={7} className="admin-empty">No tenant plan assignments.</td></tr>}</tbody>
+        </table></div>}
+      </section>
+
+      {planDialogOpen && <Dialog title={editingPlan ? 'Update Subscription Plan' : 'New Subscription Plan'} eyebrow="Product catalog" onClose={() => setPlanDialogOpen(false)} actions={<><button className="quiet-button" type="button" onClick={() => setPlanDialogOpen(false)}>Cancel</button><button className="primary-button" type="submit" form="core-plan-form"><Check size={15} /> Save Plan</button></>}>
+        <form id="core-plan-form" className="admin-dialog__form" onSubmit={savePlan}>
+          {planDraft.plan_key && <div className="plan-dialog-preview"><PlanTag planKey={planDraft.plan_key}>{planDraft.plan_key}</PlanTag><span>{planDraft.description || 'Plan purpose has not been described yet.'}</span></div>}
+          <label>Product<select value={planDraft.product_key} onChange={(event) => setPlanDraft({ ...planDraft, product_key: event.target.value })} disabled={Boolean(editingPlan)} required><option value="">Select product…</option>{products.map((product) => <option key={product.product_key} value={product.product_key}>{product.product_name}</option>)}</select></label>
+          <label>Plan key<input value={planDraft.plan_key} onChange={(event) => setPlanDraft({ ...planDraft, plan_key: event.target.value.trim().toLowerCase() })} disabled={Boolean(editingPlan)} placeholder="starter" required /></label>
+          <label>Display name<input value={planDraft.display_name} onChange={(event) => setPlanDraft({ ...planDraft, display_name: event.target.value })} placeholder="Starter" required /></label>
+          <label>Description<textarea rows={3} value={planDraft.description} onChange={(event) => setPlanDraft({ ...planDraft, description: event.target.value })} placeholder="What this plan is intended for" /></label>
+          <div className="admin-dialog__field-grid"><label>Maximum users<input type="number" min="0" value={planDraft.max_users} onChange={(event) => setPlanDraft({ ...planDraft, max_users: event.target.value })} placeholder="No limit set" /></label><label>Maximum systems<input type="number" min="0" value={planDraft.max_systems} onChange={(event) => setPlanDraft({ ...planDraft, max_systems: event.target.value })} placeholder="No limit set" /></label><label>Monthly price (USD)<input type="number" min="0" step="0.01" value={planDraft.price_monthly} onChange={(event) => setPlanDraft({ ...planDraft, price_monthly: event.target.value })} placeholder="Not set" /></label><label>Status<select value={String(planDraft.is_active)} onChange={(event) => setPlanDraft({ ...planDraft, is_active: event.target.value === 'true' })}><option value="true">Active</option><option value="false">Inactive</option></select></label></div>
+        </form>
+      </Dialog>}
+
+      {assignment && <Dialog title={`Assign Plan · ${assignment.tenant_name}`} eyebrow="Tenant product access" onClose={() => setAssignment(null)} actions={<><button className="quiet-button" type="button" onClick={() => setAssignment(null)}>Cancel</button><button className="primary-button" type="submit" form="core-assignment-form"><Check size={15} /> Save Assignment</button></>}>
+        <form id="core-assignment-form" className="admin-dialog__form" onSubmit={saveAssignment}>
+          <label>Plan<select value={assignmentDraft.plan_key} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, plan_key: event.target.value })} required><option value="">Select plan…</option>{catalog.filter((entry) => entry.product_key === assignment.product_key && entry.plan_active).map((entry) => <option key={entry.plan_key} value={entry.plan_key}>{entry.plan_name}</option>)}</select>{assignmentDraft.plan_key && <PlanTag planKey={assignmentDraft.plan_key}>{assignmentDraft.plan_key}</PlanTag>}</label>
+          <div className="admin-dialog__field-grid"><label>User limit override<input type="number" min="0" value={assignmentDraft.max_users} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, max_users: event.target.value })} placeholder="Use plan limit" /></label><label>System limit override<input type="number" min="0" value={assignmentDraft.max_systems} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, max_systems: event.target.value })} placeholder="Use plan limit" /></label><label>Effective from<input type="date" value={assignmentDraft.effective_start_date} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, effective_start_date: event.target.value })} /></label><label>Effective until<input type="date" value={assignmentDraft.effective_end_date} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, effective_end_date: event.target.value })} /></label></div>
+          <label>Status<select value={assignmentDraft.status} onChange={(event) => setAssignmentDraft({ ...assignmentDraft, status: event.target.value })}><option value="active">Active</option><option value="trial">Trial</option><option value="suspended">Suspended</option></select></label>
+        </form>
+      </Dialog>}
     </div>
   );
 }
