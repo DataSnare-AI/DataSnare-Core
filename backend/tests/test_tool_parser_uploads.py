@@ -40,6 +40,9 @@ def test_aiperf_csv_upload_returns_normalized_threshold_event_and_indexes_it():
     assert payload["normalized_schema"] == "datasnare-aiperf/events-v1"
     assert payload["job"]["state"] == "completed"
     assert payload["analysis"]["event_count"] == 2
+    assert payload["evidence"]["schema"] == "datasnare-analysis-evidence/v1"
+    assert payload["evidence"]["plugin_id"] == "aiperf"
+    assert payload["evidence"]["events"][0]["severity"] == "critical"
     catalog = client.get("/api/tenants/7/knowledge/catalog", headers=HEADERS).json()
     assert catalog["item_count"] == 1
 
@@ -90,6 +93,8 @@ def test_aiprocmon_csv_requires_capture_context_and_indexes_events():
     assert payload["analysis"]["events"] == 1
     assert payload["analysis"]["preview"][0]["timestamp"] == "2026-09-28T14:00:00Z"
     assert payload["analysis"]["preview"][0]["severity"] == "error"
+    assert payload["evidence"]["plugin_id"] == "aiprocmon"
+    assert payload["evidence"]["events"][0]["process"] == "app.exe"
 
 
 def test_native_pml_upload_reports_required_windows_conversion():
@@ -114,6 +119,7 @@ def test_aiperf_diagnostics_xml_returns_normalized_advice():
     assert payload["analysis"]["parser"] == "aiperf-diagnostics-xml-v1"
     assert payload["analysis"]["event_count"] == 1
     assert payload["analysis"]["events"][0]["severity"] == "critical"
+    assert payload["evidence"]["source_schema"] == "datasnare-aiperf/events-v1"
 
 
 def test_aiprocmon_xml_returns_normalized_operation():
@@ -128,3 +134,4 @@ def test_aiprocmon_xml_returns_normalized_operation():
     assert event["timestamp"] == "2026-09-28T10:00:00Z"
     assert event["process"] == "app.exe"
     assert event["severity"] == "error"
+    assert response.json()["evidence"]["source_schema"] == "datasnare-aiprocmon/events-v1"

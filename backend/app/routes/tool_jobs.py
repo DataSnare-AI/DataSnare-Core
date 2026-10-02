@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from app.repositories.ingest_jobs import IngestJobRecord
 from app.routes.ingest import SUPPORTED_NATIVE_ARTIFACTS, _job_payload
 from app.security.authorization import require_permission, resolve_actor
+from app.services.analysis_plugin_contract import normalized_plugin_evidence_envelope
 from app.services.knowledge_ingestion import build_knowledge_item, store_knowledge_item
 
 
@@ -89,8 +90,19 @@ async def upload_tool_artifact(tenant_id: int, tool_id: str, job_id: str, reques
         knowledge_text = "\n".join(f"{item.get('timestamp') or ''} {item.get('severity', '').upper()} {item.get('summary', '')} {item.get('detail', '')}" for item in event_rows)
         knowledge = build_knowledge_item(tenant_id, actor.actor_id, item_type="metric" if tool_id == "aiperf" else "event", source_id=job_id, source_name=record.artifact_name, title=record.artifact_name, text=knowledge_text or f"{tool_id} parser completed with {summary}", agent_id=None, site_id=None, area_id=None, classification="internal", metadata={"tool_id": tool_id, "normalized_schema": normalized, **summary})
         await store_knowledge_item(request, tenant_id=tenant_id, actor_id=actor.actor_id, item=knowledge)
-        updated = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**conversion, "status": parser_status, "analysis": summary, "knowledge_item_id": knowledge.item_id})
-        return {"schema": f"datasnare-{tool_id}/job-result-v1", "job": _job_payload(updated), "analysis": summary, "normalized_schema": normalized, "knowledge_item_id": knowledge.item_id, "artifact": artifact}
+        evidence = normalized_plugin_evidence_envelope(
+            tenant_id=tenant_id,
+            plugin_id=tool_id,
+            plugin_version="0.1.0",
+            job_id=job_id,
+            artifact_name=record.artifact_name,
+            source_schema=normalized,
+            events=event_rows,
+            findings=analysis.findings if tool_id == "aiprocmon" else [],
+            metadata={"parser": analysis.parser, "status": parser_status, **summary},
+        ).model_dump(by_alias=True)
+        updated = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**conversion, "status": parser_status, "analysis": summary, "evidence_envelope": evidence, "knowledge_item_id": knowledge.item_id})
+        return {"schema": f"datasnare-{tool_id}/job-result-v1", "job": _job_payload(updated), "analysis": summary, "evidence": evidence, "normalized_schema": normalized, "knowledge_item_id": knowledge.item_id, "artifact": artifact}
     except (ValueError, UnicodeError) as error:
         updated = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="failed", native_conversion={**(record.native_conversion or {}), "status": "failed", "error": str(error)})
         raise HTTPException(status_code=422, detail=str(error)) from error

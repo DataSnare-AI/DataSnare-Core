@@ -117,7 +117,9 @@ class CoreArtifactStorage:
         return service, ContentSettings
 
     @staticmethod
-    def _safe_probe_error(error: Exception, settings: dict[str, Any]) -> str:
+    def _safe_azure_error(
+        error: Exception, settings: dict[str, Any], operation: str
+    ) -> str:
         detail = str(error)
         for field in (
             "azure_connection_string",
@@ -132,7 +134,7 @@ class CoreArtifactStorage:
             r"\1?[redacted]",
             detail,
         )
-        return f"Azure Blob probe failed: {type(error).__name__} · {detail[:600]}"
+        return f"Azure Blob {operation} failed: {type(error).__name__} · {detail[:600]}"
 
     async def test_connection(
         self, settings_override: dict[str, Any] | None = None
@@ -172,7 +174,7 @@ class CoreArtifactStorage:
                 "backend": backend,
                 "healthy": False,
                 "container": container,
-                "detail": self._safe_probe_error(error, settings),
+                "detail": self._safe_azure_error(error, settings, "probe"),
             }
 
     async def store(
@@ -210,7 +212,10 @@ class CoreArtifactStorage:
             try:
                 await asyncio.to_thread(blob.upload_blob, content, **upload_options)
             except Exception as error:
-                raise HTTPException(status_code=502, detail=f"Azure Blob upload failed ({type(error).__name__})") from error
+                raise HTTPException(
+                    status_code=502,
+                    detail=self._safe_azure_error(error, settings, "upload"),
+                ) from error
             storage_ref = f"blob://{container}/{blob_key}"
             storage_backend = "azure_blob"
         elif storage_backend == "local":

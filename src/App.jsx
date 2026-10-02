@@ -6,6 +6,7 @@ import { DEFAULT_SUITE_SKIN, normalizeSuiteSkin, SUITE_SKINS, SUITE_SKIN_STORAGE
 import AINetScopeWorkbench from './tools/AINetScopeWorkbench';
 import AILogScopeWorkbench from './tools/AILogScopeWorkbench';
 import NativeToolWorkbench from './tools/NativeToolWorkbench';
+import AIAnalysisWorkspace from './tools/AIAnalysisWorkspace';
 import AdminConsole from './admin/AdminConsole';
 import ArtifactLibrary from './admin/ArtifactLibrary';
 
@@ -198,7 +199,8 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    sessionStorage.setItem('datasnare:lastLaunchContext', JSON.stringify(buildProjectLaunchContext(project, {}, skin)));
+    const tenantId = localStorage.getItem('datasnare:tenant-id') || null;
+    sessionStorage.setItem('datasnare:lastLaunchContext', JSON.stringify(buildProjectLaunchContext(project, { tenantId }, skin)));
     const workbench = document.getElementById(`tool-${project.id}`);
     if (workbench) {
       window.location.hash = `tool-${project.id}`;
@@ -266,8 +268,8 @@ export default function App() {
         </section>
 
         {detailsProject ? <ProjectDetails project={detailsProject} onBack={() => { setDetailsProject(null); window.location.hash = 'projects'; }} /> : <><section className="section-heading" id="projects">
-          <div><p className="eyebrow">Project registry</p><h2>Six tools, one point of entry.</h2></div>
-          <p>Each DataSnare tool keeps its own release cycle and license while Core keeps your context close.</p>
+          <div><p className="eyebrow">Project registry</p><h2>Separate products, one point of entry.</h2></div>
+          <p>Products keep their own release cycles and licensing; Core keeps tenant context, access, and launch points together.</p>
         </section>
         <section className="project-grid" aria-label="DataSnare projects">
           {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} onDetails={setDetailsProject} />)}
@@ -275,6 +277,7 @@ export default function App() {
 
         <SuiteStatus />
         <KnowledgeSearch />
+        <div id="tool-aianalysis"><AIAnalysisWorkspace /></div>
         <div id="tool-ainetscope"><AINetScopeWorkbench /></div>
         <div id="tool-ailogscope"><AILogScopeWorkbench /></div>
         <div id="tool-aiperf"><NativeToolWorkbench toolId="aiperf" /></div>

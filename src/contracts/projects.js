@@ -1,3 +1,5 @@
+import { AIANALYSIS_PLUGIN_IDS } from './analysisPlugins';
+
 export const PROJECT_EXPORT_SCHEMAS = {
   aiops: null,
   ailogscope: 'datasnare-ailogscope/events-v1',
@@ -24,6 +26,24 @@ export const PROJECT_WEB_MIGRATIONS = {
 };
 
 export const projects = [
+  {
+    id: 'aianalysis',
+    name: 'DataSnare-AIAnalysis',
+    category: 'Unified analysis platform',
+    description: 'Bring log, performance, process, network, and root-cause analysis into one extensible workspace.',
+    path: '/aianalysis',
+    license: 'Planned',
+    accent: 'teal',
+    capabilities: ['analysis-plugin-host', 'normalized-evidence', 'cross-plugin-investigation'],
+    analysisPlugins: AIANALYSIS_PLUGIN_IDS,
+    details: {
+      tagline: 'A unified investigation workspace assembled from versioned analysis plugins.',
+      inputs: ['Logs and event records', 'Performance and process-monitor captures', 'Network captures and investigation bundles'],
+      highlights: ['First-party plugins for AIRootCause, AILogScope, AIPerf, AIProcMon, and AINetScope', 'Shared normalized-evidence contract for cross-tool investigations', 'AIMemoryDump reserved as a planned plugin until its input and output contract is defined'],
+      workflow: 'Ingest evidence through a plugin, preserve source provenance, then correlate plugin findings in one investigation.',
+      caveat: 'The product and plugin manifest are design foundations only; a unified AIAnalysis runtime and UI are not implemented yet.',
+    },
+  },
   {
     id: 'aiops',
     name: 'DataSnare-AIOps',

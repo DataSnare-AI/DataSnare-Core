@@ -6,6 +6,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from app.repositories.ingest_jobs import IngestJobRecord
 from app.routes.ingest import SUPPORTED_NATIVE_ARTIFACTS, _job_payload
 from app.security.authorization import require_permission, resolve_actor
+from app.services.analysis_plugin_contract import ailogscope_evidence_envelope
 from app.services.knowledge_ingestion import build_knowledge_item, store_knowledge_item
 
 
@@ -23,6 +24,22 @@ async def create_log_job(tenant_id: int, body: dict, request: Request, x_actor: 
     record = IngestJobRecord(tenant_id=tenant_id, tool_id="ailogscope", artifact_name=name, artifact_type=artifact_type, requested_by=actor.actor_id, normalized_schema="datasnare-ailogscope/events-v1", native_conversion={"schema": "datasnare-ingest/native-conversion-v1", "strategy": "logscope-document-python-job", "status": "planned"})
     saved = await request.app.state.ingest_jobs.create(record)
     return {"schema": "datasnare-ailogscope/job-v1", "job": _job_payload(saved), "next": "upload-artifact"}
+
+
+@router.get("/jobs/{job_id}")
+async def get_log_job(tenant_id: int, job_id: str, request: Request, x_actor: str | None = Header(default=None), x_role: str | None = Header(default=None)):
+    require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.view")
+    record = await request.app.state.ingest_jobs.get(tenant_id, job_id)
+    if not record or record.tool_id != "ailogscope":
+        raise HTTPException(status_code=404, detail="AILogScope log job not found")
+    conversion = record.native_conversion or {}
+    return {
+        "schema": "datasnare-ailogscope/job-v1",
+        "job": _job_payload(record),
+        "analysis": conversion.get("analysis"),
+        "evidence": conversion.get("evidence_envelope"),
+        "knowledge_item_id": conversion.get("knowledge_item_id"),
+    }
 
 
 @router.post("/jobs/{job_id}/artifact")
@@ -60,5 +77,11 @@ async def upload_log_artifact(tenant_id: int, job_id: str, request: Request, x_a
     await store_knowledge_item(request, tenant_id=tenant_id, actor_id=actor.actor_id, item=item)
     analysis_payload = asdict(analysis)
     analysis_payload.pop("knowledge_text", None)
-    completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis_payload, "knowledge_item_id": item.item_id})
-    return {"schema": "datasnare-ailogscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "knowledge_item_id": item.item_id, "artifact": artifact}
+    evidence = ailogscope_evidence_envelope(
+        tenant_id=tenant_id,
+        job_id=job_id,
+        artifact_name=record.artifact_name,
+        analysis=analysis_payload,
+    ).model_dump(by_alias=True)
+    completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis_payload, "evidence_envelope": evidence, "knowledge_item_id": item.item_id})
+    return {"schema": "datasnare-ailogscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "evidence": evidence, "knowledge_item_id": item.item_id, "artifact": artifact}

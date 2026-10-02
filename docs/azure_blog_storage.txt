@@ -81,3 +81,13 @@ StorageBlobLogs
 Sign into powershell
 az login
 az storage container show --account-name forensicit --name dscoreartifacts --auth-mode login --query name --output tsv
+
+Search for PutBlob
+StorageBlobLogs
+| where TimeGenerated > ago(1h)
+| where Uri contains "/dscoreartifacts/"
+| where OperationName in ("PutBlob", "PutBlock", "PutBlockList")
+| extend UriPath = tostring(split(Uri, "?")[0])
+| project TimeGenerated, OperationName, StatusCode, StatusText,
+          AuthenticationType, UriPath, CallerIpAddress, ClientRequestId, CorrelationId
+| order by TimeGenerated desc

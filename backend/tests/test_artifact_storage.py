@@ -5,7 +5,7 @@ import sys
 
 import pytest
 from cryptography.fernet import Fernet
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 BACKEND_DIR = pathlib.Path(__file__).resolve().parents[1]
@@ -324,6 +324,56 @@ def test_azure_probe_checks_list_access_with_one_item_page(monkeypatch):
 
     assert result["healthy"] is True
     assert result["detail"] == "Azure Blob storage is reachable"
+
+
+def test_azure_upload_error_surfaces_safe_azure_diagnostic(monkeypatch):
+    encryption_key = Fernet.generate_key().decode()
+    monkeypatch.setenv("CORE_STORAGE_ENCRYPTION_KEY", encryption_key)
+    sas_token = "sv=version&sig=secret-signature"
+    pool = FakePool()
+    pool.settings_row = {
+        "backend": "azure_blob",
+        "azure_container": "artifacts",
+        "azure_account_url": "https://storage.example.test",
+        "blob_prefix": "core-artifacts",
+        "upload_max_bytes": 262144000,
+        "azure_connection_string_enc": None,
+        "azure_account_key_enc": None,
+        "azure_sas_token_enc": CoreArtifactStorage.encrypt_secret(sas_token),
+    }
+
+    class FakeBlob:
+        def upload_blob(self, content, **options):
+            raise ValueError(
+                f"AuthorizationPermissionMismatch while using {sas_token}"
+            )
+
+    class FakeBlobService:
+        def get_blob_client(self, **kwargs):
+            return FakeBlob()
+
+    monkeypatch.setattr(
+        CoreArtifactStorage,
+        "_azure_clients",
+        staticmethod(lambda settings: (FakeBlobService(), None)),
+    )
+    service = CoreArtifactStorage(pool)
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(service.store(
+            tenant_id=1,
+            product_key="ailogscope",
+            job_id="job-1",
+            artifact_name="sample.log",
+            content_type="text/plain",
+            content=b"sample",
+            uploaded_by="admin",
+        ))
+
+    assert error.value.status_code == 502
+    assert "AuthorizationPermissionMismatch" in error.value.detail
+    assert sas_token not in error.value.detail
+    assert "secret-signature" not in error.value.detail
 
 
 def test_azure_client_logs_sas_fingerprint_without_token(caplog):

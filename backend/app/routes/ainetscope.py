@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.repositories.ingest_jobs import IngestJobRecord
 from app.routes.ingest import SUPPORTED_NATIVE_ARTIFACTS, _job_payload
 from app.security.authorization import require_permission, resolve_actor
+from app.services.analysis_plugin_contract import normalized_plugin_evidence_envelope
 from app.services.knowledge_ingestion import build_knowledge_item, store_knowledge_item
 
 
@@ -112,11 +113,30 @@ async def upload_capture_artifact(
     try:
         analysis = await request.app.state.capture_parser.analyze(data, record.artifact_name)
         analysis_payload = analysis.__dict__
+        evidence = normalized_plugin_evidence_envelope(
+            tenant_id=tenant_id,
+            plugin_id="ainetscope",
+            plugin_version="0.1.0",
+            job_id=job_id,
+            artifact_name=record.artifact_name,
+            source_schema=analysis.schema,
+            events=analysis.preview,
+            findings=analysis.findings,
+            metadata={
+                "bytes": analysis.bytes,
+                "packets": analysis.packets,
+                "flows": analysis.flows,
+                "hosts": analysis.hosts,
+                "protocols": analysis.protocols,
+                "parser": analysis.parser,
+                "status": analysis.status,
+            },
+        ).model_dump(by_alias=True)
         knowledge_text = "\n".join(f"{packet.get('timestamp') or ''} {packet.get('severity', '').upper()} {packet.get('summary', '')}" for packet in analysis.preview)
         item = build_knowledge_item(tenant_id, actor.actor_id, item_type="event", source_id=job_id, source_name=record.artifact_name, title=record.artifact_name, text=knowledge_text or analysis.message, agent_id=None, site_id=None, area_id=None, classification="internal", metadata={"tool_id": "ainetscope", "packet_count": analysis.packets, "flow_count": analysis.flows, "host_count": analysis.hosts, "protocols": analysis.protocols, "findings": analysis.findings})
         await store_knowledge_item(request, tenant_id=tenant_id, actor_id=actor.actor_id, item=item)
-        completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis_payload, "knowledge_item_id": item.item_id})
-        return {"schema": "datasnare-ainetscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "knowledge_item_id": item.item_id, "artifact": artifact}
+        completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis_payload, "evidence_envelope": evidence, "knowledge_item_id": item.item_id})
+        return {"schema": "datasnare-ainetscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "evidence": evidence, "knowledge_item_id": item.item_id, "artifact": artifact}
     except ValueError as error:
         failed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="failed", native_conversion={**(record.native_conversion or {}), "status": "failed", "error": str(error)})
         raise HTTPException(status_code=422, detail=str(error)) from error

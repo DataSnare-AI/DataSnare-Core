@@ -43,6 +43,9 @@ def test_ainetscope_upload_accepts_pcapng_and_completes_job():
     assert uploaded.json()["analysis"]["flows"] == 1
     assert uploaded.json()["analysis"]["preview"][0]["category"] == "network.tcp"
     assert uploaded.json()["analysis"]["findings"][0]["title"] == "TCP resets observed"
+    assert uploaded.json()["evidence"]["schema"] == "datasnare-analysis-evidence/v1"
+    assert uploaded.json()["evidence"]["plugin_id"] == "ainetscope"
+    assert uploaded.json()["evidence"]["findings"][0]["id"] == "tcp-resets"
     assert uploaded.json()["knowledge_item_id"]
     retrieved = client.post("/api/tenants/7/rag/retrieve", headers=headers, json={"query": "TCP reset packet", "top_k": 3})
     assert retrieved.status_code == 200
