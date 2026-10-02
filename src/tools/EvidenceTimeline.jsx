@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 import { adjustInvestigationWindow, clipInterval, epochOf, toLocalDateTime, toOffsetISOString } from './investigationTime';
 
@@ -18,8 +18,8 @@ const SEVERITY_RANK = { critical: 0, error: 1, warning: 2, info: 3 };
 function clockLabel(value, span = 0) {
   return new Date(value).toLocaleTimeString([], {
     hour: '2-digit', minute: '2-digit', hour12: false,
-    ...(span < 60_000 ? { second: '2-digit' } : {}),
-    ...(span < 1000 ? { fractionalSecondDigits: 3 } : {}),
+    ...(span <= 60_000 ? { second: '2-digit' } : {}),
+    ...(span < 6000 ? { fractionalSecondDigits: 3 } : {}),
   });
 }
 
@@ -67,6 +67,16 @@ export default function EvidenceTimeline({ events, evidenceRanges = [], investig
   const lastEpoch = extent.length ? Math.max(...extent) : firstEpoch;
   const calculatedSpan = Math.max(lastEpoch - firstEpoch, 60_000);
   const calculatedMin = (firstEpoch + lastEpoch - calculatedSpan) / 2;
+  const fitWindow = () => {
+    if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || windowEnd <= windowStart) return;
+    const span = Math.min(calculatedSpan, Math.max(1, (windowEnd - windowStart) * 1.4));
+    const start = Math.max(calculatedMin, Math.min(calculatedMin + calculatedSpan - span, (windowStart + windowEnd - span) / 2));
+    setZoom(calculatedSpan / span);
+    setPan(calculatedSpan > span ? (start - calculatedMin) / (calculatedSpan - span) * 100 : 50);
+  };
+  useEffect(() => {
+    if (!dragRef.current) fitWindow();
+  }, [windowStart, windowEnd, Boolean(dragDomain)]);
   const calculatedVisibleSpan = Math.max(calculatedSpan / Math.min(zoom, calculatedSpan), 1);
   const calculatedCenter = calculatedMin + calculatedVisibleSpan / 2 + (calculatedSpan - calculatedVisibleSpan) * (pan / 100);
   const domain = dragDomain || {
@@ -158,7 +168,12 @@ export default function EvidenceTimeline({ events, evidenceRanges = [], investig
     || filteredEvents[0]
     || null;
   const focusRadius = Math.max(0.5, visibleSpan * 0.07);
-  const tickValues = Array.from({ length: 7 }, (_, index) => visibleStart + domainSpan * index / 6);
+  const targetStep = domainSpan / 6;
+  const magnitude = 10 ** Math.floor(Math.log10(targetStep));
+  const majorStep = [1, 2, 5, 10].map((factor) => factor * magnitude).find((step) => step >= targetStep);
+  const minorStep = majorStep / 5;
+  const tickValues = Array.from({ length: Math.ceil(domainSpan / majorStep) + 1 }, (_, index) => Math.ceil(visibleStart / majorStep) * majorStep + index * majorStep).filter((tick) => tick <= visibleEnd);
+  const minorTicks = Array.from({ length: Math.ceil(domainSpan / minorStep) + 1 }, (_, index) => Math.ceil(visibleStart / minorStep) * minorStep + index * minorStep).filter((tick) => tick <= visibleEnd);
   const renderRange = (start, end, y, height, kind, key, title) => {
     const clipped = clipInterval(start, end, visibleStart, visibleEnd);
     if (!clipped) return null;
@@ -170,6 +185,7 @@ export default function EvidenceTimeline({ events, evidenceRanges = [], investig
 
   return <section className="analysis-timeline" aria-label="Cross-plugin evidence timeline">
     <div className="analysis-timeline__controls">
+      <button type="button" className="admin-secondary-button" onClick={fitWindow} disabled={Boolean(dragDomain) || !Number.isFinite(windowStart) || !Number.isFinite(windowEnd)}>Fit investigation window</button>
       <label className="analysis-timeline__filter">Severity<select value={severityFilter} onChange={(event) => onSeverityChange(event.target.value)}><option value="all">All severities</option><option value="critical">Critical</option><option value="error">Error</option><option value="warning">Warning</option><option value="info">Info</option></select></label>
       <div className="analysis-timeline__zoom"><span className="analysis-timeline__timezone">Times shown in {Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time'}</span><button type="button" aria-label="Zoom out" title="Zoom out" disabled={Boolean(dragDomain) || zoom <= 1} onClick={() => setZoom((value) => Math.max(1, value / 2))}><ZoomOut size={16} /></button><label>Visible span (ms)<input type="number" min="1" max={dataSpan} step="1" value={Math.round(visibleSpan)} disabled={Boolean(dragDomain)} onChange={(event) => { const span = Number(event.target.value); if (Number.isFinite(span) && span >= 1) setZoom(dataSpan / Math.min(dataSpan, span)); }} aria-label="Visible timeline span in milliseconds" /></label><button type="button" aria-label="Zoom in" title="Zoom in" disabled={Boolean(dragDomain) || zoom >= maxZoom} onClick={() => setZoom((value) => Math.min(maxZoom, value * 2))}><ZoomIn size={16} /></button></div>
     </div>
@@ -180,7 +196,7 @@ export default function EvidenceTimeline({ events, evidenceRanges = [], investig
       {Number.isFinite(selected?.epoch) && renderRange(selected.epoch - focusRadius, selected.epoch + focusRadius, 124, 132, 'focus', 'focus', 'Selected event focus')}
       {tickValues.map((tick, index) => <g key={index} className="analysis-timeline__tick"><line x1={xFor(tick)} y1="164" x2={xFor(tick)} y2="239" /><text x={xFor(tick)} y="267" textAnchor="middle">{clockLabel(tick, domainSpan)}</text></g>)}
       <rect x={LEFT} y={AXIS_Y - 10} width={RIGHT - LEFT} height="20" rx="3" className="analysis-timeline__pipe" />
-      {Array.from({ length: 25 }, (_, index) => { const x = LEFT + (RIGHT - LEFT) * index / 24; return <line key={index} x1={x} y1={index % 3 === 0 ? AXIS_Y - 24 : AXIS_Y - 15} x2={x} y2={index % 3 === 0 ? AXIS_Y + 24 : AXIS_Y + 15} className="analysis-timeline__pipe-tick" />; })}
+      {minorTicks.map((tick, index) => <line key={index} x1={xFor(tick)} x2={xFor(tick)} y1={AXIS_Y - 15} y2={AXIS_Y + 15} className="analysis-timeline__pipe-tick" />)}
       {layout.map((event) => {
         const color = SEVERITY_COLOR[event.severity] || SEVERITY_COLOR.info;
         const top = event.side === 'top';
