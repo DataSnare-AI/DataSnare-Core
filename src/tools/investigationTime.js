@@ -84,3 +84,38 @@ export function clipInterval(start, end, visibleStart, visibleEnd) {
   return [start, end, visibleStart, visibleEnd].every(Number.isFinite) && start <= end && clippedStart <= clippedEnd
     ? { start: clippedStart, end: clippedEnd } : null;
 }
+
+export function adjustInvestigationWindow(window, mode, delta) {
+  const start = epochOf(window?.start);
+  const end = epochOf(window?.end);
+  if (![start, end, delta].every(Number.isFinite) || start > end) return null;
+  const movement = Math.round(delta);
+  if (mode === 'move') return { start: start + movement, end: Math.max(end, start + 1) + movement };
+  if (mode === 'start') return { start: Math.min(start + movement, end - 1), end };
+  if (mode === 'end') return { start, end: Math.max(end + movement, start + 1) };
+  return null;
+}
+
+export function incidentWindowOffsets(incidentAt, window) {
+  const incident = epochOf(incidentAt);
+  if (!Number.isFinite(incident)) return null;
+  const start = epochOf(window?.start);
+  const end = epochOf(window?.end);
+  return {
+    before: Number.isFinite(start) ? Math.max(0, incident - start) : 900_000,
+    after: Number.isFinite(end) ? Math.max(0, end - incident) : 900_000,
+  };
+}
+
+export function windowFromIncidentOffset(incidentAt, window, side, duration) {
+  const offsets = incidentWindowOffsets(incidentAt, window);
+  if (!offsets || !Number.isFinite(duration) || duration < 0 || !['before', 'after'].includes(side)) return null;
+  const incident = epochOf(incidentAt);
+  const existingStart = epochOf(window?.start);
+  const existingEnd = epochOf(window?.end);
+  const start = Number.isFinite(existingStart) ? existingStart : incident - offsets.before;
+  const end = Number.isFinite(existingEnd) ? existingEnd : incident + offsets.after;
+  return side === 'before'
+    ? { start: Math.min(incident - Math.round(duration), end - 1), end }
+    : { start, end: Math.max(incident + Math.round(duration), start + 1) };
+}

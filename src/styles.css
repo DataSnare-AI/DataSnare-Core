@@ -128,11 +128,30 @@ h3 { margin-bottom: 10px; font-size: 20px; letter-spacing: -.04em; }
 .analysis-workspace__metadata textarea { resize: vertical; padding: 8px 9px; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); color: var(--ink); font-family: 'Manrope', sans-serif; }
 .analysis-workspace__metadata-timezone, .analysis-workspace__metadata-error { grid-column: 1 / -1; margin: 0; }
 .analysis-workspace__metadata-timezone { color: var(--muted); font: 12px 'DM Mono', monospace; overflow-wrap: anywhere; }
+.analysis-workspace__window-sliders { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.analysis-workspace__window-offset { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.analysis-workspace__window-offset label { display: grid; gap: 5px; }
+.analysis-workspace__window-offset output { color: var(--ink); font: 600 13px 'DM Mono', monospace; text-transform: none; overflow-wrap: anywhere; }
+.analysis-workspace__window-offset select { max-width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); color: var(--ink); font: 12px 'Manrope', sans-serif; }
+.analysis-workspace__window-offset input[type="range"] { grid-column: 1 / -1; height: 28px; padding: 0; border: 0; accent-color: #237c62; cursor: pointer; }
+.analysis-workspace__window-offset input:disabled { opacity: .45; cursor: not-allowed; }
+.analysis-workspace__exact-window { grid-column: 1 / -1; min-width: 0; }
+.analysis-workspace__exact-window summary { width: fit-content; cursor: pointer; color: var(--muted); font: 600 12px 'Manrope', sans-serif; }
+.analysis-workspace__exact-window > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; padding-top: 12px; }
 .analysis-workspace__save-command { justify-self: start; align-self: end; min-height: 34px; }
 .analysis-evidence-window { display: flex; align-items: flex-start; gap: 6px; margin-top: 7px; color: var(--muted); font: 12px/1.5 'Manrope', sans-serif; overflow-wrap: anywhere; }
 .analysis-evidence-window svg { flex: 0 0 auto; margin-top: 2px; }
 .analysis-evidence-window--before, .analysis-evidence-window--after { color: #a3480b; }
 .analysis-timeline__window--investigation { fill: rgba(234, 119, 24, .10); stroke: #d66b16; stroke-dasharray: 7 4; }
+.analysis-timeline__window-move, .analysis-timeline__window-handle { touch-action: none; user-select: none; }
+.analysis-timeline__window-move { fill: rgba(234, 119, 24, .24); stroke: #a3480b; stroke-width: 1; cursor: grab; }
+.analysis-timeline__window-move:active { cursor: grabbing; }
+.analysis-timeline__window-handle { cursor: ew-resize; }
+.analysis-timeline__window-hit { fill: transparent; pointer-events: all; }
+.analysis-timeline__window-grip { fill: #a3480b; stroke: var(--paper); stroke-width: 1; pointer-events: none; }
+.analysis-timeline__window-move:focus-visible { outline: none; stroke: #17668a; stroke-width: 3; }
+.analysis-timeline__window-handle:focus-visible { outline: none; }
+.analysis-timeline__window-handle:focus-visible .analysis-timeline__window-grip { fill: #17668a; stroke: #17668a; stroke-width: 3; }
 .analysis-timeline__legend-swatch--investigation { background: rgba(234, 119, 24, .18); border: 1px dashed #d66b16; }
 .analysis-timeline__incident line { stroke: #237c62; stroke-width: 3; stroke-dasharray: 5 3; }
 .analysis-timeline__incident text { fill: #19634e; font: 600 12px 'DM Mono', monospace; }
@@ -141,6 +160,7 @@ h3 { margin-bottom: 10px; font-size: 20px; letter-spacing: -.04em; }
 .analysis-timeline__zoom input[type="number"], .analysis-timeline__pan input[type="datetime-local"] { box-sizing: border-box; min-width: 0; max-width: 100%; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); color: var(--ink); font: 12px 'DM Mono', monospace; }
 @media (max-width: 780px) {
 	.analysis-workspace__save-case.analysis-workspace__metadata { grid-template-columns: minmax(0, 1fr); }
+	.analysis-workspace__window-sliders, .analysis-workspace__exact-window > div { grid-template-columns: minmax(0, 1fr); }
 	.analysis-timeline__zoom { min-width: 0; }
 	.analysis-timeline__timezone { flex-basis: 100%; overflow-wrap: anywhere; }
 }

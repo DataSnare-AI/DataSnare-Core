@@ -6,7 +6,7 @@ import AILogScopeWorkbench from './AILogScopeWorkbench';
 import EvidenceTimeline from './EvidenceTimeline';
 import NativeToolWorkbench from './NativeToolWorkbench';
 import TenantSelect, { useTenantSelection } from './TenantSelect';
-import { buildInvestigationMetadata, compareSampleWindow, epochOf, metadataError, toLocalDateTime, toOffsetISOString } from './investigationTime';
+import { buildInvestigationMetadata, compareSampleWindow, epochOf, formatGap, incidentWindowOffsets, metadataError, toLocalDateTime, toOffsetISOString, windowFromIncidentOffset } from './investigationTime';
 
 const EMPTY_METADATA = { incident_at: '', incident_description: '', window_start: '', window_end: '' };
 
@@ -39,12 +39,44 @@ function EvidenceWindowStatus({ item, investigationWindow }) {
   return <span className={`analysis-evidence-window analysis-evidence-window--${status.kind}`} title={status.text}><Icon size={15} aria-hidden="true" /><span>{status.text}</span></span>;
 }
 
+function IncidentWindowSliders({ incidentAt, metadataFields, onInvestigationWindowChange }) {
+  const [units, setUnits] = useState({ before: 'Minutes', after: 'Minutes' });
+  const [rangeLimits, setRangeLimits] = useState({ before: 60, after: 60 });
+  const window = { start: toOffsetISOString(metadataFields.window_start), end: toOffsetISOString(metadataFields.window_end) };
+  const offsets = incidentWindowOffsets(incidentAt, window);
+  const unitSizes = { Seconds: 1000, Minutes: 60_000, Hours: 3_600_000 };
+  return <div className="analysis-workspace__window-sliders">
+    {['before', 'after'].map((side) => {
+      const label = side === 'before' ? 'Before incident' : 'After incident';
+      const unit = units[side];
+      const size = unitSizes[unit];
+      const duration = offsets?.[side] ?? 900_000;
+      const maximum = Math.max(unit === 'Hours' ? 24 : 60, rangeLimits[side], Math.ceil(duration / size));
+      return <div key={side} className="analysis-workspace__window-offset">
+        <label htmlFor={`investigation-window-${side}`}>{label}<output htmlFor={`investigation-window-${side}`}>{formatGap(duration)}</output></label>
+        <select aria-label={`${label} range units`} value={unit} onChange={(event) => {
+          const nextUnit = event.target.value;
+          setUnits((current) => ({ ...current, [side]: nextUnit }));
+          setRangeLimits((current) => ({ ...current, [side]: nextUnit === 'Hours' ? 24 : 60 }));
+        }}>
+          {Object.keys(unitSizes).map((name) => <option key={name}>{name}</option>)}
+        </select>
+        <input id={`investigation-window-${side}`} type="range" min="0" max={maximum} step={unit === 'Hours' ? 0.25 : 1} value={duration / size} disabled={!offsets} aria-label={label} aria-valuetext={formatGap(duration)} onChange={(event) => {
+          setRangeLimits((current) => ({ ...current, [side]: maximum }));
+          const next = windowFromIncidentOffset(incidentAt, window, side, Number(event.target.value) * size);
+          if (next) onInvestigationWindowChange(next);
+        }} />
+      </div>;
+    })}
+  </div>;
+}
+
 function InvestigationOverview({
   onSelect, tenantId, evidence, loading, error, onRefresh,
   selectedEvidenceIds, onToggleEvidence, timeline, severityFilter, onSeverityChange,
   cases, activeCaseId, onSaveCase, onLoadCase, caseTitle, onCaseTitleChange,
   caseDescription, onCaseDescriptionChange, savingCase, caseMessage,
-  metadataFields, onMetadataChange, investigationWindow, incidentAt,
+  metadataFields, onMetadataChange, investigationWindow, incidentAt, onInvestigationWindowChange,
 }) {
   const dateError = metadataError(metadataFields);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time';
@@ -62,12 +94,15 @@ function InvestigationOverview({
       <p className="analysis-workspace__metadata-timezone">Datetimes in {timezone} · millisecond precision</p>
       <label>Incident datetime<input type="datetime-local" step="0.001" value={metadataFields.incident_at} onChange={(event) => onMetadataChange('incident_at', event.target.value)} /></label>
       <label>Incident description<textarea value={metadataFields.incident_description} onChange={(event) => onMetadataChange('incident_description', event.target.value)} maxLength={4000} rows={2} /></label>
-      <label>Investigation window start<input type="datetime-local" step="0.001" value={metadataFields.window_start} required={Boolean(metadataFields.window_end)} onChange={(event) => onMetadataChange('window_start', event.target.value)} /></label>
-      <label>Investigation window end<input type="datetime-local" step="0.001" value={metadataFields.window_end} required={Boolean(metadataFields.window_start)} onChange={(event) => onMetadataChange('window_end', event.target.value)} /></label>
+      <IncidentWindowSliders incidentAt={incidentAt} metadataFields={metadataFields} onInvestigationWindowChange={onInvestigationWindowChange} />
+      <details className="analysis-workspace__exact-window"><summary>Exact window dates</summary><div>
+        <label>Investigation window start<input type="datetime-local" step="0.001" value={metadataFields.window_start} required={Boolean(metadataFields.window_end)} onChange={(event) => onMetadataChange('window_start', event.target.value)} /></label>
+        <label>Investigation window end<input type="datetime-local" step="0.001" value={metadataFields.window_end} required={Boolean(metadataFields.window_start)} onChange={(event) => onMetadataChange('window_end', event.target.value)} /></label>
+      </div></details>
       {dateError && <p className="tool-workbench__error analysis-workspace__metadata-error" role="alert">{dateError}</p>}
     </form>
     <div className="analysis-workspace__evidence"><div className="analysis-workspace__evidence-heading"><h4>Recent evidence</h4><span>{evidence.length} items</span></div>{loading && !evidence.length ? <p className="analysis-workspace__empty">Loading tenant evidence…</p> : evidence.length ? <div className="analysis-workspace__evidence-list">{evidence.map((item) => <article key={item.job_id}><label className="analysis-workspace__evidence-select"><input type="checkbox" checked={selectedEvidenceIds.includes(item.job_id)} onChange={() => onToggleEvidence(item.job_id)} aria-label={`Include ${item.artifact_name} in timeline`} /></label><div><strong>{item.artifact_name}</strong><small>{item.plugin_id} · {item.source_schema || 'schema pending'}</small><EvidenceWindowStatus item={item} investigationWindow={investigationWindow} /></div><span>{item.event_count} events · {item.finding_count} findings</span><EvidenceTimes item={item} /></article>)}</div> : <p className="analysis-workspace__empty">No completed plugin evidence is available for this tenant yet.</p>}</div>
-    {!selectedEvidenceIds.length ? <p className="analysis-workspace__empty">Select evidence above to build a merged timeline.</p> : <EvidenceTimeline events={timeline} evidenceRanges={evidence.filter((item) => selectedEvidenceIds.includes(item.job_id))} investigationWindow={investigationWindow} incidentAt={incidentAt} severityFilter={severityFilter} onSeverityChange={onSeverityChange} />}
+    {!selectedEvidenceIds.length ? <p className="analysis-workspace__empty">Select evidence above to build a merged timeline.</p> : <EvidenceTimeline events={timeline} evidenceRanges={evidence.filter((item) => selectedEvidenceIds.includes(item.job_id))} investigationWindow={investigationWindow} incidentAt={incidentAt} onInvestigationWindowChange={onInvestigationWindowChange} severityFilter={severityFilter} onSeverityChange={onSeverityChange} />}
     <section className="analysis-workspace__cases" aria-label="Saved investigations">
       <button className="primary-button analysis-workspace__save-command" type="submit" form="analysis-investigation-form" disabled={savingCase || !selectedEvidenceIds.length || !caseTitle.trim() || Boolean(dateError)}><Save size={15} /> {savingCase ? 'Saving…' : 'Save investigation'}</button>
       <div className="analysis-workspace__load-case"><label><FolderOpen size={15} /> Reopen saved investigation<select value={activeCaseId} onChange={(event) => onLoadCase(event.target.value)}><option value="">Choose a saved case</option>{cases.map((item) => <option key={item.investigation_id} value={item.investigation_id}>{item.title} · {item.evidence_count} evidence items</option>)}</select></label></div>
@@ -114,6 +149,11 @@ function AnalysisConsole({ selection, onNavigate }) {
     ? { start: toOffsetISOString(metadataFields.window_start), end: toOffsetISOString(metadataFields.window_end) } : null;
   const incidentAt = toOffsetISOString(metadataFields.incident_at);
   const updateMetadata = (field, value) => setMetadataFields((current) => ({ ...current, [field]: value }));
+  const updateInvestigationWindow = (window) => setMetadataFields((current) => ({
+    ...current,
+    window_start: toLocalDateTime(window.start),
+    window_end: toLocalDateTime(window.end),
+  }));
   const timeline = useMemo(() => evidence
     .filter((item) => selectedEvidenceIds.includes(item.job_id))
     .flatMap((item) => (item.event_preview || []).map((event) => ({
@@ -245,7 +285,7 @@ function AnalysisConsole({ selection, onNavigate }) {
     </div>
     {modules.map((module) => <div key={`${tenantId}:${module.id}`} className="analysis-workspace__panel" role="tabpanel" id={`aianalysis-panel-${module.id}`} aria-labelledby={`aianalysis-tab-${module.id}`} hidden={activeModule !== module.id}>
       {visitedModules.includes(module.id) && <>
-        {module.id === 'investigation' && <InvestigationOverview onSelect={selectModule} tenantId={tenantId} evidence={evidence} loading={loadingEvidence} error={evidenceError} onRefresh={loadEvidence} selectedEvidenceIds={selectedEvidenceIds} onToggleEvidence={toggleEvidence} timeline={timeline} severityFilter={severityFilter} onSeverityChange={setSeverityFilter} cases={cases} activeCaseId={activeCaseId} onSaveCase={saveCase} onLoadCase={loadCase} caseTitle={caseTitle} onCaseTitleChange={setCaseTitle} caseDescription={caseDescription} onCaseDescriptionChange={setCaseDescription} savingCase={savingCase} caseMessage={caseMessage} metadataFields={metadataFields} onMetadataChange={updateMetadata} investigationWindow={investigationWindow} incidentAt={incidentAt} />}
+        {module.id === 'investigation' && <InvestigationOverview onSelect={selectModule} tenantId={tenantId} evidence={evidence} loading={loadingEvidence} error={evidenceError} onRefresh={loadEvidence} selectedEvidenceIds={selectedEvidenceIds} onToggleEvidence={toggleEvidence} timeline={timeline} severityFilter={severityFilter} onSeverityChange={setSeverityFilter} cases={cases} activeCaseId={activeCaseId} onSaveCase={saveCase} onLoadCase={loadCase} caseTitle={caseTitle} onCaseTitleChange={setCaseTitle} caseDescription={caseDescription} onCaseDescriptionChange={setCaseDescription} savingCase={savingCase} caseMessage={caseMessage} metadataFields={metadataFields} onMetadataChange={updateMetadata} investigationWindow={investigationWindow} incidentAt={incidentAt} onInvestigationWindowChange={updateInvestigationWindow} />}
         {module.id === 'airca' && <div className="analysis-workspace__overview"><p className="eyebrow">AIRootCause plugin</p><h3>Investigation adapter in progress</h3><p className="analysis-workspace__lede">AIRootCause currently runs as a local-first browser workspace. Its existing investigation export is registered in the plugin catalog; connecting it to tenant evidence, shared cases, and the AIAnalysis timeline is the next integration step.</p><p className="analysis-workspace__boundary"><Workflow size={15} /> No AIRootCause execution or data import is implied by this tab yet.</p></div>}
         {module.id === 'ailogscope' && <AILogScopeWorkbench selectedTenantId={tenantId} />}
         {module.id === 'aiperf' && <NativeToolWorkbench toolId="aiperf" selectedTenantId={tenantId} />}
