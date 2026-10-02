@@ -272,6 +272,16 @@ h3 { margin-bottom: 10px; font-size: 20px; letter-spacing: -.04em; }
 	.analysis-workspace__evidence-list article > span, .analysis-evidence-times { grid-column: 2; }
 	.analysis-timeline__timezone { flex-basis: 100%; }
 }
+.analysis-timeline__cluster-list { margin: 12px 0; max-height: 240px; overflow-y: auto; }
+.analysis-timeline__cluster-list h4 { font-size: 14px; margin: 8px 0; }
+.analysis-timeline__cluster-list button { display: grid; grid-template-columns: 130px 170px minmax(0, 1fr); gap: 10px; width: 100%; padding: 10px; border: 0; border-bottom: 1px solid var(--line); background: var(--paper); color: var(--ink); text-align: left; cursor: pointer; font-size: 12px; }
+.analysis-timeline__cluster-list button[aria-pressed="true"] { background: rgba(23,102,138,.12); }
+.analysis-timeline__cluster-list strong { overflow-wrap: anywhere; }
+@media (max-width: 780px) { .analysis-timeline__cluster-list button { grid-template-columns: 1fr; } }
+.analysis-timeline__search { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; flex-basis: 100%; }
+.analysis-timeline__search label { display: grid; gap: 5px; font-size: 12px; font-weight: 600; min-width: 0; flex: 0 1 350px; }
+.analysis-timeline__search input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); color: var(--ink); font: 12px 'Manrope', sans-serif; }
+.analysis-timeline__search > span { padding-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .footer { display: flex; justify-content: space-between; width: min(1240px, calc(100% - 48px)); margin: auto; padding: 24px 0 34px; color: #76827d; font-family: 'DM Mono', monospace; font-size: 10px; }
 .notice { position: fixed; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 18px; max-width: min(420px, calc(100% - 48px)); padding: 14px 16px; border: 1px solid var(--ink); border-radius: 4px; background: var(--ink); color: white; box-shadow: 0 12px 30px rgba(0,0,0,.16); text-align: left; font-size: 12px; }
 .modal-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(20, 34, 31, .45); }.session-modal { position: relative; width: min(470px, 100%); padding: 38px; border: 1px solid var(--ink); border-radius: 5px; background: var(--paper); box-shadow: 0 25px 80px rgba(0,0,0,.22); }.session-modal p:not(.eyebrow) { color: var(--muted); line-height: 1.65; }.session-modal .primary-button { margin-top: 18px; }.modal-close { position: absolute; top: 16px; right: 16px; border: 0; background: none; color: var(--muted); }

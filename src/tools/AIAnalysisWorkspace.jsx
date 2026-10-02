@@ -4,6 +4,7 @@ import { buildRequestHeaders, readLaunchContext } from '../contracts/session';
 import AINetScopeWorkbench from './AINetScopeWorkbench';
 import AILogScopeWorkbench from './AILogScopeWorkbench';
 import EvidenceTimeline from './EvidenceTimeline';
+import ExportInvestigation from './ExportInvestigation';
 import NativeToolWorkbench from './NativeToolWorkbench';
 import TenantSelect, { useTenantSelection } from './TenantSelect';
 import { buildInvestigationMetadata, compareSampleWindow, epochOf, formatGap, incidentWindowOffsets, metadataError, toLocalDateTime, toOffsetISOString, windowFromIncidentOffset } from './investigationTime';
@@ -104,6 +105,7 @@ function InvestigationOverview({
     <IncidentWindowSliders incidentAt={incidentAt} metadataFields={metadataFields} onInvestigationWindowChange={onInvestigationWindowChange} />
     {!selectedEvidenceIds.length ? <p className="analysis-workspace__empty">Select evidence above to build a merged timeline.</p> : <EvidenceTimeline events={timeline} evidenceRanges={evidence.filter((item) => selectedEvidenceIds.includes(item.job_id))} investigationWindow={investigationWindow} incidentAt={incidentAt} onInvestigationWindowChange={onInvestigationWindowChange} severityFilter={severityFilter} onSeverityChange={onSeverityChange} />}
     <section className="analysis-workspace__cases" aria-label="Saved investigations">
+      <ExportInvestigation key={`${tenantId}:${activeCaseId}`} tenantId={tenantId} investigationId={activeCaseId} />
       <button className="primary-button analysis-workspace__save-command" type="submit" form="analysis-investigation-form" disabled={savingCase || !selectedEvidenceIds.length || !caseTitle.trim() || Boolean(dateError)}><Save size={15} /> {savingCase ? 'Saving…' : 'Save investigation'}</button>
       <div className="analysis-workspace__load-case"><label><FolderOpen size={15} /> Reopen saved investigation<select value={activeCaseId} onChange={(event) => onLoadCase(event.target.value)}><option value="">Choose a saved case</option>{cases.map((item) => <option key={item.investigation_id} value={item.investigation_id}>{item.title} · {item.evidence_count} evidence items</option>)}</select></label></div>
       {caseMessage && <p className="analysis-workspace__case-message" role="status">{caseMessage}</p>}
