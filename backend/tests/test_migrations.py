@@ -23,6 +23,7 @@ def test_rag_foundation_migration_is_available():
         "008_core_artifact_storage.sql",
         "009_aianalysis_product.sql",
         "010_analysis_investigations.sql",
+        "011_investigation_metadata.sql",
     ]
     rag_sql = migrations[0].read_text(encoding="utf-8")
     jobs_sql = migrations[1].read_text(encoding="utf-8")

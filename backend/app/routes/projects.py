@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.routes.ingest import SUPPORTED_NATIVE_ARTIFACTS
 from app.security.authorization import require_permission, resolve_actor
@@ -12,6 +13,7 @@ from app.services.analysis_plugin_contract import (
     EVIDENCE_ENVELOPE_SCHEMA,
     FIRST_PARTY_PLUGIN_MANIFESTS,
     PLUGIN_CONTRACT_SCHEMA,
+    normalized_plugin_evidence_envelope,
 )
 
 
@@ -20,10 +22,35 @@ analysis_router = APIRouter(prefix="/api/tenants/{tenant_id}/analysis", tags=["A
 ANALYSIS_PLUGIN_IDS = {"ailogscope", "aiperf", "aiprocmon", "ainetscope"}
 
 
+class InvestigationMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    incident_at: datetime | None = None
+    incident_description: str = Field(default="", max_length=4000)
+    working_note: str = Field(default="", max_length=4000)
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+
+    @field_validator("incident_at", "window_start", "window_end")
+    @classmethod
+    def require_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.utcoffset() is None:
+            raise ValueError("Datetimes must include a timezone offset")
+        return value
+
+    @model_validator(mode="after")
+    def validate_window(self):
+        if (self.window_start is None) != (self.window_end is None):
+            raise ValueError("Provide both investigation window endpoints")
+        if self.window_start is not None and self.window_end <= self.window_start:
+            raise ValueError("Investigation window end must follow its start")
+        return self
+
+
 class AnalysisInvestigationCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=4000)
     evidence_job_ids: list[str] = Field(min_length=1, max_length=20)
+    metadata: InvestigationMetadata = Field(default_factory=InvestigationMetadata)
 
     @field_validator("title")
     @classmethod
@@ -52,6 +79,8 @@ def _investigation_payload(row, *, include_evidence: bool = False):
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
     }
+    metadata = row.get("metadata") or {}
+    payload["metadata"] = json.loads(metadata) if isinstance(metadata, str) else dict(metadata)
     if include_evidence:
         evidence = row.get("evidence") or []
         payload["evidence"] = json.loads(evidence) if isinstance(evidence, str) else evidence
@@ -62,7 +91,7 @@ def _investigation_payload(row, *, include_evidence: bool = False):
 
 def _evidence_snapshot(job) -> dict:
     conversion = job.native_conversion or {}
-    envelope = conversion.get("evidence_envelope")
+    envelope = conversion.get("evidence_envelope") or _legacy_job_envelope(job, conversion)
     if job.state != "completed" or not envelope:
         raise HTTPException(
             status_code=409,
@@ -93,8 +122,63 @@ def _evidence_snapshot(job) -> dict:
         "source_schema": envelope.get("source_schema") or job.normalized_schema,
         "event_count": int((envelope.get("metadata") or {}).get("event_count") or (envelope.get("metadata") or {}).get("packets") or 0),
         "finding_count": len(envelope.get("findings") or []),
+        **_event_time_range(envelope),
+        "created_at": job.created_at.isoformat() if job.created_at else None,
         "events": events,
     }
+
+
+def _event_time_range(envelope: dict) -> dict:
+    timestamps = []
+    for event in envelope.get("events") or []:
+        value = event.get("timestamp")
+        if not isinstance(value, str):
+            continue
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.utcoffset() is not None:
+                timestamps.append(parsed)
+        except ValueError:
+            continue
+    return {
+        "start_time": min(timestamps).isoformat() if timestamps else None,
+        "end_time": max(timestamps).isoformat() if timestamps else None,
+        "time_range_scope": "stored_event_sample",
+    }
+
+
+def _legacy_job_envelope(job, conversion: dict) -> dict | None:
+    analysis = conversion.get("analysis")
+    if job.state != "completed" or not isinstance(analysis, dict):
+        return None
+    preview = analysis.get("preview")
+    if not isinstance(preview, list):
+        preview = analysis.get("events")
+    if not isinstance(preview, list):
+        preview = []
+    raw_count = analysis.get("event_count")
+    if not isinstance(raw_count, int):
+        raw_count = analysis.get("events") if isinstance(analysis.get("events"), int) else None
+    if raw_count is None:
+        raw_count = analysis.get("packets") or analysis.get("records") or len(preview)
+    metadata = {
+        "event_count": int(raw_count),
+        "severity_counts": analysis.get("severity_counts") or {},
+        "parser": analysis.get("parser"),
+        "source_encoding": analysis.get("source_encoding"),
+        "packets": analysis.get("packets"),
+    }
+    return normalized_plugin_evidence_envelope(
+        tenant_id=job.tenant_id,
+        plugin_id=job.tool_id,
+        plugin_version="0.1.0",
+        job_id=job.job_id,
+        artifact_name=job.artifact_name,
+        source_schema=analysis.get("schema") or job.normalized_schema or f"datasnare-{job.tool_id}/events-v1",
+        events=preview,
+        findings=analysis.get("findings") or [],
+        metadata=metadata,
+    ).model_dump(by_alias=True)
 
 
 @router.get("/web-migrations")
@@ -151,10 +235,21 @@ async def tenant_analysis_evidence(
         if job.tool_id not in ANALYSIS_PLUGIN_IDS:
             continue
         conversion = job.native_conversion or {}
-        envelope = conversion.get("evidence_envelope") or {}
+        envelope = conversion.get("evidence_envelope") or _legacy_job_envelope(job, conversion) or {}
         if not envelope:
             continue
         metadata = envelope.get("metadata") or {}
+        timestamps = []
+        for event in envelope.get("events") or []:
+            value = event.get("timestamp")
+            if not value:
+                continue
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if parsed.tzinfo is not None:
+                    timestamps.append(parsed)
+            except (ValueError, TypeError):
+                continue
         event_preview = []
         for event in (envelope.get("events") or [])[:max_events]:
             event_evidence = event.get("evidence") or {}
@@ -180,6 +275,9 @@ async def tenant_analysis_evidence(
             "artifact_type": job.artifact_type,
             "state": job.state,
             "created_at": job.created_at.isoformat() if job.created_at else None,
+            "start_time": min(timestamps).isoformat() if timestamps else None,
+            "end_time": max(timestamps).isoformat() if timestamps else None,
+            "time_range_scope": "stored_event_sample",
             "source_schema": envelope.get("source_schema") or job.normalized_schema,
             "event_count": int(metadata.get("event_count") or metadata.get("packets") or metadata.get("events") or metadata.get("records") or 0),
             "severity_counts": metadata.get("severity_counts") or {},
@@ -224,10 +322,10 @@ async def create_analysis_investigation(
     row = await pool.fetchrow(
         """
         INSERT INTO analysis_investigations
-            (investigation_id, tenant_id, title, description, evidence, created_by)
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+            (investigation_id, tenant_id, title, description, evidence, created_by, metadata)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb)
         RETURNING investigation_id, tenant_id, title, description, status,
-                  evidence, created_by, created_at, updated_at
+                  evidence, created_by, created_at, updated_at, metadata
         """,
         investigation_id,
         tenant_id,
@@ -235,6 +333,7 @@ async def create_analysis_investigation(
         body.description.strip(),
         json.dumps(snapshots, separators=(",", ":")),
         actor.actor_id,
+        body.metadata.model_dump_json(),
     )
     return _investigation_payload(row, include_evidence=True)
 
@@ -256,7 +355,7 @@ async def list_analysis_investigations(
         raise HTTPException(status_code=503, detail="Persistent investigation storage is not configured")
     rows = await pool.fetch(
         """
-        SELECT investigation_id, tenant_id, title, description, status, created_by,
+        SELECT investigation_id, tenant_id, title, description, status, created_by, metadata,
                created_at, updated_at, jsonb_array_length(evidence) AS evidence_count
         FROM analysis_investigations
         WHERE tenant_id = $1
@@ -290,7 +389,7 @@ async def get_analysis_investigation(
         raise HTTPException(status_code=503, detail="Persistent investigation storage is not configured")
     row = await pool.fetchrow(
         """
-        SELECT investigation_id, tenant_id, title, description, status, evidence,
+        SELECT investigation_id, tenant_id, title, description, status, evidence, metadata,
                created_by, created_at, updated_at
         FROM analysis_investigations
         WHERE tenant_id = $1 AND investigation_id = $2

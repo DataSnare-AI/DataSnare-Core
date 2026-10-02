@@ -1,13 +1,20 @@
 import { useState } from 'react';
 import { Activity, Upload } from 'lucide-react';
 import { buildRequestHeaders, readLaunchContext } from '../contracts/session';
+import TenantSelect, { useTenantSelection } from './TenantSelect';
 
-export default function AINetScopeWorkbench() {
+export default function AINetScopeWorkbench({ selectedTenantId, profile, token } = {}) {
+  const selection = useTenantSelection({ profile, token, enabled: selectedTenantId === undefined });
+  const tenantId = String(selectedTenantId ?? selection.tenantId);
+  return <>{selectedTenantId === undefined && <TenantSelect selection={selection} />}<CaptureWorkbench key={tenantId} tenantId={tenantId} /></>;
+}
+
+function CaptureWorkbench({ tenantId }) {
   const [file, setFile] = useState(null);
-  const [tenantId, setTenantId] = useState(() => readLaunchContext()?.account?.tenantId || '');
   const [job, setJob] = useState(null);
   const [error, setError] = useState('');
-  const context = readLaunchContext();
+  const launchContext = readLaunchContext();
+  const context = { ...launchContext, account: { ...launchContext?.account, tenantId } };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -32,7 +39,6 @@ export default function AINetScopeWorkbench() {
     <h2 id="ainetscope-title">Capture analysis job</h2>
     <p>Upload a PCAP or PCAPNG for Python packet decoding. The existing local analyzer remains available for larger offline captures.</p>
     <form onSubmit={submit} className="tool-workbench__form">
-      <label>Tenant ID<input value={tenantId} onChange={(event) => setTenantId(event.target.value)} inputMode="numeric" /></label>
       <label>Capture file<input type="file" accept=".pcap,.pcapng,.cap" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label>
       <button className="primary-button" type="submit" disabled={!file || !tenantId.trim() || file.size > 250 * 1024 * 1024}><Upload size={16} /> Analyze capture</button>
     </form>

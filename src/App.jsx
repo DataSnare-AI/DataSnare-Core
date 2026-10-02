@@ -9,6 +9,8 @@ import NativeToolWorkbench from './tools/NativeToolWorkbench';
 import AIAnalysisWorkspace from './tools/AIAnalysisWorkspace';
 import AdminConsole from './admin/AdminConsole';
 import ArtifactLibrary from './admin/ArtifactLibrary';
+import { workspaceRoute } from './tools/workspaceContext';
+import TenantSelect, { useTenantSelection } from './tools/TenantSelect';
 
 const partnerIntegrations = [
   {
@@ -29,6 +31,7 @@ function ProjectCard({ project, onOpen, onDetails }) {
       <p className="eyebrow">{project.category}</p>
       <h3>{project.name}</h3>
       <p className="project-card__description">{project.description}</p>
+      {project.id === 'aianalysis' && <a className="project-card__details" href="/aianalysis" target="_blank" rel="noopener noreferrer" title="Open AIAnalysis in a new browser tab">Open in new tab <ExternalLink size={14} /></a>}
       <div className="project-card__actions"><button className="project-card__link" type="button" onClick={() => onOpen(project)}>Open project <ArrowUpRight size={16} /></button>{project.details && <a className="project-card__details" href={`#details-${project.id}`} onClick={() => onDetails(project)}>Details</a>}</div>
     </article>
   );
@@ -40,8 +43,8 @@ function ProjectDetails({ project, onBack }) {
   return <section className="project-details" id={`details-${project.id}`}><button className="project-details__back" type="button" onClick={onBack}>Back to projects</button><div className="project-details__heading"><p className="eyebrow">{project.category}</p><h2>{project.name}</h2><p>{details.tagline}</p></div><div className="project-details__grid"><article><p className="eyebrow">Inputs</p><ul>{details.inputs.map(input => <li key={input}>{input}</li>)}</ul></article><article><p className="eyebrow">What it does</p><ul>{details.highlights.map(highlight => <li key={highlight}>{highlight}</li>)}</ul></article></div><div className="project-details__workflow"><p className="eyebrow">Typical workflow</p><p>{details.workflow}</p><p className="project-details__caveat"><strong>Current boundary:</strong> {details.caveat}</p><span className="project-details__schema">{project.exportSchema}</span></div></section>;
 }
 
-function SuiteStatus() {
-  const [tenantId, setTenantId] = useState(() => localStorage.getItem('datasnare:tenant-id') || '');
+function SuiteStatus({ profile, token }) {
+  const selection = useTenantSelection({ profile, token });
   const [status, setStatus] = useState(null);
   const [migrations, setMigrations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,10 +62,9 @@ function SuiteStatus() {
 
   useEffect(() => { refresh(); }, []);
 
-  const saveTenant = (event) => { const value = event.target.value; setTenantId(value); localStorage.setItem('datasnare:tenant-id', value); };
   return <section className="suite-status" id="status">
-    <div className="section-heading"><div><p className="eyebrow">Control plane status</p><h2>Know what is ready.</h2></div><p>Keep tenant context close while Core, the Python services, and the Azure deployment move toward the same operating surface.</p></div>
-    <div className="suite-status__grid"><article className="status-panel status-panel--context"><div className="status-panel__heading"><span><Server size={17} /> Workspace context</span><button className="icon-button" type="button" onClick={refresh} aria-label="Refresh Core status"><RefreshCw size={15} /></button></div><label>Active test tenant<input value={tenantId} onChange={saveTenant} placeholder="Tenant ID" inputMode="numeric" /></label><small>Stored locally until shared authentication is connected.</small></article><article className="status-panel"><div className="status-panel__heading"><span><ShieldCheck size={17} /> Core readiness</span><span className={`status-indicator ${status?.status === 'ready' ? 'status-indicator--good' : ''}`}>{loading ? 'Checking' : status?.status || (offline ? 'Offline' : 'Unknown')}</span></div>{status ? <div className="readiness-list">{Object.entries(status.checks).map(([key, value]) => <span key={key}><i className={value ? 'check-dot check-dot--good' : 'check-dot'} />{key.replaceAll('_', ' ')}</span>)}</div> : <p className="status-panel__message">{offline ? 'Core API is not connected yet. The local shell remains available.' : 'Checking local services...'}</p>}</article></div>
+    <div className="section-heading"><div><p className="eyebrow">Control plane</p><h2>Context and readiness</h2></div></div>
+    <div className="suite-status__grid"><article className="status-panel status-panel--context"><div className="status-panel__heading"><span><Server size={17} /> Workspace context</span><button className="icon-button" type="button" onClick={refresh} aria-label="Refresh Core status"><RefreshCw size={15} /></button></div><TenantSelect selection={selection} /></article><article className="status-panel"><div className="status-panel__heading"><span><ShieldCheck size={17} /> Core readiness</span><span className={`status-indicator ${status?.status === 'ready' ? 'status-indicator--good' : ''}`}>{loading ? 'Checking' : status?.status || (offline ? 'Offline' : 'Unknown')}</span></div>{status ? <div className="readiness-list">{Object.entries(status.checks).map(([key, value]) => <span key={key}><i className={value ? 'check-dot check-dot--good' : 'check-dot'} />{key.replaceAll('_', ' ')}</span>)}</div> : <p className="status-panel__message">{offline ? 'Core API is not connected yet. The local shell remains available.' : 'Checking local services...'}</p>}</article></div>
     <div className="migration-strip"><div className="status-panel__heading"><span>Web migration contracts</span><span>{migrations.length || 4} tools</span></div><div className="migration-list">{(migrations.length ? migrations : [{ project_id: 'ainetscope', status: 'contract-ready' }, { project_id: 'ailogscope', status: 'contract-ready' }, { project_id: 'aiperf', status: 'contract-ready' }, { project_id: 'aiprocmon', status: 'contract-ready' }]).map((migration) => <span key={migration.project_id}><b>{migration.project_id}</b><small>{migration.status}</small></span>)}</div></div>
   </section>;
 }
@@ -109,6 +111,7 @@ export default function App() {
   const [sessionOpen, setSessionOpen] = useState(false);
   const [detailsProject, setDetailsProject] = useState(null);
   const [locationHash, setLocationHash] = useState(() => window.location.hash);
+  const [locationPath, setLocationPath] = useState(() => window.location.pathname);
   const [skin, setSkin] = useState(() => normalizeSuiteSkin(localStorage.getItem(SUITE_SKIN_STORAGE_KEY) || DEFAULT_SUITE_SKIN));
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('datasnare:auth-token') || '');
   const [accountProfile, setAccountProfile] = useState(null);
@@ -116,16 +119,34 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
-  const isAdminPage = locationHash.startsWith('#admin') && accountProfile?.role === 'platform_admin' && Boolean(authToken);
+  const route = workspaceRoute(locationPath, locationHash);
+  const isAdminPage = route === 'home' && locationHash.startsWith('#admin') && accountProfile?.role === 'platform_admin' && Boolean(authToken);
   const hasTenantAdminMembership = Object.values(accountProfile?.tenant_roles || {}).some((roles) => roles.includes('tenant_admin'));
   const canManageArtifacts = accountProfile?.role === 'platform_admin' || hasTenantAdminMembership;
-  const isArtifactPage = locationHash === '#artifacts' && canManageArtifacts && Boolean(authToken);
+  const isArtifactPage = route === 'home' && locationHash === '#artifacts' && canManageArtifacts && Boolean(authToken);
 
   useEffect(() => {
-    const updateLocation = () => setLocationHash(window.location.hash);
+    const updateLocation = () => {
+      setLocationHash(window.location.hash);
+      setLocationPath(window.location.pathname);
+    };
     window.addEventListener('hashchange', updateLocation);
-    return () => window.removeEventListener('hashchange', updateLocation);
+    window.addEventListener('popstate', updateLocation);
+    return () => {
+      window.removeEventListener('hashchange', updateLocation);
+      window.removeEventListener('popstate', updateLocation);
+    };
   }, []);
+
+  const navigate = (url, event) => {
+    if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return;
+    event?.preventDefault();
+    window.history.pushState({}, '', url);
+    setLocationPath(window.location.pathname);
+    setLocationHash(window.location.hash);
+    setMenuOpen(false);
+    window.scrollTo({ top: 0 });
+  };
 
   const loadAccountProfile = async (token) => {
     const response = await fetch('/api/auth/profile', { headers: { Authorization: `Bearer ${token}` } });
@@ -196,15 +217,17 @@ export default function App() {
 
   const openProject = (project) => {
     if (project.id === 'core') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      navigate('/');
       return;
     }
     const tenantId = localStorage.getItem('datasnare:tenant-id') || null;
     sessionStorage.setItem('datasnare:lastLaunchContext', JSON.stringify(buildProjectLaunchContext(project, { tenantId }, skin)));
-    const workbench = document.getElementById(`tool-${project.id}`);
-    if (workbench) {
-      window.location.hash = `tool-${project.id}`;
-      workbench.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (project.id === 'aianalysis') {
+      navigate('/aianalysis');
+      return;
+    }
+    if (['ainetscope', 'ailogscope', 'aiperf', 'aiprocmon'].includes(project.id)) {
+      navigate(`/#tool-${project.id}`);
       return;
     }
     if (project.id === 'aiops') {
@@ -219,9 +242,9 @@ export default function App() {
   };
 
   return (
-    <div className={`app-shell skin-${skin}`}>
+    <div className={`app-shell skin-${skin} ${route === 'aianalysis' ? 'app-shell--analysis' : 'app-shell--core'}`}>
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="DataSnare home">
+        <a className="brand" href="/" onClick={(event) => navigate('/', event)} aria-label="DataSnare home">
           <span className="brand__glyph">DS</span>
           <span>DataSnare</span>
         </a>
@@ -229,12 +252,12 @@ export default function App() {
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
         <nav className={`topbar__nav ${menuOpen ? 'topbar__nav--open' : ''}`}>
-          <a href="#projects" onClick={() => setMenuOpen(false)}>Projects</a>
-          <a href="#knowledge" onClick={() => setMenuOpen(false)}>Knowledge</a>
-          <a href="#access" onClick={() => setMenuOpen(false)}>Access</a>
-          <a href="#billing" onClick={() => setMenuOpen(false)}>Licensing</a>
-          {accountProfile?.role === 'platform_admin' && <a href="#admin/tenants" onClick={() => setMenuOpen(false)}>Admin</a>}
-          {canManageArtifacts && <a href="#artifacts" onClick={() => setMenuOpen(false)}>Artifacts</a>}
+          <a href="/#projects" onClick={(event) => navigate('/#projects', event)}>Projects</a>
+          <a href="/#knowledge" onClick={(event) => navigate('/#knowledge', event)}>Knowledge</a>
+          <a href="/#access" onClick={(event) => navigate('/#access', event)}>Access</a>
+          <a href="/#billing" onClick={(event) => navigate('/#billing', event)}>Licensing</a>
+          {accountProfile?.role === 'platform_admin' && <a href="/#admin/tenants" onClick={(event) => navigate('/#admin/tenants', event)}>Admin</a>}
+          {canManageArtifacts && <a href="/#artifacts" onClick={(event) => navigate('/#artifacts', event)}>Artifacts</a>}
           <button className="session-button" type="button" onClick={() => setSessionOpen(true)}>
             <CircleUserRound size={17} /> {accountProfile?.display_name || accountProfile?.username || 'Sign in'}
           </button>
@@ -246,44 +269,24 @@ export default function App() {
       </header>
 
       <main id="top">
-        {isArtifactPage ? <ArtifactLibrary token={authToken} profile={accountProfile} /> : isAdminPage ? <AdminConsole token={authToken} /> : <>
-        <section className="hero">
-          <div className="hero__copy">
-            <p className="eyebrow">The DataSnare control plane</p>
-            <h1>One workspace for the moments when systems get complicated.</h1>
-            <p className="hero__lede">Launch every DataSnare investigation from one account, with each tool licensed and operated on its own terms.</p>
-            <div className="hero__actions">
-              <a className="primary-button" href="#projects">Explore projects <ChevronRight size={17} /></a>
-              <button className="quiet-button" type="button" onClick={() => setSessionOpen(true)}><KeyRound size={17} /> Connect account</button>
-            </div>
-          </div>
-          <div className="hero__signal" aria-label="Suite status">
-            <div className="signal-orbit signal-orbit--one" />
-            <div className="signal-orbit signal-orbit--two" />
-            <div className="signal-core"><ShieldCheck size={32} /><span>Suite ready</span></div>
-            <span className="signal-label signal-label--one">Observe</span>
-            <span className="signal-label signal-label--two">Explain</span>
-            <span className="signal-label signal-label--three">Act</span>
-          </div>
-        </section>
+        {route === 'aianalysis' ? <AIAnalysisWorkspace profile={accountProfile} token={authToken} onNavigate={navigate} /> : route !== 'home' ? <div className="standalone-workspace"><a href="/" onClick={(event) => navigate('/', event)}>Back to workspace</a>
+          {route === 'ainetscope' && <AINetScopeWorkbench profile={accountProfile} token={authToken} />}
+          {route === 'ailogscope' && <AILogScopeWorkbench profile={accountProfile} token={authToken} />}
+          {['aiperf', 'aiprocmon'].includes(route) && <NativeToolWorkbench key={route} toolId={route} profile={accountProfile} token={authToken} />}
+        </div> : isArtifactPage ? <ArtifactLibrary token={authToken} profile={accountProfile} /> : isAdminPage ? <AdminConsole token={authToken} /> : <>
+        <section className="core-workspace-heading"><div><p className="eyebrow">DataSnare Core</p><h1>Workspace</h1></div><a className="primary-button" href="/aianalysis" onClick={(event) => navigate('/aianalysis', event)}>Open AIAnalysis <ArrowUpRight size={16} /></a></section>
 
         {detailsProject ? <ProjectDetails project={detailsProject} onBack={() => { setDetailsProject(null); window.location.hash = 'projects'; }} /> : <><section className="section-heading" id="projects">
-          <div><p className="eyebrow">Project registry</p><h2>Separate products, one point of entry.</h2></div>
-          <p>Products keep their own release cycles and licensing; Core keeps tenant context, access, and launch points together.</p>
+          <div><p className="eyebrow">Project registry</p><h2>Projects</h2></div>
         </section>
         <section className="project-grid" aria-label="DataSnare projects">
           {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} onDetails={setDetailsProject} />)}
         </section></>}
 
-        <SuiteStatus />
-        <KnowledgeSearch />
-        <div id="tool-aianalysis"><AIAnalysisWorkspace /></div>
-        <div id="tool-ainetscope"><AINetScopeWorkbench /></div>
-        <div id="tool-ailogscope"><AILogScopeWorkbench /></div>
-        <div id="tool-aiperf"><NativeToolWorkbench toolId="aiperf" /></div>
-        <div id="tool-aiprocmon"><NativeToolWorkbench toolId="aiprocmon" /></div>
+        <SuiteStatus profile={accountProfile} token={authToken} />
+        {locationHash === '#knowledge' && <KnowledgeSearch />}
 
-        <section className="partner-section" id="partners">
+        {locationHash === '#partners' && <section className="partner-section" id="partners">
           <div className="section-heading section-heading--partner">
             <div><p className="eyebrow">Partner connections</p><h2>Bring your RMM context into the investigation.</h2></div>
             <p>Core links external service data to the DataSnare workspace without treating a partner API as a DataSnare product license.</p>
@@ -295,17 +298,17 @@ export default function App() {
               <a className="partner-card__link" href={partner.docsUrl} target="_blank" rel="noreferrer">View API docs <ExternalLink size={16} /></a>
             </article>
           ))}
-        </section>
+        </section>}
 
-        <section className="access-band" id="access">
+        {locationHash === '#access' && <section className="access-band" id="access">
           <div><p className="eyebrow">Shared access</p><h2>Sign in once. Move with the investigation.</h2></div>
           <div className="access-band__detail"><ShieldCheck size={23} /><p>Core is the future home for the shared identity session. Project services will receive a scoped handoff instead of separate credentials.</p><button className="primary-button" type="button" onClick={() => setSessionOpen(true)}>Set up access <ChevronRight size={17} /></button></div>
-        </section>
+        </section>}
 
-        <section className="license-section" id="billing">
+        {locationHash === '#billing' && <section className="license-section" id="billing">
           <p className="eyebrow">Product account</p><h2>Purchased products, in one place.</h2>
           {accountProfile?.tenant_subscriptions?.length ? <div className="license-list">{accountProfile.tenant_subscriptions.map((subscription) => <article className="license-row" key={`${subscription.tenant_id}-${subscription.product_key}`}><div><strong>{subscription.tenant_name}</strong><span>{subscription.product_name || subscription.product_key} · {subscription.plan_name || subscription.plan_key || subscription.plan} · {subscription.account_status}</span></div><div><strong>{subscription.price_monthly != null ? `${subscription.currency || 'USD'} ${subscription.price_monthly}/mo` : 'Custom pricing'}</strong><span>{subscription.limits?.users_allocated ?? 0} users · {subscription.limits?.systems_allocated ?? 0} systems</span></div></article>)}</div> : <p>{authToken ? 'No purchased products are assigned to this account yet.' : 'Sign in to view your organization’s current product plans. Core is the planned home for suite identity, product entitlements, and billing; AIOps continues to operate its service during the transition.'}</p>}
-        </section>
+        </section>}
         </>}
       </main>
 

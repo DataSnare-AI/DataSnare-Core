@@ -27,6 +27,7 @@ class FakeInvestigationPool:
                 "description": args[3],
                 "evidence": json.loads(args[4]),
                 "created_by": args[5],
+                "metadata": json.loads(args[6]),
                 "status": "open",
                 "created_at": now,
                 "updated_at": now,
@@ -88,12 +89,14 @@ def test_investigation_create_list_and_reopen_snapshot_within_tenant():
     created = client.post(
         "/api/tenants/7/analysis/investigations",
         headers=headers,
-        json={"title": "Database incident", "description": "Morning outage", "evidence_job_ids": ["job-log-1"]},
+        json={"title": "Database incident", "description": "Morning outage", "evidence_job_ids": ["job-log-1"], "metadata": {"incident_at": "2026-10-01T10:00:00.123Z", "window_start": "2026-10-01T09:59:00Z", "window_end": "2026-10-01T10:01:00Z", "incident_description": "Database unavailable", "working_note": "Check preceding events"}},
     )
 
     assert created.status_code == 201, created.text
     payload = created.json()
     assert payload["title"] == "Database incident"
+    assert datetime.fromisoformat(payload["metadata"]["incident_at"].replace("Z", "+00:00")) == datetime(2026, 10, 1, 10, 0, 0, 123000, tzinfo=timezone.utc)
+    assert payload["evidence"][0]["start_time"] == "2026-10-01T10:00:00+00:00"
     assert payload["evidence"][0]["events"][0]["summary"] == "Database unavailable"
     assert "detail" not in payload["evidence"][0]["events"][0]
 
@@ -110,6 +113,7 @@ def test_investigation_create_list_and_reopen_snapshot_within_tenant():
     assert listed.status_code == 200
     assert listed.json()["investigations"][0]["evidence_count"] == 1
     assert reopened.json()["evidence"] == payload["evidence"]
+    assert reopened.json()["metadata"] == payload["metadata"]
     assert other_tenant.status_code == 404
 
 
@@ -128,3 +132,19 @@ def test_investigation_create_rejects_viewer_and_unknown_evidence():
 
     assert viewer.status_code == 403
     assert missing.status_code == 404
+
+
+def test_investigation_rejects_invalid_window_metadata():
+    client = TestClient(_app_with_completed_job())
+    headers = {"X-Actor": "operator@example.com", "X-Role": "operator"}
+    for metadata in (
+        {"incident_at": "2026-10-01T10:00:00"},
+        {"window_start": "2026-10-01T10:00:00Z"},
+        {"window_start": "2026-10-01T10:00:00Z", "window_end": "2026-10-01T09:00:00Z"},
+    ):
+        response = client.post(
+            "/api/tenants/7/analysis/investigations",
+            headers=headers,
+            json={"title": "Invalid window", "evidence_job_ids": ["job-log-1"], "metadata": metadata},
+        )
+        assert response.status_code == 422

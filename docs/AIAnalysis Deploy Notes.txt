@@ -1,0 +1,23 @@
+Database
+Apply core migrations 009 and 010
+Apply 011_investigation_metadata.sql before deploying incident/window metadata support.
+Existing cases receive empty metadata; existing evidence and case rows are retained.
+
+push core 
+
+cd /opt/datasnare-core
+git pull --ff-only origin main
+git rev-parse --short HEAD
+docker compose -p datasnare-core --env-file .env.core -f docker-compose.staging.yml up -d --build core-api core-web
+
+curl -fsS https://staging.api.datasnare.com/api/health/readiness
+
+Console smoke test:
+Open /aianalysis directly, then refresh the browser to verify SPA fallback.
+Choose a tenant by name and enter investigation title, working note, incident datetime/description,
+and paired start/end datetime window. Dates display in the browser's local timezone.
+Refresh evidence. Sample ranges outside the window show direction and gap; inclusion remains allowed.
+Select evidence, save an investigation, reopen it, and confirm metadata and sample ranges return.
+Switch analyzer tabs and confirm file selection/results remain intact; switch tenant and confirm they reset.
+Use Back to workspace to return to Core; Open in new tab is optional and never automatic.
+The timeline is still a bounded sample, not a complete forensic event store.

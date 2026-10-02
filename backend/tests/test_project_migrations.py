@@ -1,3 +1,4 @@
+import asyncio
 import pathlib
 import sys
 
@@ -9,6 +10,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app.main import create_app
+from app.repositories.ingest_jobs import IngestJobRecord
 
 
 def test_web_migration_registry_lists_all_four_analysis_tools():
@@ -109,3 +111,49 @@ def test_analysis_evidence_event_preview_has_a_server_side_upper_bound():
     item = next(row for row in response.json()["items"] if row["job_id"] == job_id)
     assert item["event_count"] == 25
     assert len(item["event_preview"]) == 20
+    assert item["start_time"] == "2026-10-01T10:00:00+00:00"
+    assert item["end_time"] == "2026-10-01T10:00:24+00:00"
+    assert item["time_range_scope"] == "stored_event_sample"
+
+
+def test_analysis_evidence_feed_includes_legacy_completed_jobs_without_envelopes():
+    client = TestClient(create_app())
+    headers = {"X-Actor": "operator@example.com", "X-Role": "operator"}
+    jobs = client.app.state.ingest_jobs
+    record = asyncio.run(jobs.create(IngestJobRecord(
+        tenant_id=7,
+        tool_id="ailogscope",
+        artifact_name="legacy.log",
+        artifact_type="log",
+        requested_by="operator@example.com",
+        normalized_schema="datasnare-ailogscope/events-v1",
+    )))
+    asyncio.run(jobs.update(
+        7,
+        record.job_id,
+        state="completed",
+        native_conversion={
+            "status": "completed",
+            "analysis": {
+                "schema": "datasnare-ailogscope/events-v1",
+                "events": 1,
+                "severity_counts": {"error": 1},
+                "preview": [{
+                    "timestamp": "2026-10-01T10:00:00Z",
+                    "severity": "error",
+                    "summary": "Legacy database outage",
+                    "detail": {"raw": "not exposed"},
+                    "evidence": {"sourceLine": 8},
+                }],
+            },
+        },
+    ))
+
+    response = client.get("/api/tenants/7/analysis/evidence", headers=headers)
+
+    assert response.status_code == 200
+    item = next(value for value in response.json()["items"] if value["job_id"] == record.job_id)
+    assert item["event_count"] == 1
+    assert item["event_preview"][0]["summary"] == "Legacy database outage"
+    assert item["event_preview"][0]["evidence"]["sourceLine"] == 8
+    assert "detail" not in item["event_preview"][0]
