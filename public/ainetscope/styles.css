@@ -31,7 +31,7 @@ body::before {
 }
 
 .topbar { min-height: 72px; height: auto; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 12px clamp(20px, 4vw, 64px); border-bottom: 1px solid var(--line); }
-.capture-action-group { display: flex; flex-wrap: wrap; gap: 8px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; }
+.capture-action-group { display: flex; flex-wrap: wrap; gap: 8px; padding: 7px 10px; border: 2px solid #63786d; border-radius: 4px; background: rgba(29,107,79,.07); }
 .capture-chooser { width: min(620px, calc(100% - 24px)); max-height: 85vh; overflow: auto; padding: 20px; }
 .capture-chooser h2 { font-size: 20px; }
 .capture-chooser-list { max-height: 45vh; overflow: auto; margin: 12px 0; }

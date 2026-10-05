@@ -1486,7 +1486,7 @@ if (typeof document !== "undefined") {
   const captureLabel = document.querySelector("label[for='captureInput']");
   if (captureLabel) captureLabel.addEventListener("click", () => debugLog("capture label clicked"));
   captureInput.addEventListener("click", () => debugLog("capture input clicked"));
-  captureInput.addEventListener("change", event => { const file = event.target.files[0]; debugLog("capture input changed", { files: event.target.files.length, name: file?.name || "" }); event.target.value = ""; launchCaptureFile(file); });
+  captureInput.addEventListener("change", event => { const file = event.target.files[0]; debugLog("capture input changed", { files: event.target.files.length, name: file?.name || "" }); event.target.value = ""; confirmCaptureFile(file); });
   $("#demoButton").addEventListener("click", () => { if (typeof showCoreMode === "function") showCoreMode(); loadPackets(createDemo(), "demo-office-traffic.pcapng", "builtin-demo"); showToast("Demo trace loaded."); });
   $("#searchInput").addEventListener("input", applyFilters); $("#protocolFilter").addEventListener("change", applyFilters);
   $("#packetRows").addEventListener("click", event => { const row = event.target.closest("tr[data-packet]"); if (row) inspectPacket(Number(row.dataset.packet)); });

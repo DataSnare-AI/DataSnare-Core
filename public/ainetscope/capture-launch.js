@@ -1,7 +1,7 @@
 "use strict";
 
 const captureLaunches = new Map();
-let capturePickerLaunch = null;
+let selectedCaptureFile = null;
 
 function reserveCaptureWindow() {
   if (!/^https?:$/.test(location.protocol)) { showToast("Use a local or hosted web server to launch capture windows."); return null; }
@@ -29,19 +29,20 @@ function deliverCaptureWindow(launch, payload) {
 
 function launchCaptureFile(file) {
   if (!file) return;
-  const launch = capturePickerLaunch || reserveCaptureWindow();
-  capturePickerLaunch = null;
+  const launch = reserveCaptureWindow();
   deliverCaptureWindow(launch, { file, name: file.name });
+}
+
+function confirmCaptureFile(file) {
+  if (!file) return;
+  selectedCaptureFile = file;
+  $("#captureLaunchName").textContent = file.name;
+  $("#captureLaunchConfirm").showModal();
 }
 
 function chooseNewCapture() {
   $("#captureChooser").close();
-  if (capturePickerLaunch) {
-    capturePickerLaunch.window.close();
-    captureLaunches.delete(capturePickerLaunch.token);
-  }
   $("#captureInput").click();
-  capturePickerLaunch = reserveCaptureWindow();
 }
 
 function openCaptureChooser() {
@@ -89,11 +90,17 @@ window.addEventListener("message", async event => {
 $("#openCaptureButton").addEventListener("click", openCaptureChooser);
 $("#captureChooserNew").addEventListener("click", chooseNewCapture);
 $("#captureChooserClose").addEventListener("click", () => $("#captureChooser").close());
-$("#captureInput").addEventListener("cancel", () => {
-  if (!capturePickerLaunch) return;
-  capturePickerLaunch.window.close();
-  captureLaunches.delete(capturePickerLaunch.token);
-  capturePickerLaunch = null;
+$("#captureLaunchOpen").addEventListener("click", () => {
+  if (!selectedCaptureFile) return;
+  const launch = reserveCaptureWindow();
+  if (!launch) return;
+  deliverCaptureWindow(launch, { file: selectedCaptureFile, name: selectedCaptureFile.name });
+  selectedCaptureFile = null;
+  $("#captureLaunchConfirm").close();
+});
+$("#captureLaunchCancel").addEventListener("click", () => $("#captureLaunchConfirm").close());
+$("#captureLaunchConfirm").addEventListener("close", () => {
+  selectedCaptureFile = null;
 });
 const captureLaunchToken = new URLSearchParams(location.search).get("captureLaunch");
 if (captureLaunchToken && window.opener) {
