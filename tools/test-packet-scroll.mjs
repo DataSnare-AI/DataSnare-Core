@@ -20,9 +20,17 @@ try {
         src: '192.0.2.1', dst: '192.0.2.2', info: `Scroll fixture ${index + 1}` }));
       state.fileName = 'scroll-fixture.pcap';
       state.captureId = 'scroll-regression';
+      const flagSets = [['SYN'], ['SYN', 'ACK'], ['FIN'], ['FIN', 'ACK'], ['RST', 'SYN', 'ACK']];
+      flagSets.forEach((flags, index) => { state.packets[index].flags = flags; });
       showPacketWorkbench(1);
     });
     await page.locator('#workbenchRows tr[data-workbench-packet="1"]').waitFor();
+    const signalColors = await page.locator('#workbenchRows .tcp-signal').evaluateAll(elements => elements.slice(0, 5).map(element => ({
+      className: element.className, color: getComputedStyle(element).color,
+    })));
+    assert.deepEqual(signalColors.map(item => item.className.split('--')[1]), ['syn', 'syn-ack', 'fin', 'fin-ack', 'rst']);
+    assert.deepEqual(signalColors.map(item => item.color), ['rgb(23, 93, 160)', 'rgb(23, 102, 55)', 'rgb(152, 75, 11)', 'rgb(9, 107, 112)', 'rgb(180, 35, 24)']);
+    console.log(`PASS ${width}px: Packets TCP flag palette and RST precedence`);
     if (width > 900) {
       const rowHandle = page.getByRole('separator', { name: 'Resize packet list and details' });
       const columnHandle = page.getByRole('separator', { name: 'Resize packet details and bytes' });

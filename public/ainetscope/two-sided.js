@@ -2,10 +2,40 @@
 
 const twoSidedState = { packetsA: [], packetsB: [], records: [], page: 0, offsetMs: 0, busy: false, selected: -1 };
 const twoSidedAnnotations = { keys: { A: null, B: null }, notes: { A: {}, B: {} }, deltas: { A: new Map(), B: new Map() }, target: null };
+const twoSidedFrameStates = { A: { marks: [], referenceNumber: null }, B: { marks: [], referenceNumber: null } };
+
+function saveTwoSidedFrameState(side) {
+  try { localStorage.setItem(`${twoSidedAnnotations.keys[side]}:frames`, JSON.stringify(twoSidedFrameStates[side])); }
+  catch (_) { showToast('Frame marks could not be saved locally.'); }
+  renderTwoSided();
+}
+
+function toggleTwoSidedMark(side, number) {
+  const frames = twoSidedFrameStates[side];
+  if (frames.marks.includes(number)) {
+    frames.marks = frames.marks.filter(mark => mark !== number);
+    if (frames.referenceNumber === number) frames.referenceNumber = null;
+  } else frames.marks.push(number);
+  saveTwoSidedFrameState(side);
+}
+
+function toggleTwoSidedReference(side, number) {
+  const frames = twoSidedFrameStates[side];
+  frames.referenceNumber = frames.referenceNumber === number ? null : number;
+  if (frames.referenceNumber && !frames.marks.includes(number)) frames.marks.push(number);
+  saveTwoSidedFrameState(side);
+}
 
 function prepareTwoSidedAnnotations(side, file, packets) {
   const key = `datasnare-two-sided-notes-v1:${side}:${JSON.stringify([file.name, file.size, file.lastModified])}`;
   twoSidedAnnotations.keys[side] = key;
+  try {
+    const savedFrames = JSON.parse(localStorage.getItem(`${key}:frames`) || '{}');
+    twoSidedFrameStates[side] = {
+      marks: Array.isArray(savedFrames?.marks) ? savedFrames.marks.filter(Number.isSafeInteger) : [],
+      referenceNumber: Number.isSafeInteger(savedFrames?.referenceNumber) ? savedFrames.referenceNumber : null,
+    };
+  } catch (_) { twoSidedFrameStates[side] = { marks: [], referenceNumber: null }; }
   try {
     const saved = JSON.parse(localStorage.getItem(key) || '{}');
     twoSidedAnnotations.notes[side] = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
@@ -51,26 +81,38 @@ function showTwoSided() {
     $(selector).hidden = true;
   }
   $("#twoSidedWorkspace").hidden = false;
+  renderTwoSided();
   window.scrollTo({ top: 0 });
 }
 
 function twoSidedTime(timestamp) {
-  return Number.isFinite(timestamp) ? new Date(timestamp * 1000).toISOString() : "No timestamp";
+  if (!Number.isFinite(timestamp)) return "No timestamp";
+  const date = new Date(timestamp * 1000);
+  if ($("#twoSidedUtc").checked) return date.toISOString();
+  const pad = (value, width = 2) => String(value).padStart(width, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
 }
 
 function twoSidedPacketHtml(packet, side, recordIndex) {
   if (!packet) return '<div class="two-sided-missing">No unique counterpart</div>';
   const corrected = packet.timestamp + (side === "B" ? twoSidedState.offsetMs / 1000 : 0);
   const note = twoSidedNote(side, packet.number);
-  const delta = twoSidedAnnotations.deltas[side].get(packet.number);
-  const noteButton = `<button class="two-sided-note-button" type="button" data-two-note="${packet.number}" data-two-side="${side}" aria-label="${note ? 'Edit' : 'Add'} System ${side} frame ${packet.number} note" title="${escapeHtml(note || 'Add note')}">${note ? '&#9998;' : '+'}</button>`;
-  return `<div class="two-sided-packet-line two-sided-packet-line--${side}" data-two-side="${side}" data-two-frame="${packet.number}">
+  const flags = Array.isArray(packet.flags) ? packet.flags : [];
+  const flagStyle = tcpSignalClass(packet);
+  const frames = twoSidedFrameStates[side];
+  const marked = frames.marks.includes(packet.number);
+  const isReference = frames.referenceNumber === packet.number;
+  const reference = (side === 'A' ? twoSidedState.packetsA : twoSidedState.packetsB).find(item => item.number === frames.referenceNumber);
+  const delta = reference ? (packet.timestamp - reference.timestamp) * 1000 : twoSidedAnnotations.deltas[side].get(packet.number);
+  const noteButton = `<button class="two-sided-note-button ${note ? 'note-indicator' : ''}" type="button" data-two-note="${packet.number}" data-two-side="${side}" aria-label="${note ? 'Edit' : 'Add'} System ${side} frame ${packet.number} note" title="${escapeHtml(note || 'Add note')}">${note ? '\u25a4' : '+'}</button>`;
+  const markButton = `<span class="mark-indicator ${isReference ? 'reference' : marked ? 'marked' : ''}" title="${isReference ? 'Time reference (T0)' : marked ? 'Marked frame' : 'Unmarked frame'}">${isReference ? 'T0' : marked ? '\u25c6' : ''}</span>`;
+  return `<div class="two-sided-packet-line two-sided-packet-line--${side}${marked ? ' marked' : ''}${isReference ? ' time-reference' : ''}" data-two-side="${side}" data-two-frame="${packet.number}">
     ${side === 'A' ? noteButton : ''}
     <button class="two-sided-packet" type="button" data-two-record="${recordIndex}" aria-label="Inspect System ${side} frame ${packet.number}">
-      <span>${packet.number}</span><time title="Original: ${twoSidedTime(packet.timestamp)}">${twoSidedTime(corrected)}</time>
+      <span>${markButton}${packet.number}</span><time title="Original: ${twoSidedTime(packet.timestamp)}">${twoSidedTime(corrected)}</time>
       <span>${delta === null || delta === undefined ? '—' : delta.toFixed(3)}</span>
       <span title="Port ${packet.srcPort ?? 'N/A'}">${escapeHtml(packet.src)}</span><span title="Port ${packet.dstPort ?? 'N/A'}">${escapeHtml(packet.dst)}</span>
-      <span title="${escapeHtml(packet.info || '')}">${packet.seq ?? '—'} / ${packet.ack ?? '—'} / ${packet.payloadLength ?? '—'} / ${escapeHtml((packet.flags || []).join(' ') || packet.protocol || '')}</span>
+      <span title="${escapeHtml(packet.info || '')}">${packet.seq ?? '—'} / ${packet.ack ?? '—'} / ${packet.payloadLength ?? '—'} / <strong class="two-sided-flags two-sided-flags--${flagStyle}">${escapeHtml(flags.join(' ') || packet.protocol || '')}</strong></span>
     </button>${side === 'B' ? noteButton : ''}
   </div>`;
 }
@@ -80,6 +122,8 @@ function twoSidedVisibleRecords() {
   const includeContext = $("#twoSidedContext").checked;
   const query = $("#twoSidedSearch").value.trim().toLowerCase();
   return twoSidedState.records.map((record, index) => ({ record, index })).filter(({ record }) => {
+    const statusFilter = $('#twoSidedObservationFilter').value;
+    if (statusFilter !== 'all' && record.status !== statusFilter) return false;
     if ($("#twoSidedMatchedOnly").getAttribute("aria-pressed") === "true" && record.status !== "matched") return false;
     if (connection !== "all" && record.connection !== connection && !includeContext) return false;
     return !query || [record.connection, record.status, record.packetA?.number, record.packetB?.number,
@@ -88,6 +132,13 @@ function twoSidedVisibleRecords() {
 }
 
 function renderTwoSided() {
+  const zone = $("#twoSidedUtc").checked ? "UTC" : `Local: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
+  $(".two-sided-column-side > span:nth-child(3)").textContent = `Date-Time (${zone})`;
+  $(".two-sided-column-side--B > span:nth-child(2)").textContent = `Date-Time (${zone}, corrected)`;
+  $(".two-sided-column-side > span:nth-child(3)").title = `Date-Time (${zone})`;
+  $(".two-sided-column-side--B > span:nth-child(2)").title = `Date-Time (${zone}, corrected)`;
+  $('.two-sided-column-side > span:nth-child(4)').textContent = twoSidedFrameStates.A.referenceNumber ? 'Since A T0 (ms)' : 'Delta (ms)';
+  $('.two-sided-column-side--B > span:nth-child(3)').textContent = twoSidedFrameStates.B.referenceNumber ? 'Since B T0 (ms)' : 'Delta (ms)';
   const connection = $("#twoSidedConnection").value;
   const visible = twoSidedVisibleRecords();
   const pageSize = twoSidedPageSize();
@@ -180,6 +231,7 @@ async function analyzeTwoSided(event) {
 $("#twoSidedMatchedOnly").addEventListener("click", () => {
   const button = $("#twoSidedMatchedOnly");
   const enabled = button.getAttribute("aria-pressed") !== "true";
+  $('#twoSidedObservationFilter').value = 'all';
   button.setAttribute("aria-pressed", String(enabled));
   button.textContent = enabled ? "Show All Observations" : "Show Matched Only";
   twoSidedState.page = 0;
@@ -187,6 +239,18 @@ $("#twoSidedMatchedOnly").addEventListener("click", () => {
   $("#twoSidedScroll").scrollTop = 0;
 });
 $("#twoSidedModeButton").addEventListener("click", showTwoSided);
+$("#twoSidedUtc").addEventListener("change", () => {
+  const scroll = $("#twoSidedScroll");
+  const top = scroll.scrollTop;
+  const left = scroll.scrollLeft;
+  renderTwoSided();
+  scroll.scrollTop = top;
+  scroll.scrollLeft = left;
+  if ($("#twoSidedDialog").open && twoSidedState.selected >= 0) {
+    $("#twoSidedDialog").close();
+    inspectTwoSided(twoSidedState.selected);
+  }
+});
 $("#twoSidedBack").addEventListener("click", () => { hideTwoSided(); showCoreMode(); });
 $("#twoSidedForm").addEventListener("submit", analyzeTwoSided);
 $("#twoSidedRows").addEventListener("click", event => {
@@ -203,15 +267,34 @@ $('#twoSidedRows').addEventListener('contextmenu', event => {
   const menu = $('#twoSidedNoteMenu');
   const target = twoSidedAnnotations.target;
   $('#twoSidedNoteAction').textContent = `${twoSidedNote(target.side, target.number) ? 'Edit' : 'Add'} Note / System ${target.side}`;
+  $('#twoSidedMarkAction').textContent = `${twoSidedFrameStates[target.side].marks.includes(target.number) ? 'Unmark' : 'Mark'} Frame / System ${target.side}`;
+  $('#twoSidedReferenceAction').textContent = `${twoSidedFrameStates[target.side].referenceNumber === target.number ? 'Clear Time Reference' : 'Set as Time Reference'} / System ${target.side}`;
   menu.hidden = false;
   menu.style.left = `${Math.max(0, Math.min(event.clientX, innerWidth - 240))}px`;
-  menu.style.top = `${Math.max(0, Math.min(event.clientY, innerHeight - 70))}px`;
+  menu.style.top = `${Math.max(0, Math.min(event.clientY, innerHeight - menu.offsetHeight - 8))}px`;
   $('#twoSidedNoteAction').focus();
 });
 $('#twoSidedNoteAction').addEventListener('click', () => {
   $('#twoSidedNoteMenu').hidden = true;
   const target = twoSidedAnnotations.target;
   if (target) openTwoSidedNote(target.side, target.number);
+});
+$('#twoSidedMarkAction').addEventListener('click', () => {
+  $('#twoSidedNoteMenu').hidden = true;
+  const target = twoSidedAnnotations.target;
+  if (target) toggleTwoSidedMark(target.side, target.number);
+});
+$('#twoSidedReferenceAction').addEventListener('click', () => {
+  $('#twoSidedNoteMenu').hidden = true;
+  const target = twoSidedAnnotations.target;
+  if (target) toggleTwoSidedReference(target.side, target.number);
+});
+$('#twoSidedObservationFilter').addEventListener('change', () => {
+  $('#twoSidedMatchedOnly').setAttribute('aria-pressed', 'false');
+  $('#twoSidedMatchedOnly').textContent = 'Show Matched Only';
+  twoSidedState.page = 0;
+  renderTwoSided();
+  $('#twoSidedScroll').scrollTop = 0;
 });
 document.addEventListener('pointerdown', event => {
   if (!event.target.closest('#twoSidedNoteMenu')) $('#twoSidedNoteMenu').hidden = true;

@@ -35,7 +35,7 @@ try {
   await server.listen();
   browser = await chromium.launch({ channel: 'msedge', headless: true });
   for (const width of [2400, 1440, 390]) {
-    const page = await browser.newPage({ viewport: { width, height: 1000 } });
+    const page = await browser.newPage({ viewport: { width, height: 1000 }, timezoneId: 'America/New_York' });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`${server.resolvedUrls.local[0]}ainetscope/index.html`);
@@ -56,6 +56,20 @@ try {
       status: record.status, frameA: record.packetA?.number, frameB: record.packetB?.number,
       transit: record.transitMs, direction: record.direction,
     })));
+    const utcToggle = page.getByRole('checkbox', { name: 'Show UTC time', exact: true });
+    assert.equal(await utcToggle.isChecked(), false);
+    const timestamp = page.locator('.two-sided-packet-line--A time').first();
+    assert.equal(await timestamp.textContent(), '1969-12-31 19:01:40.000');
+    assert.match(await page.locator('.two-sided-column-side > span:nth-child(3)').first().textContent(), /America\/New_York/);
+    await utcToggle.check();
+    assert.equal(await timestamp.textContent(), '1970-01-01T00:01:40.000Z');
+    assert.equal(await page.locator('.two-sided-packet-line--B time').first().textContent(), '1970-01-01T00:01:40.005Z');
+    assert.deepEqual(await page.evaluate(() => window.DataSnareTwoSided.records.map(record => ({
+      status: record.status, frameA: record.packetA?.number, frameB: record.packetB?.number,
+      transit: record.transitMs, direction: record.direction,
+    }))), records);
+    await utcToggle.uncheck();
+    assert.equal(await timestamp.textContent(), '1969-12-31 19:01:40.000');
     assert.equal(records.filter(record => record.status === 'matched').length, 2);
     assert.ok(records.filter(record => record.status === 'matched').every(record => Math.abs(record.transit - 5) < .001));
     assert.equal(records.find(record => record.direction === 'B to A').frameB, 3);
@@ -72,8 +86,26 @@ try {
     if (width === 2400) {
       assert.ok(await page.locator('#twoSidedScroll').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'Both packet lists should fit on a wide desktop');
     }
-    const initialDelta = await page.locator('.two-sided-packet-line--B .two-sided-packet').nth(1).locator('span').nth(1).textContent();
+    const initialDelta = await page.locator('.two-sided-packet-line--B .two-sided-packet').nth(1).locator(':scope > span').nth(1).textContent();
     assert.equal(initialDelta, '180.000');
+    const pairIntervals = await page.evaluate(() => twoSidedState.records.map(record => record.transitMs));
+    await page.getByRole('button', { name: 'Inspect System A frame 1', exact: true }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Mark Frame / System A', exact: true }).click();
+    assert.equal(await page.locator('.two-sided-packet-line--A[data-two-frame="1"].marked').count(), 1);
+    assert.equal(await page.locator('.two-sided-packet-line--B[data-two-frame="1"].marked').count(), 0);
+    await page.getByRole('button', { name: 'Inspect System A frame 1', exact: true }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Set as Time Reference / System A', exact: true }).click();
+    assert.equal(await page.locator('.two-sided-packet-line--A[data-two-frame="1"] .mark-indicator').textContent(), 'T0');
+    assert.equal(await page.locator('.two-sided-packet-line--A[data-two-frame="2"] .two-sided-packet > span').nth(1).textContent(), '205.000');
+    await page.getByRole('button', { name: 'Inspect System B frame 3', exact: true }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Set as Time Reference / System B', exact: true }).click();
+    assert.equal(await page.locator('.two-sided-packet-line--B[data-two-frame="1"] .two-sided-packet > span').nth(1).textContent(), '-195.000');
+    assert.deepEqual(await page.evaluate(() => twoSidedState.records.map(record => record.transitMs)), pairIntervals);
+    await page.getByRole('button', { name: 'Inspect System B frame 3', exact: true }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Clear Time Reference / System B', exact: true }).click();
+    await page.getByRole('button', { name: 'Inspect System A frame 1', exact: true }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Unmark Frame / System A', exact: true }).click();
+    assert.equal(await page.locator('.two-sided-packet-line--A.time-reference').count(), 0);
     await page.getByRole('button', { name: 'Inspect System A frame 1', exact: true }).click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Add Note / System A', exact: true }).click();
     await page.getByLabel('Note', { exact: true }).fill('A request note <safe>');
@@ -101,6 +133,7 @@ try {
     await page.getByRole('button', { name: 'Delete note', exact: true }).click();
     assert.equal(await page.getByRole('button', { name: 'Add System A frame 1 note', exact: true }).count(), 1);
     assert.equal(await page.getByRole('button', { name: 'Edit System B frame 1 note', exact: true }).count(), 1);
+    assert.equal(await page.locator('.two-sided-packet-line--B[data-two-frame="3"].marked').count(), 1);
     assert.ok(await page.evaluate(() => window.DataSnareTwoSided.records.some(record => record.direction === 'B to A' && record.transitMs < 0)));
     await page.evaluate(() => {
       const match = twoSidedState.records.find(record => record.status === 'matched');
@@ -132,6 +165,43 @@ try {
     assert.equal(await page.locator('.two-sided-row--selected.two-sided-row--matched').count(), 1);
     await page.getByLabel('Find frames or endpoints', { exact: true }).fill('unmatched');
     assert.equal(await page.getByRole('button', { name: 'Jump to First Matched Pair', exact: true }).isDisabled(), true);
+    await page.getByLabel('Find frames or endpoints', { exact: true }).fill('');
+    await page.evaluate(() => {
+      const sample = twoSidedState.records[0];
+      twoSidedState.records.push({ ...sample, status: 'ambiguous' });
+      renderTwoSided();
+    });
+    await page.getByRole('button', { name: 'Show Matched Only', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Observation status', exact: true }).selectOption('ambiguous');
+    assert.equal(await page.locator('.two-sided-row').count(), 1);
+    assert.equal(await page.locator('.two-sided-row--ambiguous').count(), 1);
+    assert.equal(await page.getByRole('button', { name: 'Show Matched Only', exact: true }).getAttribute('aria-pressed'), 'false');
+    await page.getByRole('combobox', { name: 'Observation status', exact: true }).selectOption('all');
+    await page.evaluate(() => {
+      const sample = twoSidedState.records.find(record => record.status === 'matched');
+      const flags = [['SYN'], ['SYN', 'ACK'], ['FIN'], ['FIN', 'ACK'], ['RST', 'ACK', 'SYN']];
+      twoSidedState.records = flags.map((packetFlags, index) => ({ ...sample,
+        status: index === 4 ? 'ambiguous' : 'matched',
+        packetA: { ...sample.packetA, number: 9000 + index, flags: packetFlags, tcpFlagsValue: [2, 18, 1, 17, 22][index] },
+        packetB: null,
+      }));
+      twoSidedFrameStates.A.marks.push(9004);
+      twoSidedState.page = 0;
+      renderTwoSided();
+    });
+    const colors = await page.locator('.two-sided-flags').evaluateAll(elements => elements.map(element => ({
+      className: element.className, color: getComputedStyle(element).color,
+    })));
+    assert.deepEqual(colors.map(item => item.className.split('--')[1]), ['syn', 'syn-ack', 'fin', 'fin-ack', 'rst']);
+    assert.equal(new Set(colors.map(item => item.color)).size, 5);
+    assert.equal(colors[4].color, 'rgb(180, 35, 24)');
+    const rowSizes = await page.locator('.two-sided-packet-line').evaluateAll(lines => lines.map(line => ({ height: line.getBoundingClientRect().height,
+      cells: [...line.querySelector('.two-sided-packet').children].map(cell => ({ height: cell.getBoundingClientRect().height, text: cell.textContent, display: getComputedStyle(cell).display })) })));
+    assert.ok(rowSizes.every(line => line.height <= 40), `Signal and mark styling should keep packet lines compact: ${JSON.stringify(rowSizes)}`);
+    assert.equal(await page.locator('.two-sided-row--ambiguous .two-sided-packet-line.marked').count(), 1);
+    assert.equal(await page.locator('.two-sided-row--ambiguous .two-sided-link').evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(255, 235, 186)');
+    await page.evaluate(() => { document.querySelector('#twoSidedScroll').scrollLeft = 0; });
+    await page.screenshot({ path: join(output, `two-sided-signals-${width}.png`), fullPage: true });
     await page.getByRole('button', { name: 'Back to capture', exact: true }).click();
     assert.equal(await page.locator('#twoSidedWorkspace').isVisible(), false);
     await page.reload();

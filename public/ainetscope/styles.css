@@ -93,6 +93,23 @@ body::before {
 .two-sided-packet-line .two-sided-packet > span, .two-sided-packet-line .two-sided-packet > time { display: block; margin: 0; padding: 7px 5px; font: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .two-sided-note-button { border: 0; background: transparent; color: #17668a; cursor: pointer; padding: 4px; font-size: 16px; }
 .two-sided-note-button:hover, .two-sided-note-button:focus-visible { background: #dfedf4; }
+.two-sided-packet-line.marked { background: rgba(226,172,69,.18); box-shadow: inset 3px 0 var(--gold); }
+.two-sided-packet-line.time-reference { background: rgba(226,172,69,.26); box-shadow: inset 4px 0 var(--coral); }
+.two-sided-packet-line .note-indicator { align-self: center; justify-self: center; }
+.two-sided-packet-line .mark-indicator { width: 22px; margin-right: 3px; vertical-align: middle; }
+.two-sided-flags, .tcp-signal { font: inherit; font-weight: 700; }
+.two-sided-packet .two-sided-flags { display: inline; }
+.two-sided-packet .mark-indicator { display: inline-block; width: 18px; height: 18px; margin: 0 2px 0 0; line-height: 18px; text-align: center; font-size: 9px; }
+.two-sided-flags--syn, .tcp-signal--syn { color: #175da0; }
+.two-sided-flags--syn-ack, .tcp-signal--syn-ack { color: #176637; }
+.two-sided-flags--fin, .tcp-signal--fin { color: #984b0b; }
+.two-sided-flags--fin-ack, .tcp-signal--fin-ack { color: #096b70; }
+.two-sided-flags--rst, .tcp-signal--rst { color: #b42318; background: #fee4e2; padding: 2px 4px; border-radius: 2px; }
+.two-sided-flags--other, .tcp-signal--other { font-weight: 400; }
+.two-sided-row--ambiguous .two-sided-packet-line { border-bottom: 2px solid #c58a16; }
+.two-sided-row--ambiguous .two-sided-link { background: #ffebba; color: #704508; border-left-color: #c58a16; border-right-color: #c58a16; }
+.two-sided-row--ambiguous .two-sided-link b { color: #704508; }
+.two-sided-row--ambiguous.two-sided-row--context { opacity: 1; }
 .two-sided-row .two-sided-link { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; padding: 4px; min-height: 34px; }
 .two-sided-row .two-sided-link b { font-size: 16px; }
 .two-sided-row .two-sided-link small { font-size: 9px; }

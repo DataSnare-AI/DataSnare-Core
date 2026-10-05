@@ -498,6 +498,8 @@
     <div class="two-sided-toolbar">
       <label>Connection<select id="twoSidedConnection" aria-label="Connection"><option value="all">All connections</option></select></label>
       <label title="Keep other connections visible alongside the selected one, such as System B contacting System C. Has no effect when All connections is selected."><input id="twoSidedContext" type="checkbox" checked> Include other connection context</label>
+      <label><input id="twoSidedUtc" type="checkbox"> Show UTC time</label>
+      <label>Observations<select id="twoSidedObservationFilter" aria-label="Observation status"><option value="all">All observations</option><option value="matched">Matched only</option><option value="ambiguous">Ambiguous only</option><option value="unmatched">Unmatched only</option></select></label>
       <label>Find frames or endpoints<input id="twoSidedSearch" type="search"></label>
       <button class="button button-primary" id="twoSidedFirstMatch" type="button" disabled>Jump to First Matched Pair</button>
       <button class="button button-quiet" id="twoSidedMatchedOnly" type="button" aria-pressed="false">Show Matched Only</button>
@@ -515,7 +517,7 @@
       <div id="twoSidedDetail"></div>
     </dialog>
   </section>
-  <div id="twoSidedNoteMenu" class="field-context-menu" role="menu" hidden><button id="twoSidedNoteAction" type="button" role="menuitem">Add Note</button></div>
+  <div id="twoSidedNoteMenu" class="field-context-menu" role="menu" hidden><button id="twoSidedNoteAction" type="button" role="menuitem">Add Note</button><button id="twoSidedMarkAction" type="button" role="menuitem">Mark Frame</button><button id="twoSidedReferenceAction" type="button" role="menuitem">Set as Time Reference</button></div>
   <dialog id="twoSidedNoteDialog" class="two-sided-dialog">
     <h2 id="twoSidedNoteTitle">Frame note</h2>
     <label>Note<textarea id="twoSidedNoteText" rows="6" maxlength="4000"></textarea></label>
@@ -541,6 +543,7 @@
   <script src="flow-detail.js"></script>
   <script src="watch.js"></script>
   <script src="process-map.js"></script>
+  <script src="tcp-signals.js"></script>
   <script src="packet-workbench.js"></script>
   <script src="workbench-layout.js"></script>
   <script src="two-sided-match.js"></script>

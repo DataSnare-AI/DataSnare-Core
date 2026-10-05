@@ -11,7 +11,7 @@ const workbenchBaseColumns = [
   { label: "Protocol", value: packet => packet.protocol },
   { label: "Length", value: packet => packet.length },
   { label: "Size profile", html: packet => frameSizeBar(packet) },
-  { label: "Info", value: packet => packet.info }
+  { label: "Info", html: packet => `<span class="tcp-signal tcp-signal--${tcpSignalClass(packet)}">${escapeHtml(packet.info || '')}</span>` }
 ];
 
 function frameSizeBar(packet) {
