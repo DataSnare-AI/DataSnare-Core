@@ -34,7 +34,7 @@ let browser;
 try {
   await server.listen();
   browser = await chromium.launch({ channel: 'msedge', headless: true });
-  for (const width of [1440, 390]) {
+  for (const width of [2400, 1440, 390]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -68,11 +68,39 @@ try {
     await page.getByRole('dialog').waitFor();
     assert.ok((await page.locator('#twoSidedDetail').textContent()).includes('System B / frame 1'));
     await page.getByRole('button', { name: 'Close', exact: true }).click();
+    assert.equal(await page.locator('.two-sided-columns').count(), 1);
+    if (width === 2400) {
+      assert.ok(await page.locator('#twoSidedScroll').evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'Both packet lists should fit on a wide desktop');
+    }
+    const initialDelta = await page.locator('.two-sided-packet-line--B .two-sided-packet').nth(1).locator('span').nth(1).textContent();
+    assert.equal(initialDelta, '180.000');
+    await page.getByRole('button', { name: 'Inspect System A frame 1', exact: true }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Add Note / System A', exact: true }).click();
+    await page.getByLabel('Note', { exact: true }).fill('A request note <safe>');
+    await page.getByRole('button', { name: 'Save note', exact: true }).click();
+    await page.getByRole('button', { name: 'Add System B frame 1 note', exact: true }).click();
+    await page.getByLabel('Note', { exact: true }).fill('B receive note');
+    await page.getByRole('button', { name: 'Save note', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: 'Edit System A frame 1 note', exact: true }).getAttribute('title'), 'A request note <safe>');
+    assert.equal(await page.getByRole('button', { name: 'Edit System B frame 1 note', exact: true }).getAttribute('title'), 'B receive note');
+    await page.evaluate(() => {
+      const file = document.querySelector('#twoSidedFileB').files[0];
+      twoSidedAnnotations.notes.B = {};
+      prepareTwoSidedAnnotations('B', file, twoSidedState.packetsB);
+      renderTwoSided();
+    });
+    assert.equal(await page.getByRole('button', { name: 'Edit System B frame 1 note', exact: true }).getAttribute('title'), 'B receive note');
     assert.deepEqual(errors, []);
+    await page.evaluate(() => { document.querySelector('#twoSidedScroll').scrollLeft = 0; });
     await page.screenshot({ path: join(output, `two-sided-${width}.png`), fullPage: true });
     await page.getByLabel('Add to System B clock (ms)', { exact: true }).fill('-90');
     await page.getByRole('button', { name: 'Analyze two traces', exact: true }).click();
     await page.waitForFunction(() => window.DataSnareTwoSided.records.some(record => record.direction === 'A to B' && Math.abs(record.transitMs - 15) < .001));
+    await page.getByRole('button', { name: 'Edit System A frame 1 note', exact: true }).click();
+    assert.equal(await page.getByLabel('Note', { exact: true }).inputValue(), 'A request note <safe>');
+    await page.getByRole('button', { name: 'Delete note', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: 'Add System A frame 1 note', exact: true }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: 'Edit System B frame 1 note', exact: true }).count(), 1);
     assert.ok(await page.evaluate(() => window.DataSnareTwoSided.records.some(record => record.direction === 'B to A' && record.transitMs < 0)));
     await page.evaluate(() => {
       const match = twoSidedState.records.find(record => record.status === 'matched');
@@ -87,7 +115,7 @@ try {
     await page.getByRole('button', { name: 'Jump to First Matched Pair', exact: true }).click();
     assert.match(await page.locator('#twoSidedPage').textContent(), /page 4 of 4/);
     assert.equal(await page.locator('.two-sided-row--selected.two-sided-row--matched').count(), 1);
-    assert.deepEqual(await page.locator('.two-sided-toolbar > button').evaluateAll(buttons => buttons.map(button => button.id)),
+    assert.deepEqual(await page.locator('#twoSidedWorkspace > .two-sided-toolbar > button').evaluateAll(buttons => buttons.map(button => button.id)),
       ['twoSidedFirstMatch', 'twoSidedMatchedOnly', 'twoSidedPrevious', 'twoSidedNext']);
     await page.getByRole('button', { name: 'Show Matched Only', exact: true }).click();
     assert.equal(await page.locator('.two-sided-row').count(), 1);

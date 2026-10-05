@@ -19,10 +19,10 @@
     <nav class="top-actions" aria-label="Capture actions">
       <a class="button button-quiet" id="coreReturnLink" href="/aianalysis" hidden>Back to AIAnalysis</a>
       <button class="button button-quiet" id="demoButton" type="button">Load demo</button>
-      <button class="button button-set" id="twoSidedModeButton" type="button">Two-Sided</button>
       <input id="baselineInput" type="file" accept=".pcap,.pcapng,.cap" hidden>
       <button class="button button-set" id="settingsButton" type="button" aria-label="Capture capacity settings" title="Capture capacity settings"><span aria-hidden="true">⚙</span><span class="button-label">Settings</span></button>
       <button class="button button-set" id="globalProfileButton" type="button" aria-label="Open tuning profiles" title="Tuning profiles"><span aria-hidden="true">☷</span><span class="button-label">Tuning</span></button>
+      <button class="button button-set" id="twoSidedModeButton" type="button">Two-Sided</button>
       <div class="capture-action-group" role="group" aria-label="Capture set actions" title="Capture set and directory analysis">
       <button class="button button-set" id="setModeButton" type="button" aria-label="Analyze a capture set"><span aria-hidden="true">▦</span><span class="button-label">Capture set</span></button>
       <button class="button button-set" id="watchModeButton" type="button" aria-label="Watch capture directory"><span aria-hidden="true">◎</span><span class="button-label">Watch</span></button>
@@ -507,6 +507,7 @@
     </div>
     <div class="two-sided-scroll" id="twoSidedScroll">
       <div class="two-sided-heading"><strong id="twoSidedNameA">System A</strong><span>Correlation / corrected interval</span><strong id="twoSidedNameB">System B</strong></div>
+      <div class="two-sided-columns" aria-hidden="true"><div class="two-sided-column-side"><span>A Note</span><span>No.</span><span>Date-Time (UTC)</span><span>Delta (ms)</span><span>Src-IP</span><span>Dst-IP</span><span>Seq / Ack / Len / Flags</span></div><span>Correlation</span><div class="two-sided-column-side two-sided-column-side--B"><span>No.</span><span>Date-Time (UTC, corrected)</span><span>Delta (ms)</span><span>Src-IP</span><span>Dst-IP</span><span>Seq / Ack / Len / Flags</span><span>B Note</span></div></div>
       <div id="twoSidedRows"></div>
     </div>
     <dialog id="twoSidedDialog" class="two-sided-dialog">
@@ -514,6 +515,12 @@
       <div id="twoSidedDetail"></div>
     </dialog>
   </section>
+  <div id="twoSidedNoteMenu" class="field-context-menu" role="menu" hidden><button id="twoSidedNoteAction" type="button" role="menuitem">Add Note</button></div>
+  <dialog id="twoSidedNoteDialog" class="two-sided-dialog">
+    <h2 id="twoSidedNoteTitle">Frame note</h2>
+    <label>Note<textarea id="twoSidedNoteText" rows="6" maxlength="4000"></textarea></label>
+    <div class="two-sided-toolbar"><button id="twoSidedNoteCancel" class="button button-quiet" type="button">Cancel</button><button id="twoSidedNoteDelete" class="button button-quiet" type="button">Delete note</button><button id="twoSidedNoteSave" class="button button-primary" type="button">Save note</button></div>
+  </dialog>
   <div class="toast" id="toast" role="status"></div>
   <dialog id="captureChooser" class="capture-chooser">
     <div class="panel-heading"><h2>Open capture</h2><button id="captureChooserClose" class="button button-quiet" type="button">Cancel</button></div>

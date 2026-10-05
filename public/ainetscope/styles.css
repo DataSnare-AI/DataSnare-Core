@@ -45,7 +45,7 @@ body::before {
 .brand-mark i:nth-child(2) { height: 22px; }
 .brand-mark i:nth-child(3) { height: 15px; background: var(--coral); }
 .top-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.two-sided { margin: 24px auto; width: min(1600px, calc(100% - 32px)); }
+.two-sided { margin: 24px auto; width: min(2400px, calc(100% - 32px)); }
 .two-sided-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 12px; align-items: end; padding: 16px 0; }
 .two-sided-controls label, .two-sided-toolbar label { display: grid; gap: 6px; font: 12px var(--sans); min-width: 0; }
 .two-sided-controls input, .two-sided-toolbar input, .two-sided-toolbar select { min-width: 0; max-width: 100%; padding: 8px; border: 1px solid #a6b5af; border-radius: 3px; background: #fff; color: #17211d; }
@@ -80,6 +80,26 @@ body::before {
 .two-sided-details h3 { font-size: 16px; }
 .two-sided-details dt { color: #53645a; font-size: 11px; margin-top: 10px; }
 .two-sided-details dd { margin: 4px 0; overflow-wrap: anywhere; font: 11px/1.5 var(--mono); }
+.two-sided-heading, .two-sided-row, .two-sided-columns { grid-template-columns: minmax(920px, 1fr) 210px minmax(920px, 1fr); min-width: 2050px; }
+.two-sided-heading { height: 40px; }
+.two-sided-heading > * { padding: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.two-sided-columns { display: grid; position: sticky; top: 40px; z-index: 1; background: #e6eee9; border-bottom: 1px solid #a6b5af; }
+.two-sided-column-side { display: grid; grid-template-columns: 36px 64px 210px 84px 135px 135px minmax(256px, 1fr); }
+.two-sided-column-side--B { grid-template-columns: 64px 210px 84px 135px 135px minmax(256px, 1fr) 36px; }
+.two-sided-columns span { padding: 7px 5px; font: 10px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.two-sided-packet-line { display: grid; grid-template-columns: 36px minmax(0, 1fr); min-width: 0; align-items: stretch; }
+.two-sided-packet-line--B { grid-template-columns: minmax(0, 1fr) 36px; }
+.two-sided-packet-line .two-sided-packet { display: grid; grid-template-columns: 64px 210px 84px 135px 135px minmax(256px, 1fr); padding: 0; align-items: center; font: 10px var(--mono); min-height: 34px; }
+.two-sided-packet-line .two-sided-packet > span, .two-sided-packet-line .two-sided-packet > time { display: block; margin: 0; padding: 7px 5px; font: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.two-sided-note-button { border: 0; background: transparent; color: #17668a; cursor: pointer; padding: 4px; font-size: 16px; }
+.two-sided-note-button:hover, .two-sided-note-button:focus-visible { background: #dfedf4; }
+.two-sided-row .two-sided-link { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; padding: 4px; min-height: 34px; }
+.two-sided-row .two-sided-link b { font-size: 16px; }
+.two-sided-row .two-sided-link small { font-size: 9px; }
+.two-sided-row .two-sided-missing { padding: 8px; min-height: 34px; }
+#twoSidedNoteDialog h2 { font-size: 20px; }
+#twoSidedNoteDialog label { display: grid; gap: 8px; }
+#twoSidedNoteText { width: 100%; padding: 10px; border: 1px solid #a6b5af; font: 12px/1.5 var(--sans); }
 .button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 15px; border: 1px solid var(--ink); border-radius: 4px; font-weight: 700; font-size: 13px; }
 .button-quiet { background: transparent; }
 .button-primary { background: var(--ink); color: white; }

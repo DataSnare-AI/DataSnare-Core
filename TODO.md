@@ -1,5 +1,8 @@
 # Development Backlog
 
+- [ ] Two-Sided follow-up: side-specific packet marking and independent System A/System B time-reference frames. Keep original timestamps and clock corrections separate from display references.
+- [ ] Two-Sided follow-up: Analytics/Expert summary of filtered matched pairs (count, mean, standard deviation, min/max and percentiles), separated by direction where endpoint IPs establish it. Label corrected capture intervals versus inferred transit, expose negative intervals/clock caveats, and exclude ambiguous/unmatched observations from paired statistics.
+
 - [ ] Planned: agent-assisted Windows BLG/PML conversion for customers with an eligible AIOps agent. Inspect existing AIOps dispatch/file-transfer capabilities first. Request conversion through authenticated AIOps APIs, not direct database access; require device/tenant authorization and explicit conversion/upload consent. Use fixed converter operations, validated local paths, isolated output directories, time/disk limits, cleanup, and audited original/output hashes plus converter/device/capture-time provenance. Start with relog.exe for BLG; validate supported Procmon execution, service-account behavior, licensing and tool availability before PML. Use short-lived tenant/job-scoped upload authorization. Retain downloadable local helpers for customers without agents. Do not implement agent execution yet.
 
 - [ ] Last/deferred until other development work is complete: evaluate offline standalone distribution and practical source protection. See the final item in the AINetScope development backlog. Delivered JavaScript or binaries cannot guarantee protection against reverse engineering.

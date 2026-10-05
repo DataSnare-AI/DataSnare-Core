@@ -1,6 +1,32 @@
 "use strict";
 
 const twoSidedState = { packetsA: [], packetsB: [], records: [], page: 0, offsetMs: 0, busy: false, selected: -1 };
+const twoSidedAnnotations = { keys: { A: null, B: null }, notes: { A: {}, B: {} }, deltas: { A: new Map(), B: new Map() }, target: null };
+
+function prepareTwoSidedAnnotations(side, file, packets) {
+  const key = `datasnare-two-sided-notes-v1:${side}:${JSON.stringify([file.name, file.size, file.lastModified])}`;
+  twoSidedAnnotations.keys[side] = key;
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    twoSidedAnnotations.notes[side] = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  } catch (_) { twoSidedAnnotations.notes[side] = {}; }
+  twoSidedAnnotations.deltas[side] = new Map(packets.map((packet, index) => [packet.number,
+    index && Number.isFinite(packet.timestamp) && Number.isFinite(packets[index - 1].timestamp)
+      ? (packet.timestamp - packets[index - 1].timestamp) * 1000 : null]));
+}
+
+function twoSidedNote(side, number) {
+  const note = twoSidedAnnotations.notes[side][number];
+  return typeof note === 'string' ? note : '';
+}
+
+function openTwoSidedNote(side, number) {
+  twoSidedAnnotations.target = { side, number };
+  $('#twoSidedNoteTitle').textContent = `System ${side} / frame ${number} note`;
+  $('#twoSidedNoteText').value = twoSidedNote(side, number);
+  $('#twoSidedNoteDialog').showModal();
+  $('#twoSidedNoteText').focus();
+}
 function twoSidedPageSize() {
   return Math.max(25, Math.min(1000, Math.floor(Number(settings.twoSidedRowsPerPage) || 150)));
 }
@@ -35,12 +61,18 @@ function twoSidedTime(timestamp) {
 function twoSidedPacketHtml(packet, side, recordIndex) {
   if (!packet) return '<div class="two-sided-missing">No unique counterpart</div>';
   const corrected = packet.timestamp + (side === "B" ? twoSidedState.offsetMs / 1000 : 0);
-  return `<button class="two-sided-packet" type="button" data-two-record="${recordIndex}" aria-label="Inspect System ${side} frame ${packet.number}">
-    <strong>Frame ${packet.number} <span>${escapeHtml(packet.protocol || packet.transport || "Packet")}</span></strong>
-    <time>${twoSidedTime(corrected)}</time>
-    <span>${escapeHtml(packet.src)}:${packet.srcPort ?? ""} &gt; ${escapeHtml(packet.dst)}:${packet.dstPort ?? ""}</span>
-    <small>${packet.seq === undefined ? escapeHtml(packet.info || "") : `Seq ${packet.seq} / Ack ${packet.ack} / Len ${packet.payloadLength} / ${escapeHtml((packet.flags || []).join(" "))}`}</small>
-  </button>`;
+  const note = twoSidedNote(side, packet.number);
+  const delta = twoSidedAnnotations.deltas[side].get(packet.number);
+  const noteButton = `<button class="two-sided-note-button" type="button" data-two-note="${packet.number}" data-two-side="${side}" aria-label="${note ? 'Edit' : 'Add'} System ${side} frame ${packet.number} note" title="${escapeHtml(note || 'Add note')}">${note ? '&#9998;' : '+'}</button>`;
+  return `<div class="two-sided-packet-line two-sided-packet-line--${side}" data-two-side="${side}" data-two-frame="${packet.number}">
+    ${side === 'A' ? noteButton : ''}
+    <button class="two-sided-packet" type="button" data-two-record="${recordIndex}" aria-label="Inspect System ${side} frame ${packet.number}">
+      <span>${packet.number}</span><time title="Original: ${twoSidedTime(packet.timestamp)}">${twoSidedTime(corrected)}</time>
+      <span>${delta === null || delta === undefined ? '—' : delta.toFixed(3)}</span>
+      <span title="Port ${packet.srcPort ?? 'N/A'}">${escapeHtml(packet.src)}</span><span title="Port ${packet.dstPort ?? 'N/A'}">${escapeHtml(packet.dst)}</span>
+      <span title="${escapeHtml(packet.info || '')}">${packet.seq ?? '—'} / ${packet.ack ?? '—'} / ${packet.payloadLength ?? '—'} / ${escapeHtml((packet.flags || []).join(' ') || packet.protocol || '')}</span>
+    </button>${side === 'B' ? noteButton : ''}
+  </div>`;
 }
 
 function twoSidedVisibleRecords() {
@@ -125,6 +157,8 @@ async function analyzeTwoSided(event) {
     const packetsB = await parseFile(fileB, false);
     const records = DataSnareTwoSidedMatch.correlate(packetsA, packetsB, { offsetMs, toleranceMs, hostA, hostB });
     Object.assign(twoSidedState, { packetsA, packetsB, records, offsetMs, page: 0, selected: -1 });
+    prepareTwoSidedAnnotations('A', fileA, packetsA);
+    prepareTwoSidedAnnotations('B', fileB, packetsB);
     $("#twoSidedNameA").textContent = `System A / ${fileA.name}`;
     $("#twoSidedNameB").textContent = `System B / ${fileB.name} / ${offsetMs >= 0 ? "+" : ""}${offsetMs} ms`;
     const connections = [...new Set(records.map(record => record.connection))];
@@ -156,9 +190,49 @@ $("#twoSidedModeButton").addEventListener("click", showTwoSided);
 $("#twoSidedBack").addEventListener("click", () => { hideTwoSided(); showCoreMode(); });
 $("#twoSidedForm").addEventListener("submit", analyzeTwoSided);
 $("#twoSidedRows").addEventListener("click", event => {
+  const note = event.target.closest('[data-two-note]');
+  if (note) { openTwoSidedNote(note.dataset.twoSide, Number(note.dataset.twoNote)); return; }
   const button = event.target.closest("[data-two-record]");
   if (button) inspectTwoSided(Number(button.dataset.twoRecord));
 });
+$('#twoSidedRows').addEventListener('contextmenu', event => {
+  const line = event.target.closest('[data-two-frame]');
+  if (!line) return;
+  event.preventDefault();
+  twoSidedAnnotations.target = { side: line.dataset.twoSide, number: Number(line.dataset.twoFrame) };
+  const menu = $('#twoSidedNoteMenu');
+  const target = twoSidedAnnotations.target;
+  $('#twoSidedNoteAction').textContent = `${twoSidedNote(target.side, target.number) ? 'Edit' : 'Add'} Note / System ${target.side}`;
+  menu.hidden = false;
+  menu.style.left = `${Math.max(0, Math.min(event.clientX, innerWidth - 240))}px`;
+  menu.style.top = `${Math.max(0, Math.min(event.clientY, innerHeight - 70))}px`;
+  $('#twoSidedNoteAction').focus();
+});
+$('#twoSidedNoteAction').addEventListener('click', () => {
+  $('#twoSidedNoteMenu').hidden = true;
+  const target = twoSidedAnnotations.target;
+  if (target) openTwoSidedNote(target.side, target.number);
+});
+document.addEventListener('pointerdown', event => {
+  if (!event.target.closest('#twoSidedNoteMenu')) $('#twoSidedNoteMenu').hidden = true;
+});
+document.addEventListener('keydown', event => { if (event.key === 'Escape') $('#twoSidedNoteMenu').hidden = true; });
+$('#twoSidedNoteCancel').addEventListener('click', () => $('#twoSidedNoteDialog').close());
+function saveTwoSidedNote(remove = false) {
+  const target = twoSidedAnnotations.target;
+  if (!target) return;
+  const notes = { ...twoSidedAnnotations.notes[target.side] };
+  const text = remove ? '' : $('#twoSidedNoteText').value.trim().slice(0, 4000);
+  if (text) notes[target.number] = text;
+  else delete notes[target.number];
+  try { localStorage.setItem(twoSidedAnnotations.keys[target.side], JSON.stringify(notes)); }
+  catch (_) { showToast('Could not save note: browser storage is unavailable.'); return; }
+  twoSidedAnnotations.notes[target.side] = notes;
+  $('#twoSidedNoteDialog').close();
+  renderTwoSided();
+}
+$('#twoSidedNoteSave').addEventListener('click', () => saveTwoSidedNote());
+$('#twoSidedNoteDelete').addEventListener('click', () => saveTwoSidedNote(true));
 $("#twoSidedClose").addEventListener("click", () => $("#twoSidedDialog").close());
 for (const selector of ["#twoSidedConnection", "#twoSidedContext", "#twoSidedSearch"]) {
   $(selector).addEventListener("input", () => { twoSidedState.page = 0; renderTwoSided(); });
