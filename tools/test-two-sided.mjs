@@ -87,10 +87,29 @@ try {
     await page.getByRole('button', { name: 'Jump to First Matched Pair', exact: true }).click();
     assert.match(await page.locator('#twoSidedPage').textContent(), /page 4 of 4/);
     assert.equal(await page.locator('.two-sided-row--selected.two-sided-row--matched').count(), 1);
+    assert.deepEqual(await page.locator('.two-sided-toolbar > button').evaluateAll(buttons => buttons.map(button => button.id)),
+      ['twoSidedFirstMatch', 'twoSidedMatchedOnly', 'twoSidedPrevious', 'twoSidedNext']);
+    await page.getByRole('button', { name: 'Show Matched Only', exact: true }).click();
+    assert.equal(await page.locator('.two-sided-row').count(), 1);
+    assert.equal(await page.locator('.two-sided-row--matched').count(), 1);
+    assert.match(await page.locator('#twoSidedPage').textContent(), /page 1 of 1/);
+    await page.getByRole('button', { name: 'Show All Observations', exact: true }).click();
+    await page.getByRole('button', { name: 'Capture capacity settings', exact: true }).click();
+    await page.getByLabel('Two-Sided rows per page', { exact: true }).fill('50');
+    await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+    assert.equal(await page.locator('.two-sided-row').count(), 50);
+    assert.match(await page.locator('#twoSidedPage').textContent(), /page 1 of 10/);
+    await page.getByRole('button', { name: 'Jump to First Matched Pair', exact: true }).click();
+    assert.match(await page.locator('#twoSidedPage').textContent(), /page 10 of 10/);
+    assert.equal(await page.locator('.two-sided-row--selected.two-sided-row--matched').count(), 1);
     await page.getByLabel('Find frames or endpoints', { exact: true }).fill('unmatched');
     assert.equal(await page.getByRole('button', { name: 'Jump to First Matched Pair', exact: true }).isDisabled(), true);
     await page.getByRole('button', { name: 'Back to capture', exact: true }).click();
     assert.equal(await page.locator('#twoSidedWorkspace').isVisible(), false);
+    await page.reload();
+    await page.getByRole('button', { name: 'Capture capacity settings', exact: true }).click();
+    assert.equal(await page.getByLabel('Two-Sided rows per page', { exact: true }).inputValue(), '50');
+    assert.deepEqual(errors, []);
     console.log(`PASS Two-Sided ${width}px: 2 real captures, offset, both directions, downstream context and linked inspection`);
     await page.close();
   }

@@ -1,7 +1,20 @@
 "use strict";
 
 const twoSidedState = { packetsA: [], packetsB: [], records: [], page: 0, offsetMs: 0, busy: false, selected: -1 };
-const TWO_SIDED_PAGE_SIZE = 150;
+function twoSidedPageSize() {
+  return Math.max(25, Math.min(1000, Math.floor(Number(settings.twoSidedRowsPerPage) || 150)));
+}
+
+$("#settingsButton").addEventListener("click", () => {
+  $("#twoSidedRowsPerPage").value = twoSidedPageSize();
+});
+$("#saveSettingsButton").addEventListener("click", () => {
+  settings.twoSidedRowsPerPage = Math.max(25, Math.min(1000, Math.floor(Number($("#twoSidedRowsPerPage").value) || 150)));
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  twoSidedState.page = 0;
+  renderTwoSided();
+  $("#twoSidedScroll").scrollTop = 0;
+});
 
 function hideTwoSided() {
   $("#twoSidedWorkspace").hidden = true;
@@ -35,6 +48,7 @@ function twoSidedVisibleRecords() {
   const includeContext = $("#twoSidedContext").checked;
   const query = $("#twoSidedSearch").value.trim().toLowerCase();
   return twoSidedState.records.map((record, index) => ({ record, index })).filter(({ record }) => {
+    if ($("#twoSidedMatchedOnly").getAttribute("aria-pressed") === "true" && record.status !== "matched") return false;
     if (connection !== "all" && record.connection !== connection && !includeContext) return false;
     return !query || [record.connection, record.status, record.packetA?.number, record.packetB?.number,
       record.packetA?.seq, record.packetA?.ack, record.packetB?.seq, record.packetB?.ack].join(" ").toLowerCase().includes(query);
@@ -44,9 +58,10 @@ function twoSidedVisibleRecords() {
 function renderTwoSided() {
   const connection = $("#twoSidedConnection").value;
   const visible = twoSidedVisibleRecords();
-  const pageCount = Math.max(1, Math.ceil(visible.length / TWO_SIDED_PAGE_SIZE));
+  const pageSize = twoSidedPageSize();
+  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
   twoSidedState.page = Math.min(twoSidedState.page, pageCount - 1);
-  const pageRows = visible.slice(twoSidedState.page * TWO_SIDED_PAGE_SIZE, (twoSidedState.page + 1) * TWO_SIDED_PAGE_SIZE);
+  const pageRows = visible.slice(twoSidedState.page * pageSize, (twoSidedState.page + 1) * pageSize);
   $("#twoSidedRows").innerHTML = pageRows.map(({ record, index }) => {
     const context = connection !== "all" && record.connection !== connection;
     const delta = record.deltaMs === null ? "" : `B - A ${record.deltaMs.toFixed(3)} ms`;
@@ -58,7 +73,7 @@ function renderTwoSided() {
       ${twoSidedPacketHtml(record.packetB, "B", index)}
     </div>`;
   }).join("") || '<p class="two-sided-missing">No packets match this view.</p>';
-  $("#twoSidedPage").textContent = `${visible.length.toLocaleString()} rows / page ${twoSidedState.page + 1} of ${pageCount}`;
+  $("#twoSidedPage").textContent = `${visible.length.toLocaleString()} rows / page ${twoSidedState.page + 1} of ${pageCount} / ${pageSize} rows per page`;
   $("#twoSidedPrevious").disabled = twoSidedState.page === 0;
   $("#twoSidedNext").disabled = twoSidedState.page === pageCount - 1;
   $("#twoSidedFirstMatch").disabled = !visible.some(({ record }) => record.status === "matched");
@@ -68,7 +83,7 @@ $("#twoSidedFirstMatch").addEventListener("click", () => {
   const visible = twoSidedVisibleRecords();
   const position = visible.findIndex(({ record }) => record.status === "matched");
   if (position < 0) return;
-  twoSidedState.page = Math.floor(position / TWO_SIDED_PAGE_SIZE);
+  twoSidedState.page = Math.floor(position / twoSidedPageSize());
   twoSidedState.selected = visible[position].index;
   renderTwoSided();
   const row = $("#twoSidedRows .two-sided-row--selected");
@@ -128,6 +143,15 @@ async function analyzeTwoSided(event) {
   }
 }
 
+$("#twoSidedMatchedOnly").addEventListener("click", () => {
+  const button = $("#twoSidedMatchedOnly");
+  const enabled = button.getAttribute("aria-pressed") !== "true";
+  button.setAttribute("aria-pressed", String(enabled));
+  button.textContent = enabled ? "Show All Observations" : "Show Matched Only";
+  twoSidedState.page = 0;
+  renderTwoSided();
+  $("#twoSidedScroll").scrollTop = 0;
+});
 $("#twoSidedModeButton").addEventListener("click", showTwoSided);
 $("#twoSidedBack").addEventListener("click", () => { hideTwoSided(); showCoreMode(); });
 $("#twoSidedForm").addEventListener("submit", analyzeTwoSided);

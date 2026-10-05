@@ -22,6 +22,7 @@ function loadSettings() {
     return {
       maxCaptureMB: Math.max(1, Number(saved.maxCaptureMB) || DEFAULT_SETTINGS.maxCaptureMB),
       maxPackets: Math.max(1, Math.floor(Number(saved.maxPackets) || DEFAULT_SETTINGS.maxPackets)),
+      twoSidedRowsPerPage: Math.max(25, Math.min(1000, Math.floor(Number(saved.twoSidedRowsPerPage) || 150))),
       rawPreviewBytes: Number.isFinite(preview) ? Math.max(0, Math.min(65535, Math.floor(preview))) : DEFAULT_SETTINGS.rawPreviewBytes,
       cacheEnabled: saved.cacheEnabled === true,
       compactMode: saved.compactMode !== false,
