@@ -14,6 +14,7 @@ const assets = [
   'flow-detail.js',
   'index.html',
   'packet-workbench.js',
+  'workbench-layout.js',
   'process-map.js',
   'set-analysis-worker.js',
   'styles.css',

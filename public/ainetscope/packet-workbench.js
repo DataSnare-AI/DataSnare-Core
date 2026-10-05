@@ -368,7 +368,7 @@ function renderFieldFilters() {
 function selectWorkbenchPacket(number, scroll = true) {
   const packet = state.packets.find(item => item.number === number); if (!packet) { $("#protocolTree").innerHTML = ""; $("#byteView").innerHTML = ""; $("#streamInspector").innerHTML = ""; return; }
   workbenchState.selectedNumber = number;
-  if (!$(`#workbenchRows tr[data-workbench-packet="${number}"]`)) renderWorkbenchList(number, false);
+  if (scroll && !$(`#workbenchRows tr[data-workbench-packet="${number}"]`)) renderWorkbenchList(number, false);
   $("#workbenchRows tr.selected")?.classList.remove("selected");
   const row = $(`#workbenchRows tr[data-workbench-packet="${number}"]`); if (row) {
     row.classList.add("selected");

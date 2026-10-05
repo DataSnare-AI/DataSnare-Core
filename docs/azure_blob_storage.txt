@@ -91,3 +91,34 @@ StorageBlobLogs
 | project TimeGenerated, OperationName, StatusCode, StatusText,
           AuthenticationType, UriPath, CallerIpAddress, ClientRequestId, CorrelationId
 | order by TimeGenerated desc
+
+
+Need to get past the 7 day user SAS expiration.
+1. Enable VM Identity
+In Azure Portal:
+Open the VM hosting Core.
+Select Identity → System assigned.
+Set Status: On, then Save.
+Note the displayed Object (principal) ID.
+This is the VM’s identity, not your personal Azure account.
+    on vm dsaiops01, Identity-->System assigned, turn on then save
+    Object (principal) ID:  69b48efd-9ee0-4fe6-b6d6-06e1969938e4 -- this is VM identity
+
+2. Grant Blob Access
+Open the storage account containing your existing artifact container:
+
+Prefer the specific container’s Access Control (IAM) for a narrower scope. Storage-account IAM also works but grants broader access.
+Select Add → Add role assignment.
+Choose Storage Blob Data Contributor.
+Under members, select Managed identity.
+Select your subscription, identity type Virtual machine, and the Core VM.
+Select Review + assign.
+Allow several minutes for permissions to propagate. You do not need Storage Blob Delegator for Core’s direct uploads.
+
+3. Switch Core Away From SAS
+In Core Admin → Storage, confirm and save:
+
+Backend: Azure Blob
+Account URL: https://YOUR_ACCOUNT.blob.core.windows.net with no SAS query string
+Container: your existing container
+Blob prefix: retain core-artifacts
