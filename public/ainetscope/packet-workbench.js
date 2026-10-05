@@ -549,7 +549,10 @@ function toggleContextColumn() {
   hideFieldContextMenu(); renderWorkbenchList(workbenchState.selectedNumber);
 }
 
-$("#workbenchModeButton").addEventListener("click", () => showPacketWorkbench());
+$("#workbenchModeButton").addEventListener("click", () => {
+  if (!state.packets.length && (batchState.results.length || batchState.items.length)) openCaptureChooser();
+  else showPacketWorkbench();
+});
 $("#workbenchCoreButton").addEventListener("click", showCoreMode);
 $("#workbenchOpenCoreButton").addEventListener("click", showCoreMode);
 $("#workbenchSearch").addEventListener("input", () => renderWorkbenchList());

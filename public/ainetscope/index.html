@@ -20,16 +20,20 @@
       <a class="button button-quiet" id="coreReturnLink" href="/aianalysis" hidden>Back to AIAnalysis</a>
       <button class="button button-quiet" id="demoButton" type="button">Load demo</button>
       <button class="button button-set" id="twoSidedModeButton" type="button">Two-Sided</button>
-      <label class="button button-quiet" for="baselineInput">Compare baseline</label>
       <input id="baselineInput" type="file" accept=".pcap,.pcapng,.cap" hidden>
       <button class="button button-set" id="settingsButton" type="button" aria-label="Capture capacity settings" title="Capture capacity settings"><span aria-hidden="true">⚙</span><span class="button-label">Settings</span></button>
       <button class="button button-set" id="globalProfileButton" type="button" aria-label="Open tuning profiles" title="Tuning profiles"><span aria-hidden="true">☷</span><span class="button-label">Tuning</span></button>
+      <div class="capture-action-group" role="group" aria-label="Capture set actions" title="Capture set and directory analysis">
       <button class="button button-set" id="setModeButton" type="button" aria-label="Analyze a capture set"><span aria-hidden="true">▦</span><span class="button-label">Capture set</span></button>
       <button class="button button-set" id="watchModeButton" type="button" aria-label="Watch capture directory"><span aria-hidden="true">◎</span><span class="button-label">Watch</span></button>
-      <button class="button button-set" id="workbenchModeButton" type="button" aria-label="Open packet workbench"><span aria-hidden="true">☷</span><span class="button-label">Packets</span></button>
-      <label class="button button-primary" for="captureInput">
+      </div>
+      <div class="capture-action-group" role="group" aria-label="Individual capture actions" title="Individual capture analysis">
+      <label class="button button-quiet" for="baselineInput">Compare baseline</label>
+      <button class="button button-set" id="workbenchModeButton" type="button" aria-label="Open packet workbench" title="Inspect the current capture, or choose one from your loaded set"><span aria-hidden="true">☷</span><span class="button-label">Packets</span></button>
+      <button class="button button-primary" id="openCaptureButton" type="button" aria-label="Open capture" title="Open a set capture or new file in a separate analyzer window">
         <span aria-hidden="true">＋</span> <span class="button-label">Open capture</span>
-      </label>
+      </button>
+      </div>
       <input id="captureInput" type="file" accept=".pcap,.pcapng,.cap" hidden>
     </nav>
   </header>
@@ -511,6 +515,12 @@
     </dialog>
   </section>
   <div class="toast" id="toast" role="status"></div>
+  <dialog id="captureChooser" class="capture-chooser">
+    <div class="panel-heading"><h2>Open capture</h2><button id="captureChooserClose" class="button button-quiet" type="button">Cancel</button></div>
+    <p>Open a capture from your loaded set or choose a new file?</p>
+    <div id="captureChooserList" class="capture-chooser-list"></div>
+    <button id="captureChooserNew" class="button button-primary" type="button">New File</button>
+  </dialog>
   <script src="app.js"></script>
   <script src="tuning.js"></script>
   <script src="expert.js"></script>
@@ -523,5 +533,6 @@
   <script src="workbench-layout.js"></script>
   <script src="two-sided-match.js"></script>
   <script src="two-sided.js"></script>
+  <script src="capture-launch.js"></script>
 </body>
 </html>

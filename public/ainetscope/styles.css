@@ -30,7 +30,14 @@ body::before {
   background-size: 8px 8px;
 }
 
-.topbar { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 clamp(20px, 4vw, 64px); border-bottom: 1px solid var(--line); }
+.topbar { min-height: 72px; height: auto; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 12px clamp(20px, 4vw, 64px); border-bottom: 1px solid var(--line); }
+.capture-action-group { display: flex; flex-wrap: wrap; gap: 8px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; }
+.capture-chooser { width: min(620px, calc(100% - 24px)); max-height: 85vh; overflow: auto; padding: 20px; }
+.capture-chooser h2 { font-size: 20px; }
+.capture-chooser-list { max-height: 45vh; overflow: auto; margin: 12px 0; }
+.capture-choice { display: block; width: 100%; padding: 12px; border: 0; border-bottom: 1px solid var(--line); text-align: left; background: var(--panel); color: var(--ink); overflow-wrap: anywhere; cursor: pointer; }
+.capture-choice:hover { background: #dfedf4; }
+.capture-chooser .button-quiet { display: inline-flex; }
 .brand { color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 800; }
 .brand-mark { width: 26px; height: 24px; display: flex; align-items: end; gap: 3px; }
 .brand-mark i { display: block; width: 6px; background: var(--green); }
@@ -599,7 +606,7 @@ dialog::backdrop { background: rgba(23,33,29,.55); backdrop-filter: blur(2px); }
 }
 
 @media (max-width: 600px) {
-  .topbar { height: 62px; }
+  .topbar { height: auto; min-height: 62px; }
   .button-quiet { display: none; }
   .button-set { width: 40px; padding: 0; }
   .top-actions .button-label { display: none; }

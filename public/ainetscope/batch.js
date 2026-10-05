@@ -410,7 +410,8 @@ function refreshCaptureSetProfile() {
 
 async function openSetCapture(index) {
   const result = batchState.results.find(item => item.index === index); if (!result || result.status !== "Analyzed") return;
-  try { const packets = result.demoPackets || await parseFile(result.source, true); showCoreMode(); loadPackets(packets, result.path, result.source ? `${result.source.webkitRelativePath || result.path}:${result.source.size}:${result.source.lastModified}` : `set-demo:${result.path}`); showToast(`Opened ${result.name} from capture set.`); } catch (error) { showToast(`Could not open ${result.name}: ${error.message}`); }
+  const launch = reserveCaptureWindow();
+  deliverCaptureWindow(launch, result.demoPackets ? { demoPackets: result.demoPackets, name: result.path } : { file: result.source, name: result.path });
 }
 
 function createSetDemo() {

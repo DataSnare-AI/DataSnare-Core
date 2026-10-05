@@ -23,6 +23,7 @@ const assets = [
   'watch.js',
   'two-sided-match.js',
   'two-sided.js',
+  'capture-launch.js',
 ];
 
 await mkdir(destinationRoot, { recursive: true });
