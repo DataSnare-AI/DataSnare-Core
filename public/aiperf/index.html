@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#edf0ea">
+  <title>DataSnare-AIPerf</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="DataSnare-AIPerf home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>DataSnare-AIPerf</span></a>
+    <nav class="top-actions" aria-label="Performance data actions">
+      <button class="button quiet" id="demoButton" type="button">Load demo</button>
+      <button class="button quiet" id="clearButton" type="button">Clear</button>
+      <button class="button primary" id="exportButton" type="button" disabled>Export events JSON</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="intro" id="dropZone">
+      <div>
+        <p class="eyebrow">LOCAL PERFORMANCE INTELLIGENCE</p>
+        <h1>Find the pressure<br><em>behind the pause.</em></h1>
+      </div>
+      <div class="intro-side">
+        <p>Correlate Windows performance counters and System Diagnostics advice without sending telemetry off this machine.</p>
+        <div class="drop-hint"><span>Drop converted PDH .csv or report.xml</span><b aria-hidden="true">↓</b></div>
+      </div>
+    </section>
+
+    <section class="import-strip">
+      <div class="import-copy">
+        <strong>Open performance evidence</strong>
+        <span>Choose one or many converted CSV and System Diagnostics XML files.</span>
+      </div>
+      <div class="import-actions">
+        <label class="button primary" for="fileInput">Choose files</label>
+        <input id="fileInput" type="file" accept=".csv,.xml,text/csv,text/xml,application/xml" multiple hidden>
+      </div>
+      <div class="blg-note"><strong>Have .blg files?</strong><span>Browsers cannot decode binary BLG. Run <code>tools\Convert-PerfMon.ps1</code>, then import its CSV output.</span></div>
+    </section>
+
+    <section class="workspace" aria-live="polite">
+      <div class="status-line"><span class="status-dot" id="statusDot"></span><strong id="statusTitle">No evidence loaded</strong><span id="statusDetail">Files remain local to this browser tab.</span></div>
+
+      <section class="empty-state" id="emptyState">
+        <div class="signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <h2>Ready for performance data</h2>
+        <p>Load a demo, converted Performance Monitor CSV, or a System Diagnostics <code>report.xml</code>.</p>
+      </section>
+
+      <div class="dashboard" id="dashboard" hidden>
+        <section class="kpi-grid" aria-label="Performance summary">
+          <article class="kpi"><span>CPU peak</span><strong id="kpiCpu">—</strong><small id="kpiCpuDetail">No counter</small></article>
+          <article class="kpi"><span>Memory peak</span><strong id="kpiMemory">—</strong><small id="kpiMemoryDetail">No counter</small></article>
+          <article class="kpi"><span>Disk latency p95</span><strong id="kpiDisk">—</strong><small id="kpiDiskDetail">No counter</small></article>
+          <article class="kpi accent"><span>Findings</span><strong id="kpiFindings">0</strong><small id="kpiFindingDetail">No threshold breaches</small></article>
+        </section>
+
+        <section class="overview-grid">
+          <article class="panel chart-panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">TIME SERIES</p><h2>Counter timeline</h2></div>
+              <label class="metric-picker"><span>Metric</span><select id="metricSelect" aria-label="Chart metric"></select></label>
+            </div>
+            <div class="chart-wrap"><canvas id="timelineCanvas" height="310" aria-label="Selected performance metric over time"></canvas><div class="chart-tooltip" id="chartTooltip" role="tooltip" hidden></div></div>
+          </article>
+          <article class="panel findings-panel">
+            <div class="panel-heading"><div><p class="eyebrow">DETERMINISTIC ANALYSIS</p><h2>Ranked findings</h2></div><span class="row-count" id="findingCount"></span></div>
+            <div class="finding-list" id="findingList"></div>
+          </article>
+        </section>
+
+        <section class="panel source-panel">
+          <div class="panel-heading"><div><p class="eyebrow">SOURCE INVENTORY</p><h2>Imported evidence</h2></div><span class="row-count" id="sourceCount"></span></div>
+          <div class="table-wrap"><table><thead><tr><th>Source</th><th>Type</th><th>Host</th><th>Window</th><th>Records</th><th>Selected counters / advice</th><th>Status</th></tr></thead><tbody id="sourceRows"></tbody></table></div>
+        </section>
+
+        <section class="panel counter-panel">
+          <div class="panel-heading"><div><p class="eyebrow">NORMALIZED SIGNALS</p><h2>Selected counters</h2></div><span class="row-count" id="counterCount"></span></div>
+          <div class="counter-grid" id="counterGrid"></div>
+        </section>
+
+        <details class="methodology">
+          <summary>Threshold methodology</summary>
+          <div><p>Findings require sustained pressure: at least three samples and at least 30 seconds when timestamps permit. Thresholds are operational heuristics, not universal capacity limits.</p><ul><li>CPU total: warning ≥ 80%, critical ≥ 95%.</li><li>Processor queue: warning above 2 per logical processor when processor count is known; otherwise above 2.</li><li>Committed memory: warning ≥ 80%, critical ≥ 90%; available memory warning below 500 MB.</li><li>Pages/sec: warning ≥ 20, interpreted with memory pressure.</li><li>Disk latency: warning ≥ 20 ms, critical ≥ 50 ms; disk queue warning above 2.</li><li>Network utilization: warning ≥ 80% of current bandwidth; interface errors and TCP resets warn when sustained above zero.</li><li>System Diagnostics ETW loss: warning above 0%, error above 5%, critical above 20%.</li></ul></div>
+        </details>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="datasnare-core-context.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

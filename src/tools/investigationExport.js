@@ -34,7 +34,7 @@ export function buildInvestigationExport(savedCase, exportedAt = new Date().toIS
         host: event.host,
         process: event.process,
         summary: event.summary,
-        evidence: Object.fromEntries(['sourceFile', 'sourceLine', 'packetNumber']
+        evidence: Object.fromEntries(['sourceFile', 'sourceLine', 'packetNumber', 'counter', 'threshold', 'direction', 'observed', 'sampleCount', 'start', 'end', 'metric', 'value', 'xmlElement', 'ordinal']
           .filter(key => event.evidence?.[key] !== undefined).map(key => [key, event.evidence[key]])),
       })),
     })),

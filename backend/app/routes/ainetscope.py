@@ -7,11 +7,15 @@ from app.repositories.ingest_jobs import IngestJobRecord
 from app.routes.ingest import SUPPORTED_NATIVE_ARTIFACTS, _job_payload
 from app.security.authorization import require_permission, resolve_actor
 from app.services.analysis_plugin_contract import normalized_plugin_evidence_envelope
+from app.services.ainetscope_export import analyze_ainetscope_export
 from app.services.knowledge_ingestion import build_knowledge_item, store_knowledge_item
 
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/tools/ainetscope", tags=["AINetScope"])
 MAX_CAPTURE_BYTES = 250 * 1024 * 1024
+MAX_ANALYSIS_EXPORT_BYTES = 25 * 1024 * 1024
+CAPTURE_TYPES = SUPPORTED_NATIVE_ARTIFACTS["ainetscope"]["artifact_types"]
+ARTIFACT_TYPES = CAPTURE_TYPES | {"json"}
 
 
 class CaptureJobRequest(BaseModel):
@@ -40,10 +44,11 @@ async def create_capture_job(
 ):
     actor = require_permission(await resolve_actor(tenant_id, x_actor, x_role, request=request), "ingest.jobs.create")
     support = SUPPORTED_NATIVE_ARTIFACTS["ainetscope"]
-    if body.artifact_type not in support["artifact_types"]:
-        raise HTTPException(status_code=400, detail="AINetScope accepts pcap, pcapng, or cap artifacts")
-    if body.file_size_bytes is not None and body.file_size_bytes > MAX_CAPTURE_BYTES:
-        raise HTTPException(status_code=413, detail="AINetScope staging captures are limited to 250 MiB")
+    if body.artifact_type not in ARTIFACT_TYPES:
+        raise HTTPException(status_code=400, detail="AINetScope accepts pcap, pcapng, cap, or analysis JSON exports")
+    max_bytes = MAX_ANALYSIS_EXPORT_BYTES if body.artifact_type == "json" else MAX_CAPTURE_BYTES
+    if body.file_size_bytes is not None and body.file_size_bytes > max_bytes:
+        raise HTTPException(status_code=413, detail=f"AINetScope {body.artifact_type} uploads are limited to {max_bytes // (1024 * 1024)} MiB")
     record = IngestJobRecord(
         tenant_id=tenant_id,
         tool_id="ainetscope",
@@ -53,9 +58,9 @@ async def create_capture_job(
         normalized_schema=support["normalized_schema"],
         native_conversion={
             "schema": "datasnare-ingest/native-conversion-v1",
-            "strategy": support["converter"],
+            "strategy": "ainetscope-analysis-json-import" if body.artifact_type == "json" else support["converter"],
             "status": "upload_required",
-            "message": "Upload a valid PCAP/PCAPNG artifact to decode packets with the Python parser.",
+            "message": "Upload a valid AINetScope analysis export." if body.artifact_type == "json" else "Upload a valid PCAP/PCAPNG artifact to decode packets with the Python parser.",
             "file_size_bytes": body.file_size_bytes,
         },
     )
@@ -91,15 +96,16 @@ async def upload_capture_artifact(
     if not record or record.tool_id != "ainetscope":
         raise HTTPException(status_code=404, detail="AINetScope capture job not found")
     content_length = request.headers.get("content-length")
+    max_bytes = MAX_ANALYSIS_EXPORT_BYTES if record.artifact_type == "json" else MAX_CAPTURE_BYTES
     if content_length:
         try:
-            if int(content_length) > MAX_CAPTURE_BYTES:
-                raise HTTPException(status_code=413, detail="AINetScope staging captures are limited to 250 MiB")
+            if int(content_length) > max_bytes:
+                raise HTTPException(status_code=413, detail=f"AINetScope {record.artifact_type} uploads are limited to {max_bytes // (1024 * 1024)} MiB")
         except ValueError as error:
             raise HTTPException(status_code=400, detail="Invalid Content-Length header") from error
     data = await request.body()
-    if len(data) > MAX_CAPTURE_BYTES:
-        raise HTTPException(status_code=413, detail="AINetScope staging captures are limited to 250 MiB")
+    if len(data) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"AINetScope {record.artifact_type} uploads are limited to {max_bytes // (1024 * 1024)} MiB")
     artifact = None
     storage = getattr(request.app.state, "artifact_storage", None)
     if storage is not None:
@@ -111,18 +117,23 @@ async def upload_capture_artifact(
         )
     await request.app.state.ingest_jobs.update(tenant_id, job_id, state="running")
     try:
-        analysis = await request.app.state.capture_parser.analyze(data, record.artifact_name)
-        analysis_payload = analysis.__dict__
-        evidence = normalized_plugin_evidence_envelope(
-            tenant_id=tenant_id,
-            plugin_id="ainetscope",
-            plugin_version="0.1.0",
-            job_id=job_id,
-            artifact_name=record.artifact_name,
-            source_schema=analysis.schema,
-            events=analysis.preview,
-            findings=analysis.findings,
-            metadata={
+        if record.artifact_type == "json":
+            analysis_payload = analyze_ainetscope_export(data, record.artifact_name)
+            preview = analysis_payload["preview"]
+            findings = analysis_payload["findings"]
+            source_schema = "datasnare-ainetscope/analysis-v1"
+            metadata = {
+                key: analysis_payload[key]
+                for key in ("packets", "flows", "hosts", "bytes", "service_count", "event_count", "parser", "status")
+            }
+            message = analysis_payload["message"]
+        else:
+            analysis = await request.app.state.capture_parser.analyze(data, record.artifact_name)
+            analysis_payload = analysis.__dict__
+            preview = analysis.preview
+            findings = analysis.findings
+            source_schema = analysis.schema
+            metadata = {
                 "bytes": analysis.bytes,
                 "packets": analysis.packets,
                 "flows": analysis.flows,
@@ -130,10 +141,21 @@ async def upload_capture_artifact(
                 "protocols": analysis.protocols,
                 "parser": analysis.parser,
                 "status": analysis.status,
-            },
+            }
+            message = analysis.message
+        evidence = normalized_plugin_evidence_envelope(
+            tenant_id=tenant_id,
+            plugin_id="ainetscope",
+            plugin_version="0.1.0",
+            job_id=job_id,
+            artifact_name=record.artifact_name,
+            source_schema=source_schema,
+            events=preview,
+            findings=findings,
+            metadata=metadata,
         ).model_dump(by_alias=True)
-        knowledge_text = "\n".join(f"{packet.get('timestamp') or ''} {packet.get('severity', '').upper()} {packet.get('summary', '')}" for packet in analysis.preview)
-        item = build_knowledge_item(tenant_id, actor.actor_id, item_type="event", source_id=job_id, source_name=record.artifact_name, title=record.artifact_name, text=knowledge_text or analysis.message, agent_id=None, site_id=None, area_id=None, classification="internal", metadata={"tool_id": "ainetscope", "packet_count": analysis.packets, "flow_count": analysis.flows, "host_count": analysis.hosts, "protocols": analysis.protocols, "findings": analysis.findings})
+        knowledge_text = "\n".join(f"{packet.get('timestamp') or ''} {packet.get('severity', '').upper()} {packet.get('summary', '')}" for packet in preview)
+        item = build_knowledge_item(tenant_id, actor.actor_id, item_type="event", source_id=job_id, source_name=record.artifact_name, title=record.artifact_name, text=knowledge_text or message, agent_id=None, site_id=None, area_id=None, classification="internal", metadata={"tool_id": "ainetscope", **metadata, "findings": findings})
         await store_knowledge_item(request, tenant_id=tenant_id, actor_id=actor.actor_id, item=item)
         completed = await request.app.state.ingest_jobs.update(tenant_id, job_id, state="completed", native_conversion={**(record.native_conversion or {}), "status": "completed", "analysis": analysis_payload, "evidence_envelope": evidence, "knowledge_item_id": item.item_id})
         return {"schema": "datasnare-ainetscope/job-result-v1", "job": _job_payload(completed), "analysis": analysis_payload, "evidence": evidence, "knowledge_item_id": item.item_id, "artifact": artifact}

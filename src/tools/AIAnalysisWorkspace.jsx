@@ -17,7 +17,7 @@ const modules = [
   { id: 'aiperf', label: 'Performance', icon: BarChart3, status: 'Available' },
   { id: 'aiprocmon', label: 'Processes', icon: Cpu, status: 'Available' },
   { id: 'ainetscope', label: 'Network', icon: Network, status: 'Available' },
-  { id: 'airca', label: 'AIRootCause', icon: Workflow, status: 'Integrating' },
+  { id: 'airca', label: 'AIRootCause', icon: Workflow, status: 'Import ready' },
   { id: 'aimemorydump', label: 'Memory dump', icon: CircleHelp, status: 'Planned' },
 ];
 
@@ -170,7 +170,7 @@ function AnalysisConsole({ selection, onNavigate }) {
       return Date.parse(left.timestamp) - Date.parse(right.timestamp);
     }), [evidence, selectedEvidenceIds]);
 
-  const loadEvidence = async () => {
+  const loadEvidence = async (selectJobId = null) => {
     if (!tenantId.trim()) {
       setEvidence([]);
       setCases([]);
@@ -188,8 +188,15 @@ function AnalysisConsole({ selection, onNavigate }) {
       ]);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || `Evidence request returned ${response.status}.`);
-      setEvidence(payload.items || []);
-      setSelectedEvidenceIds((current) => current.filter((jobId) => (payload.items || []).some((item) => item.job_id === jobId)));
+      const items = payload.items || [];
+      setEvidence(items);
+      setSelectedEvidenceIds((current) => {
+        const available = new Set(items.map((item) => item.job_id));
+        const selected = current.filter((jobId) => available.has(jobId));
+        return selectJobId && available.has(selectJobId) && !selected.includes(selectJobId)
+          ? [...selected, selectJobId]
+          : selected;
+      });
       if (casesResponse.ok) {
         const casePayload = await casesResponse.json();
         setCases(casePayload.investigations || []);
@@ -288,11 +295,11 @@ function AnalysisConsole({ selection, onNavigate }) {
     {modules.map((module) => <div key={`${tenantId}:${module.id}`} className="analysis-workspace__panel" role="tabpanel" id={`aianalysis-panel-${module.id}`} aria-labelledby={`aianalysis-tab-${module.id}`} hidden={activeModule !== module.id}>
       {visitedModules.includes(module.id) && <>
         {module.id === 'investigation' && <InvestigationOverview onSelect={selectModule} tenantId={tenantId} evidence={evidence} loading={loadingEvidence} error={evidenceError} onRefresh={loadEvidence} selectedEvidenceIds={selectedEvidenceIds} onToggleEvidence={toggleEvidence} timeline={timeline} severityFilter={severityFilter} onSeverityChange={setSeverityFilter} cases={cases} activeCaseId={activeCaseId} onSaveCase={saveCase} onLoadCase={loadCase} caseTitle={caseTitle} onCaseTitleChange={setCaseTitle} caseDescription={caseDescription} onCaseDescriptionChange={setCaseDescription} savingCase={savingCase} caseMessage={caseMessage} metadataFields={metadataFields} onMetadataChange={updateMetadata} investigationWindow={investigationWindow} incidentAt={incidentAt} onInvestigationWindowChange={updateInvestigationWindow} />}
-        {module.id === 'airca' && <div className="analysis-workspace__overview"><p className="eyebrow">AIRootCause plugin</p><h3>Investigation adapter in progress</h3><p className="analysis-workspace__lede">AIRootCause currently runs as a local-first browser workspace. Its existing investigation export is registered in the plugin catalog; connecting it to tenant evidence, shared cases, and the AIAnalysis timeline is the next integration step.</p><p className="analysis-workspace__boundary"><Workflow size={15} /> No AIRootCause execution or data import is implied by this tab yet.</p></div>}
+        {module.id === 'airca' && <NativeToolWorkbench toolId="airca" selectedTenantId={tenantId} onJobCompleted={loadEvidence} />}
         {module.id === 'ailogscope' && <AILogScopeWorkbench selectedTenantId={tenantId} />}
-        {module.id === 'aiperf' && <NativeToolWorkbench toolId="aiperf" selectedTenantId={tenantId} />}
-        {module.id === 'aiprocmon' && <NativeToolWorkbench toolId="aiprocmon" selectedTenantId={tenantId} />}
-        {module.id === 'ainetscope' && <AINetScopeWorkbench selectedTenantId={tenantId} />}
+        {module.id === 'aiperf' && <NativeToolWorkbench toolId="aiperf" selectedTenantId={tenantId} onJobCompleted={loadEvidence} />}
+        {module.id === 'aiprocmon' && <NativeToolWorkbench toolId="aiprocmon" selectedTenantId={tenantId} onJobCompleted={loadEvidence} />}
+        {module.id === 'ainetscope' && <AINetScopeWorkbench selectedTenantId={tenantId} onJobCompleted={loadEvidence} />}
       </>}
     </div>)}
   </section>;

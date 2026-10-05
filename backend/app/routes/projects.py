@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 from uuid import uuid4
 
@@ -19,7 +20,24 @@ from app.services.analysis_plugin_contract import (
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 analysis_router = APIRouter(prefix="/api/tenants/{tenant_id}/analysis", tags=["AIAnalysis"])
-ANALYSIS_PLUGIN_IDS = {"ailogscope", "aiperf", "aiprocmon", "ainetscope"}
+ANALYSIS_PLUGIN_IDS = {"airca", "ailogscope", "aiperf", "aiprocmon", "ainetscope"}
+PREVIEW_EVIDENCE_FIELDS = (
+    "sourceFile", "sourceLine", "packetNumber", "counter", "threshold", "direction", "observed",
+    "sampleCount", "start", "end", "metric", "value", "xmlElement", "ordinal",
+)
+
+
+def _preview_evidence(source):
+    if not isinstance(source, dict):
+        return {}
+    bounded = {}
+    for key in PREVIEW_EVIDENCE_FIELDS:
+        value = source.get(key)
+        if isinstance(value, str):
+            bounded[key] = value[:320]
+        elif isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            bounded[key] = value
+    return bounded
 
 
 class InvestigationMetadata(BaseModel):
@@ -107,11 +125,7 @@ def _evidence_snapshot(job) -> dict:
             "host": event.get("host"),
             "process": event.get("process"),
             "summary": str(event.get("summary") or "")[:320],
-            "evidence": {
-                key: source[key]
-                for key in ("sourceFile", "sourceLine", "packetNumber")
-                if key in source
-            },
+            "evidence": _preview_evidence(source),
         })
     return {
         "job_id": job.job_id,
@@ -260,11 +274,7 @@ async def tenant_analysis_evidence(
                 "host": event.get("host"),
                 "process": event.get("process"),
                 "summary": str(event.get("summary") or "")[:320],
-                "evidence": {
-                    key: event_evidence[key]
-                    for key in ("sourceFile", "sourceLine", "packetNumber")
-                    if key in event_evidence
-                },
+                "evidence": _preview_evidence(event_evidence),
             })
         evidence.append({
             "tenant_id": tenant_id,

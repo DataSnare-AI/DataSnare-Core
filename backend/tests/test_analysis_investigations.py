@@ -117,6 +117,56 @@ def test_investigation_create_list_and_reopen_snapshot_within_tenant():
     assert other_tenant.status_code == 404
 
 
+def test_airca_import_can_be_saved_and_reopened_as_investigation_evidence():
+    app = _app_with_completed_job()
+    job_id = "job-airca-1"
+    app.state.ingest_jobs._records[(7, job_id)] = IngestJobRecord(
+        tenant_id=7,
+        tool_id="airca",
+        artifact_name="root-cause.json",
+        artifact_type="json",
+        requested_by="operator@example.com",
+        job_id=job_id,
+        state="completed",
+        normalized_schema="datasnare-rootcause/investigation-v1",
+        native_conversion={
+            "evidence_envelope": {
+                "plugin_version": "0.1.0",
+                "source_schema": "datasnare-rootcause/investigation-v1",
+                "metadata": {"event_count": 1},
+                "findings": [{"title": "Root cause", "detail": "Pool exhaustion"}],
+                "events": [{
+                    "timestamp": "2026-10-03T00:00:00.123Z",
+                    "severity": "warning",
+                    "summary": "Connection pool exhausted",
+                    "evidence": {"sourceFile": "service.log", "sourceLine": 17},
+                }],
+            },
+        },
+    )
+    client = TestClient(app)
+    headers = {"X-Actor": "operator@example.com", "X-Role": "operator"}
+
+    created = client.post(
+        "/api/tenants/7/analysis/investigations",
+        headers=headers,
+        json={"title": "Pool outage", "evidence_job_ids": [job_id]},
+    )
+
+    assert created.status_code == 201, created.text
+    evidence = created.json()["evidence"][0]
+    assert evidence["plugin_id"] == "airca"
+    assert evidence["event_count"] == 1
+    assert evidence["events"][0]["summary"] == "Connection pool exhausted"
+    assert evidence["events"][0]["evidence"] == {"sourceFile": "service.log", "sourceLine": 17}
+    reopened = client.get(
+        f"/api/tenants/7/analysis/investigations/{created.json()['investigation_id']}",
+        headers=headers,
+    )
+    assert reopened.status_code == 200
+    assert reopened.json()["evidence"] == created.json()["evidence"]
+
+
 def test_investigation_create_rejects_viewer_and_unknown_evidence():
     client = TestClient(_app_with_completed_job())
     viewer = client.post(

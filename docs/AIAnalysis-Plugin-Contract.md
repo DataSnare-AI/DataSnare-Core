@@ -8,7 +8,7 @@ This document describes the current contract foundation. It is not a promise tha
 
 `GET /api/projects/analysis-plugins` returns the plugin catalog, the plugin manifest schema version, the normalized evidence envelope version, and the execution-enabled flag. It is metadata only.
 
-Implemented analyzer upload routes continue to use their existing product-specific APIs. AILogScope, AIPerf, AIProcMon, and AINetScope now return their native `analysis` payload plus a shared `evidence` envelope. Existing native fields are retained for compatibility.
+Implemented analyzer upload routes continue to use their existing product-specific APIs. AIRootCause accepts its versioned investigation JSON export; AILogScope, AIPerf, AIProcMon, and AINetScope return their native `analysis` payload plus a shared `evidence` envelope. Existing native fields are retained for compatibility. Imported AIRootCause events and report findings enter tenant evidence and can be included in saved AIAnalysis cases; importing does not execute plugin code.
 
 ## Manifest
 

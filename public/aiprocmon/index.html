@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Local-first ProcMon investigation workbench by DataSnare.">
+  <title>DataSnare-AIProcMon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="DataSnare-AIProcMon home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>DataSnare-<b>AIProcMon</b></span>
+    </a>
+    <div class="top-actions">
+      <button class="button button-quiet" id="demoButton">Load demo</button>
+      <label class="button button-primary" for="fileInput">Open capture</label>
+      <input id="fileInput" type="file" accept=".csv,.xml,text/csv,text/xml,application/xml" hidden>
+    </div>
+  </header>
+
+  <main>
+    <section class="intake" id="intake">
+      <div>
+        <p class="eyebrow">LOCAL-FIRST WINDOWS ACTIVITY TRIAGE</p>
+        <h1>Process evidence,<br><em>caught in context.</em></h1>
+        <p class="lede">Turn large Process Monitor exports into a focused incident timeline. Processing stays in this browser.</p>
+      </div>
+      <div class="capture-config">
+        <div class="config-heading">
+          <span>01</span>
+          <div><strong>Set capture context</strong><small>ProcMon CSV contains time of day, not a date or timezone.</small></div>
+        </div>
+        <div class="field-row">
+          <label>Capture date<input id="captureDate" type="date" required></label>
+          <label>UTC offset<input id="timezoneOffset" type="text" pattern="(?:\+|-)\d{2}:\d{2}" placeholder="-04:00" required></label>
+        </div>
+        <p class="warning" id="dateWarning"><b>Verify before import.</b> Defaults use today's local date and offset; the wrong context shifts every event timestamp.</p>
+        <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Choose or drop a ProcMon CSV or XML export">
+          <div class="drop-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          <strong>Drop ProcMon CSV or XML</strong>
+          <span>CSV streams from disk. Native PML requires the included conversion helper.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="import-status" id="importStatus" hidden aria-live="polite">
+      <div class="status-copy"><strong id="progressTitle">Reading capture</strong><span id="progressDetail">Preparing stream...</span></div>
+      <div class="progress-track"><i id="progressBar"></i></div>
+      <button class="button button-quiet" id="cancelButton">Cancel</button>
+    </section>
+
+    <section class="workspace" id="workspace" hidden>
+      <div class="capture-bar">
+        <div class="capture-title"><span class="status-dot live"></span><div><strong id="captureName">Capture</strong><small id="captureMeta"></small></div></div>
+        <div class="export-actions">
+          <button class="button button-quiet" id="processMapButton">Export process map</button>
+          <button class="button button-primary" id="analysisButton">Export analysis</button>
+        </div>
+      </div>
+
+      <section class="kpi-grid" aria-label="Capture summary">
+        <div class="kpi"><span>Events</span><strong id="eventCount">0</strong><small id="captureWindow">No capture loaded</small></div>
+        <div class="kpi"><span>Processes</span><strong id="processCount">0</strong><small id="processMeta">Unique process / PID pairs</small></div>
+        <div class="kpi"><span>Failures</span><strong id="failureCount">0</strong><small id="failureRate">0% of operations</small></div>
+        <div class="kpi kpi-accent"><span>Findings</span><strong id="findingCount">0</strong><small id="findingMeta">Deterministic signals</small></div>
+      </section>
+
+      <section class="overview-grid">
+        <article class="panel timeline-panel">
+          <header class="panel-heading"><div><p class="eyebrow">EVENT PRESSURE</p><h2>Rate over capture</h2></div><span class="panel-meta" id="peakRate">Peak 0/s</span></header>
+          <canvas id="timelineCanvas" aria-label="Event rate timeline"></canvas>
+        </article>
+        <article class="panel">
+          <header class="panel-heading"><div><p class="eyebrow">OPERATION MIX</p><h2>Workload shape</h2></div><span class="panel-meta" id="operationCount">0 types</span></header>
+          <div class="donut-wrap"><canvas id="operationCanvas" aria-label="Operation mix chart"></canvas><div class="donut-center"><strong id="donutTotal">0</strong><span>EVENTS</span></div></div>
+          <div class="legend-list" id="operationLegend"></div>
+        </article>
+      </section>
+
+      <section class="analysis-grid">
+        <article class="panel">
+          <header class="panel-heading"><div><p class="eyebrow">PROCESS LOAD</p><h2>Top processes</h2></div></header>
+          <div class="rank-list" id="processList"></div>
+        </article>
+        <article class="panel">
+          <header class="panel-heading"><div><p class="eyebrow">RESULT PROFILE</p><h2>Failures and outcomes</h2></div></header>
+          <div class="rank-list" id="resultList"></div>
+        </article>
+      </section>
+
+      <section class="panel findings-panel">
+        <header class="panel-heading"><div><p class="eyebrow">DETERMINISTIC ANALYSIS</p><h2>Investigation findings</h2></div><span class="panel-meta">No cloud inference</span></header>
+        <div class="finding-list" id="findingList"></div>
+      </section>
+
+      <section class="panel event-panel">
+        <header class="panel-heading table-heading">
+          <div><p class="eyebrow">SALIENT EVIDENCE</p><h2>Event workbench</h2></div>
+          <div class="filters">
+            <label class="search-field"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Search process, operation, path, result"></label>
+            <select id="resultFilter" aria-label="Filter by result"><option value="all">All results</option><option value="failures">Failures only</option><option value="success">Success only</option></select>
+            <select id="operationFilter" aria-label="Filter by operation"><option value="all">All operations</option></select>
+          </div>
+        </header>
+        <div class="table-note"><span id="tableStatus">Showing retained salient events</span><span>Memory bounded to 2,000 rows</span></div>
+        <div class="table-wrap"><table><thead><tr><th>Time</th><th>Process / PID</th><th>Operation</th><th>Path</th><th>Result</th><th>Duration</th></tr></thead><tbody id="eventRows"></tbody></table></div>
+      </section>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="datasnare-core-context.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

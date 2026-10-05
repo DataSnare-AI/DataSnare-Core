@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f0e8">
+  <title>DataSnare-AINetScope Capture Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="DataSnare-AINetScope home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>DataSnare-AINetScope</span>
+    </a>
+    <nav class="top-actions" aria-label="Capture actions">
+      <a class="button button-quiet" id="coreReturnLink" href="/aianalysis" hidden>Back to AIAnalysis</a>
+      <button class="button button-quiet" id="demoButton" type="button">Load demo</button>
+      <button class="button button-set" id="twoSidedModeButton" type="button">Two-Sided</button>
+      <label class="button button-quiet" for="baselineInput">Compare baseline</label>
+      <input id="baselineInput" type="file" accept=".pcap,.pcapng,.cap" hidden>
+      <button class="button button-set" id="settingsButton" type="button" aria-label="Capture capacity settings" title="Capture capacity settings"><span aria-hidden="true">⚙</span><span class="button-label">Settings</span></button>
+      <button class="button button-set" id="globalProfileButton" type="button" aria-label="Open tuning profiles" title="Tuning profiles"><span aria-hidden="true">☷</span><span class="button-label">Tuning</span></button>
+      <button class="button button-set" id="setModeButton" type="button" aria-label="Analyze a capture set"><span aria-hidden="true">▦</span><span class="button-label">Capture set</span></button>
+      <button class="button button-set" id="watchModeButton" type="button" aria-label="Watch capture directory"><span aria-hidden="true">◎</span><span class="button-label">Watch</span></button>
+      <button class="button button-set" id="workbenchModeButton" type="button" aria-label="Open packet workbench"><span aria-hidden="true">☷</span><span class="button-label">Packets</span></button>
+      <label class="button button-primary" for="captureInput">
+        <span aria-hidden="true">＋</span> <span class="button-label">Open capture</span>
+      </label>
+      <input id="captureInput" type="file" accept=".pcap,.pcapng,.cap" hidden>
+    </nav>
+  </header>
+
+  <main>
+    <section class="intro" id="dropZone">
+      <div>
+        <p class="eyebrow">LOCAL PACKET INTELLIGENCE</p>
+        <h1>See what the wire<br><em>is telling you.</em></h1>
+      </div>
+      <div class="intro-side">
+        <p>Inspect Wireshark captures entirely in your browser. Traffic never leaves this machine.</p>
+        <div class="drop-hint"><span>Drop .pcap or .pcapng</span><b>↘</b></div>
+      </div>
+    </section>
+
+    <section class="workspace" id="workspace" aria-live="polite">
+      <div class="capture-bar">
+        <div class="capture-title">
+          <span class="status-dot" id="statusDot"></span>
+          <div><strong id="captureName">No capture loaded</strong><small id="captureMeta">Open a file or load the demo trace</small></div>
+        </div>
+        <div class="filters">
+          <label class="search-field"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Filter IP, host, protocol…"></label>
+          <select id="protocolFilter" aria-label="Filter by protocol"><option value="all">All protocols</option></select>
+        </div>
+      </div>
+
+      <div class="empty-state" id="emptyState">
+        <div class="empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <h2>Ready for a capture</h2>
+        <p>Ethernet, IPv4/6, TCP, UDP, DNS, HTTP, TLS, HTTP/2, QUIC and SMB are decoded locally.</p>
+      </div>
+
+      <div class="dashboard" id="dashboard" hidden>
+        <section class="kpi-grid" aria-label="Capture summary">
+          <article class="kpi"><span>Packets</span><strong id="kpiPackets">0</strong><small id="kpiRate">0 pkt/s</small></article>
+          <article class="kpi"><span>Traffic</span><strong id="kpiBytes">0 B</strong><small id="kpiThroughput">0 bit/s</small></article>
+          <article class="kpi"><span>Connections</span><strong id="kpiFlows">0</strong><small id="kpiEndpoints">0 endpoints</small></article>
+          <article class="kpi kpi-accent"><span>Median latency</span><strong id="kpiLatency">—</strong><small id="kpiLatencySamples">No samples</small></article>
+        </section>
+
+        <section class="overview-grid">
+          <article class="panel timeline-panel">
+            <div class="panel-heading"><div><p class="eyebrow">TRAFFIC SHAPE</p><h2>Throughput over time</h2></div><div class="legend"><span><i class="legend-in"></i>Inbound</span><span><i class="legend-out"></i>Outbound</span></div></div>
+            <canvas id="timelineCanvas" height="260" aria-label="Throughput timeline"></canvas>
+          </article>
+          <article class="panel protocol-panel">
+            <div class="panel-heading"><div><p class="eyebrow">PROTOCOL MIX</p><h2>Bytes by layer</h2></div></div>
+            <div class="donut-wrap"><canvas id="protocolCanvas" width="220" height="220" aria-label="Protocol distribution"></canvas><div class="donut-center"><strong id="donutValue">0</strong><span>PROTOCOLS</span></div></div>
+            <div class="protocol-legend" id="protocolLegend"></div>
+          </article>
+        </section>
+
+        <section class="panel frame-size-panel">
+          <div class="panel-heading"><div><p class="eyebrow">FRAME SIZE PROFILE</p><h2>Packet length over time</h2></div><div class="latency-heading-meta"><div class="metric-strip"><span>average <b id="frameAverage">—</b></span><span>p95 <b id="frameP95">—</b></span><span>maximum <b id="frameMaximum">—</b></span></div><div class="latency-legend"><span><i class="latency-dot frame"></i>Frame length</span><span><i class="latency-dot average"></i>Moving average</span></div></div></div>
+          <div class="frame-size-canvas-wrap"><canvas id="frameSizeCanvas" height="250" aria-label="Packet frame length over capture time"></canvas><div class="latency-tooltip" id="frameSizeTooltip" role="tooltip" hidden></div></div>
+        </section>
+
+        <section class="expert-grid">
+          <article class="panel chart-panel">
+            <div class="panel-heading"><div><p class="eyebrow">LATENCY EXPLORER</p><h2>Response time distribution</h2></div><div class="latency-heading-meta"><div class="metric-strip"><span title="p50: the response time at or below which 50% of samples fall. Calculated as percentile(samples, 0.50)." aria-label="p50: the response time at or below which 50 percent of samples fall. Calculated as percentile of samples at 0.50">p50 <b id="latencyP50">—</b></span><span title="p95: the response time at or below which 95% of samples fall. Calculated as percentile(samples, 0.95)." aria-label="p95: the response time at or below which 95 percent of samples fall. Calculated as percentile of samples at 0.95">p95 <b id="latencyP95">—</b></span><span title="p99: the response time at or below which 99% of samples fall. Calculated as percentile(samples, 0.99)." aria-label="p99: the response time at or below which 99 percent of samples fall. Calculated as percentile of samples at 0.99">p99 <b id="latencyP99">—</b></span><span title="jitter: how much response times vary around their average. Calculated as the standard deviation of all samples." aria-label="jitter: how much response times vary around their average. Calculated as the standard deviation of all samples">jitter <b id="latencyJitter">—</b></span></div><div class="latency-legend"><span><i class="latency-dot tcp"></i>TCP handshake RTT</span><span><i class="latency-dot dns"></i>DNS response</span></div></div></div>
+            <div class="latency-canvas-wrap">
+              <canvas id="latencyCanvas" height="260" aria-label="Latency scatterplot: green is TCP handshake RTT and gold is DNS response time"></canvas>
+              <div class="latency-tooltip" id="latencyTooltip" role="tooltip" hidden></div>
+            </div>
+          </article>
+          <article class="panel chart-panel">
+            <div class="panel-heading"><div><p class="eyebrow">FLOW MAP</p><h2>Endpoint topology</h2></div><span class="row-count" id="topologyMeta"></span></div>
+            <div class="latency-canvas-wrap">
+              <canvas id="topologyCanvas" height="260" aria-label="Network endpoint flow graph"></canvas>
+              <div class="latency-tooltip" id="topologyTooltip" role="tooltip" hidden></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel flow-explorer">
+          <div class="panel-heading"><div><p class="eyebrow">STREAM FORENSICS</p><h2>Per-flow timeline</h2></div><select id="flowSelect" aria-label="Select a flow"></select></div>
+          <div class="flow-health" id="flowHealth"></div>
+          <div class="flow-canvas-wrap">
+            <canvas id="flowCanvas" height="230" aria-label="Selected flow packet timeline"></canvas>
+            <div class="flow-tooltip" id="flowTooltip" role="tooltip" hidden></div>
+          </div>
+        </section>
+
+        <section class="panel flow-detail-panel">
+          <div class="panel-heading"><div><p class="eyebrow">HOST FLOW DETAIL</p><h2>Conversation path</h2></div><div class="flow-detail-controls"><input id="flowPathInput" type="text" aria-label="Conversation path" placeholder="workstation > webserver > appserver > database"><button class="text-button" id="flowAutoPathButton" type="button">Auto path</button></div></div>
+          <div class="flow-detail-summary" id="flowDetailSummary"></div>
+          <div class="flow-detail-canvas-wrap"><canvas id="flowDetailCanvas" height="340" aria-label="Detailed multi-host conversation path"></canvas><div class="flow-tooltip" id="flowDetailTooltip" role="tooltip" hidden></div></div>
+          <div class="table-wrap flow-detail-table-wrap"><table><thead><tr><th>Flow</th><th>Protocol</th><th>Packets</th><th>Traffic</th><th>SYN</th><th>FIN</th><th>RST</th><th>Latency</th><th>State</th></tr></thead><tbody id="flowDetailRows"></tbody></table></div>
+        </section>
+
+        <section class="intelligence-grid">
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">TRANSPORT HEALTH</p><h2>TCP / UDP diagnostics</h2></div></div>
+            <div class="diagnostic-grid" id="transportDiagnostics"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">SERVICE INTELLIGENCE</p><h2>Application behavior</h2></div></div>
+            <div class="table-wrap"><table><thead><tr><th>Service</th><th>Requests</th><th>Errors</th><th>Latency</th><th>Detail</th></tr></thead><tbody id="serviceRows"></tbody></table></div>
+          </article>
+        </section>
+
+        <section class="analysis-grid">
+          <article class="panel findings-panel">
+            <div class="panel-heading"><div><p class="eyebrow">EXPERT FINDINGS</p><h2>Ranked observations</h2></div><div class="profile-summary"><button class="profile-button" id="profileButton" type="button"><span id="activeProfileName">Default</span><small>Analysis profile</small></button><span class="row-count" id="findingCount"></span></div></div>
+            <div id="findingList" class="finding-list"></div>
+          </article>
+          <article class="panel comparison-panel">
+            <div class="panel-heading"><div><p class="eyebrow">CAPTURE COMPARISON</p><h2>Baseline delta</h2></div><div class="export-actions"><label class="text-button" for="baselineInput">Choose baseline ↑</label><button class="text-button" id="clearBaselineButton" type="button" hidden>Clear</button></div></div>
+            <div id="comparisonContent" class="comparison-empty">Choose <strong>Compare baseline</strong> to measure this capture against a known-good trace.</div>
+          </article>
+        </section>
+
+        <section class="detail-grid">
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">CONVERSATIONS</p><h2>Connection summary</h2></div><div class="export-actions"><button class="text-button" id="jsonExportButton" type="button">JSON ↓</button><button class="text-button" id="exportButton" type="button">CSV ↓</button></div></div>
+            <div class="table-wrap"><table><thead><tr><th>Endpoints</th><th>Protocol</th><th>Packets</th><th>Traffic</th><th>A ↔ B</th><th>Latency</th><th>State</th></tr></thead><tbody id="flowRows"></tbody></table></div>
+          </article>
+          <article class="panel insight-panel">
+            <div class="panel-heading"><div><p class="eyebrow">SIGNALS</p><h2>Network health</h2></div></div>
+            <div id="insightList" class="insight-list"></div>
+          </article>
+        </section>
+
+        <section class="panel packets-panel">
+          <div class="panel-heading"><div><p class="eyebrow">PACKET LOG</p><h2>Decoded frames</h2></div><span class="row-count" id="rowCount"></span></div>
+          <div class="table-wrap packet-table-wrap"><table class="packet-table"><thead><tr><th>No.</th><th>Time</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Length</th><th>Info</th></tr></thead><tbody id="packetRows"></tbody></table></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="workbench" id="workbench" aria-live="polite" hidden>
+      <div class="workbench-heading">
+        <div class="capture-title"><span class="status-dot live"></span><div><strong id="workbenchCaptureName">No capture loaded</strong><small id="workbenchCaptureMeta">Open a capture in the core view</small></div></div>
+        <div class="workbench-actions"><label class="workbench-search"><span aria-hidden="true">⌕</span><input id="workbenchSearch" type="search" placeholder="Filter packets…"></label><select id="workbenchProtocolFilter" aria-label="Filter workbench by protocol"><option value="all">All protocols</option></select><select id="timeDisplayMode" aria-label="Time display format" title="Time display format"><option value="capture">Since capture start</option><option value="timeofday">Time of day</option><option value="datetime">Date and time</option><option value="previous-captured">Since previous captured</option><option value="previous-displayed">Since previous displayed</option><option value="previous-marked">Since previous marked</option><option value="reference">Relative to T0 reference</option><option value="epoch">Unix epoch</option></select><button class="text-button process-map-trigger" id="processMapButton" type="button">Process Map</button><button class="text-button summary-trigger" id="captureSummaryButton" type="button">Analysis Summary</button><button class="text-button" id="workbenchCoreButton" type="button">← Core view</button></div>
+      </div>
+      <div class="workbench-field-filters" id="workbenchFieldFilters" hidden></div>
+      <div class="workbench-empty" id="workbenchEmpty"><h2>No packet data loaded</h2><p>Open a capture or load the demo from the core view, then return here.</p><button class="button button-primary" id="workbenchOpenCoreButton" type="button">Open core view</button></div>
+      <div class="workbench-grid" id="workbenchGrid" hidden>
+        <section class="workbench-list-pane" id="workbenchListPane" aria-label="Packet list" tabindex="0">
+          <table class="workbench-table"><thead><tr id="workbenchHeadRow"></tr></thead><tbody id="workbenchRows"></tbody></table>
+        </section>
+        <section class="workbench-detail-pane" aria-label="Packet protocol tree">
+          <div class="workbench-pane-title"><strong>Packet details</strong><span id="workbenchDetailMeta"></span></div>
+          <div class="protocol-tree" id="protocolTree"></div>
+        </section>
+        <section class="workbench-bytes-pane" aria-label="Packet bytes">
+          <div class="workbench-pane-title"><strong>Packet bytes</strong><span id="workbenchByteMeta">Offset · Hex · ASCII</span></div>
+          <div class="byte-view" id="byteView"></div>
+        </section>
+        <aside class="workbench-stream-pane" aria-label="Selected stream inspector">
+          <div class="stream-resizer" id="streamResizer" role="separator" aria-label="Resize selected stream panel" tabindex="0"></div>
+          <div class="workbench-pane-title"><strong id="streamInspectorTitle">Selected stream</strong><span id="streamInspectorMeta"></span></div>
+          <div id="streamInspector" class="stream-inspector"></div>
+        </aside>
+        <footer class="workbench-status" id="workbenchStatus"></footer>
+      </div>
+    </section>
+
+    <div class="field-context-menu" id="fieldContextMenu" role="menu" hidden>
+      <div class="field-context-title" id="fieldContextTitle"></div>
+      <button id="fieldFilterAction" type="button" role="menuitem">Apply as Filter</button>
+      <button id="fieldColumnAction" type="button" role="menuitem">Apply as Column</button>
+    </div>
+
+    <div class="field-context-menu packet-context-menu" id="packetContextMenu" role="menu" hidden>
+      <div class="field-context-title" id="packetContextTitle"></div>
+      <button id="packetNoteAction" type="button" role="menuitem">Add Note</button>
+      <button id="packetSummaryAction" type="button" role="menuitem">Add to Capture Summary</button>
+      <button id="packetMarkAction" type="button" role="menuitem">Mark Frame</button>
+      <button id="packetReferenceAction" type="button" role="menuitem">Set as Time Reference</button>
+      <button id="previousMarkedAction" type="button" role="menuitem">Previous Marked Frame</button>
+      <button id="nextMarkedAction" type="button" role="menuitem">Next Marked Frame</button>
+    </div>
+
+    <section class="set-workspace" id="setWorkspace" aria-live="polite" hidden>
+      <div class="set-heading">
+        <div><p class="eyebrow">ROTATED CAPTURE INTELLIGENCE</p><h1>Capture set analysis</h1><p>Summarize dumpcap rotations as one incident window while preserving every file as an inspectable trace.</p></div>
+        <div class="set-heading-actions"><button class="text-button summary-trigger" id="setSummaryButton" type="button" hidden>Set Summary</button><button class="text-button" id="setTopologyButton" type="button">Topology map ↗</button><button class="text-button" id="coreModeButton" type="button">← Single capture</button></div>
+      </div>
+
+      <div class="set-actions">
+        <label class="set-name-field"><span>Capture set name</span><input id="captureSetName" type="text" maxlength="80" placeholder="Incident or investigation name"></label>
+        <label class="button button-primary" for="captureSetInput"><span aria-hidden="true">＋</span> Choose/add files</label>
+        <input id="captureSetInput" type="file" accept=".pcap,.pcapng,.cap" multiple hidden>
+        <label class="button button-quiet" for="captureDirectoryInput"><span aria-hidden="true">▦</span> Choose/add directory</label>
+        <input id="captureDirectoryInput" type="file" accept=".pcap,.pcapng,.cap" webkitdirectory directory multiple hidden>
+        <button class="button button-quiet" id="setDemoButton" type="button">Load set demo</button>
+        <button class="button button-quiet" id="cancelSetButton" type="button" hidden>Cancel</button>
+        <div class="set-progress" id="setProgress"><i></i><span>Select rotated capture files or an entire dumpcap directory.</span></div>
+      </div>
+
+      <div class="empty-state set-empty" id="setEmptyState">
+        <div class="empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <h2>Ready for a capture set</h2>
+        <p>Files are processed sequentially, cached locally, and reduced to summaries to keep memory bounded.</p>
+      </div>
+
+      <div class="set-dashboard" id="setDashboard" hidden>
+        <section class="kpi-grid set-kpis" aria-label="Capture set summary">
+          <article class="kpi"><span>Files</span><strong id="setKpiFiles">0</strong><small id="setKpiFailures">0 failed</small></article>
+          <article class="kpi"><span>Packets</span><strong id="setKpiPackets">0</strong><small id="setKpiWindow">0s window</small></article>
+          <article class="kpi"><span>Traffic</span><strong id="setKpiBytes">0 B</strong><small id="setKpiRate">0 bit/s average</small></article>
+          <article class="kpi kpi-accent"><span>Set p95 latency</span><strong id="setKpiLatency">—</strong><small id="setKpiAnomalies">0 anomalies</small></article>
+        </section>
+
+        <section class="overview-grid">
+          <article class="panel chart-panel">
+            <div class="panel-heading"><div><p class="eyebrow">ROTATION TREND</p><h2>Traffic and latency by file</h2></div><div class="legend"><span><i class="legend-in"></i>Throughput</span><span><i class="legend-out"></i>p95 latency</span></div></div>
+            <div class="set-chart-wrap"><canvas id="setTrendCanvas" height="280" aria-label="Capture-file throughput and latency trend"></canvas><div class="flow-tooltip" id="setTrendTooltip" role="tooltip" hidden></div></div>
+          </article>
+          <article class="panel protocol-panel">
+            <div class="panel-heading"><div><p class="eyebrow">SET PROTOCOL MIX</p><h2>Aggregate traffic</h2></div></div>
+            <div class="donut-wrap"><canvas id="setProtocolCanvas" width="220" height="220" aria-label="Capture-set protocol distribution"></canvas><div class="donut-center"><strong id="setProtocolCount">0</strong><span>PROTOCOLS</span></div></div>
+            <div class="protocol-legend" id="setProtocolLegend"></div>
+          </article>
+        </section>
+
+        <section class="panel set-frame-size-panel">
+          <div class="panel-heading"><div><p class="eyebrow">FRAME SIZE PROFILE</p><h2>Average and p95 by capture file</h2></div><div class="latency-legend"><span><i class="latency-dot frame"></i>Average</span><span><i class="latency-dot average"></i>p95</span></div></div>
+          <div class="set-chart-wrap"><canvas id="setFrameSizeCanvas" height="250" aria-label="Average and p95 frame size by capture file"></canvas><div class="flow-tooltip" id="setFrameSizeTooltip" role="tooltip" hidden></div></div>
+        </section>
+
+        <section class="panel set-files-panel">
+          <div class="panel-heading"><div><p class="eyebrow">CAPTURE INVENTORY</p><h2>Files in this set</h2></div><div class="set-tools"><input id="setSearchInput" type="search" placeholder="Filter files or protocols…"><button class="text-button" id="setJsonButton" type="button">JSON ↓</button><button class="text-button" id="setCsvButton" type="button">CSV ↓</button></div></div>
+          <div class="table-wrap set-table-wrap"><table><thead><tr><th>Capture</th><th>Start</th><th>Duration</th><th>Packets</th><th>Traffic</th><th>Flows</th><th>p95</th><th>Issues</th><th>Status</th><th>Action</th></tr></thead><tbody id="setFileRows"></tbody></table></div>
+        </section>
+
+        <section class="panel set-comparison-panel">
+          <div class="panel-heading"><div><p class="eyebrow">TRACE COMPARISON</p><h2>Per-trace summary</h2></div><span class="row-count">Click a trace to inspect it</span></div>
+          <div class="table-wrap set-comparison-table-wrap"><table class="set-comparison-table"><thead><tr><th>Trace</th><th>#Packets</th><th>Traffic</th><th>#Streams</th><th>#Connections</th><th>Median latency</th><th>#SYNs</th><th>#FINs</th><th>#RSTs</th><th>#Retransmissions</th><th>Start time</th><th>End time</th><th>#Ranked observations</th></tr></thead><tbody id="setComparisonRows"></tbody></table></div>
+        </section>
+
+        <section class="analysis-grid">
+          <article class="panel findings-panel">
+            <div class="panel-heading"><div><p class="eyebrow">SET FINDINGS</p><h2>Cross-capture anomalies</h2></div><span class="row-count" id="setFindingCount"></span></div>
+            <div id="setFindingList" class="finding-list"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">CONTINUITY</p><h2>Rotation coverage</h2></div></div>
+            <div class="continuity" id="setContinuity"></div>
+          </article>
+        </section>
+      </div>
+    </section>
+
+    <section class="watch-workspace" id="watchWorkspace" aria-live="polite" hidden>
+      <div class="set-heading">
+        <div><p class="eyebrow">LIVE DIRECTORY TRIAGE</p><h1>Watch completed traces</h1><p>Process finished capture files from a selected folder, retain summaries, and open only the trace you need.</p></div>
+        <div class="set-heading-actions"><button class="text-button" id="watchCoreButton" type="button">← Single capture</button></div>
+      </div>
+
+      <div class="set-actions watch-actions">
+        <label class="set-name-field"><span>Watch name</span><input id="watchName" type="text" maxlength="80" placeholder="Trace folder or incident name"></label>
+        <label class="button button-primary" for="watchDirectoryInput"><span aria-hidden="true">◎</span> Choose directory snapshot</label>
+        <input id="watchDirectoryInput" type="file" accept=".pcap,.pcapng,.cap" webkitdirectory directory multiple hidden>
+        <label class="button button-quiet" for="watchFileInput"><span aria-hidden="true">＋</span> Add completed files</label>
+        <input id="watchFileInput" type="file" accept=".pcap,.pcapng,.cap" multiple hidden>
+        <button class="button button-quiet" id="watchDemoButton" type="button">Load watch demo</button>
+        <button class="button button-quiet" id="watchClearButton" type="button">Clear watch</button>
+        <div class="set-progress" id="watchProgress"><i></i><span>Select a directory snapshot. Already summarized files are skipped by path, size, and modified time.</span></div>
+      </div>
+
+      <div class="empty-state set-empty" id="watchEmptyState">
+        <div class="empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <h2>Ready to watch a trace folder</h2>
+        <p>Browser security requires you to choose a folder snapshot. Re-select the folder to process newly completed files.</p>
+      </div>
+
+      <div class="set-dashboard" id="watchDashboard" hidden>
+        <section class="kpi-grid set-kpis" aria-label="Watched capture summary">
+          <article class="kpi"><span>Completed files</span><strong id="watchKpiFiles">0</strong><small id="watchKpiFailed">0 failed</small></article>
+          <article class="kpi"><span>Total bytes</span><strong id="watchKpiBytes">0 B</strong><small id="watchKpiPackets">0 packets</small></article>
+          <article class="kpi"><span>Flows</span><strong id="watchKpiFlows">0</strong><small id="watchKpiHosts">0 hosts</small></article>
+          <article class="kpi kpi-accent"><span>TCP health</span><strong id="watchKpiTcp">0 / 0 / 0</strong><small>SYN / FIN / RST</small></article>
+        </section>
+
+        <section class="overview-grid">
+          <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">WATCH TREND</p><h2>Completed files over time</h2></div><span class="row-count" id="watchTrendMeta"></span></div><div class="set-chart-wrap"><canvas id="watchTrendCanvas" height="280" aria-label="Watched capture file trend"></canvas><div class="flow-tooltip" id="watchTrendTooltip" role="tooltip" hidden></div></div></article>
+          <article class="panel"><div class="panel-heading"><div><p class="eyebrow">HOST LIST</p><h2>Observed endpoints</h2></div><span class="row-count" id="watchHostCount"></span></div><div class="watch-host-list" id="watchHostList"></div></article>
+        </section>
+
+        <section class="panel set-files-panel"><div class="panel-heading"><div><p class="eyebrow">WATCH INVENTORY</p><h2>Completed files</h2></div><div class="set-tools"><input id="watchSearchInput" type="search" placeholder="Filter files, hosts, protocols…"><button class="text-button" id="watchJsonButton" type="button">JSON ↓</button><button class="text-button" id="watchCsvButton" type="button">CSV ↓</button></div></div><div class="table-wrap set-table-wrap"><table><thead><tr><th>Capture</th><th>Packets</th><th>Bytes</th><th>Flows</th><th>Hosts</th><th>SYN</th><th>FIN</th><th>RST</th><th>Status</th></tr></thead><tbody id="watchRows"></tbody></table></div></section>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="settingsDialog" class="settings-dialog">
+    <div class="dialog-heading"><div><p class="eyebrow">LOCAL CAPACITY</p><h2>Capture settings</h2></div><button id="closeSettingsDialog" class="icon-button" type="button" aria-label="Close">×</button></div>
+    <div class="settings-fields">
+      <label><span>Maximum capture size</span><input id="maxCaptureMB" type="number" min="1" max="4096" step="1"><small>MiB per file · default 250</small></label>
+      <label><span>Maximum packet count</span><input id="maxPackets" type="number" min="1" max="10000000" step="10000"><small>packets per file · default 1,500,000</small></label>
+      <label><span>Cached raw preview</span><input id="rawPreviewBytes" type="number" min="0" max="65535" step="64"><small>bytes per packet · default 512</small></label>
+      <label><span>Sans font family</span><input id="sansFont" type="text" maxlength="160" placeholder="Manrope, sans-serif"><small>UI and headings</small></label>
+      <label><span>Monospace font family</span><input id="monoFont" type="text" maxlength="160" placeholder="DM Mono, monospace"><small>Packet data and tables</small></label>
+      <label class="settings-toggle"><input id="compactMode" type="checkbox"><span><strong>Use compact mode for large captures</strong><small>Recommended for memory usage. Turn off to retain full packet layers and details; large files may use substantially more memory.</small></span></label>
+      <label class="settings-toggle"><input id="cacheEnabled" type="checkbox"><span><strong>Cache compact analyses</strong><small>Off by default. Models estimated above 32 MiB are never cached.</small></span></label>
+      <label class="settings-toggle"><input id="debugLogEnabled" type="checkbox"><span><strong>Show diagnostics panel</strong><small>Off by default. Enable it when investigating malformed captures or parser issues.</small></span></label>
+      <label class="settings-wide"><span>Reference links</span><textarea id="referenceLinks" rows="7" placeholder="Label | https://example.com"></textarea><small>One link per line. Use <strong>Label | URL</strong>; HTTPS, HTTP, and mailto links are accepted.</small></label>
+      <p>Captures above 100,000 packets use compact packet models. The active capture buffer remains available once, and protocol layers are decoded on demand in the Packet Workbench.</p>
+    </div>
+    <div class="note-footer"><span></span><div><button class="button button-quiet" id="cancelSettingsButton" type="button">Cancel</button><button class="button button-primary" id="saveSettingsButton" type="button">Save settings</button></div></div>
+  </dialog>
+
+  <dialog id="packetDialog">
+    <div class="dialog-heading"><div><p class="eyebrow">FRAME INSPECTOR</p><h2 id="dialogTitle">Packet</h2></div><div class="dialog-heading-actions"><button id="openPacketWorkbenchButton" class="text-button" type="button">Open in packet list ↗</button><button id="closeDialog" class="icon-button" type="button" aria-label="Close">×</button></div></div>
+    <div id="packetDetails" class="packet-details"></div>
+  </dialog>
+
+  <dialog id="profileDialog" class="profile-dialog">
+    <div class="dialog-heading"><div><p class="eyebrow">EXPERT TUNING</p><h2>Analysis profiles</h2></div><button id="closeProfileDialog" class="icon-button" type="button" aria-label="Close">×</button></div>
+    <div class="profile-editor">
+      <div class="profile-toolbar">
+        <label><span>Profile</span><select id="profileSelect" aria-label="Analysis profile"></select></label>
+        <label><span>Profile name</span><input id="profileNameInput" type="text" maxlength="60"></label>
+      </div>
+      <p class="profile-description" id="profileDescription"></p>
+      <div class="profile-section">
+        <div><p class="eyebrow">SINGLE CAPTURE</p><h3>Finding thresholds</h3></div>
+        <div class="profile-fields">
+          <label><span>p95 latency</span><input data-profile-field="latencyP95Ms" type="number" min="0" step="1"><small>ms · 0 disables</small></label>
+          <label><span>Service latency</span><input data-profile-field="serviceLatencyMs" type="number" min="0" step="1"><small>ms · 0 disables</small></label>
+          <label><span>Retransmissions</span><input data-profile-field="retransmissions" type="number" min="0" step="1"><small>count · 0 disables</small></label>
+          <label><span>Duplicate ACKs</span><input data-profile-field="duplicateAcks" type="number" min="0" step="1"><small>count · 0 disables</small></label>
+          <label><span>TCP resets</span><input data-profile-field="tcpResets" type="number" min="0" step="1"><small>count · 0 disables</small></label>
+          <label><span>Failed handshakes</span><input data-profile-field="handshakeFailures" type="number" min="0" step="1"><small>flows · 0 disables</small></label>
+          <label><span>Zero windows</span><input data-profile-field="zeroWindows" type="number" min="0" step="1"><small>count · 0 disables</small></label>
+          <label><span>Dominant flow</span><input data-profile-field="dominantFlowPercent" type="number" min="0" max="100" step="1"><small>% · 0 disables</small></label>
+          <label><span>Service errors</span><input data-profile-field="serviceErrors" type="number" min="0" step="1"><small>count · 0 disables</small></label>
+        </div>
+      </div>
+      <div class="profile-section">
+        <div><p class="eyebrow">CAPTURE SET</p><h3>Cross-file thresholds</h3></div>
+        <div class="profile-fields">
+          <label><span>Gap tolerance</span><input data-profile-field="captureGapSeconds" type="number" min="0" step="0.1"><small>seconds</small></label>
+          <label><span>Gap duration fraction</span><input data-profile-field="gapDurationFraction" type="number" min="0" step="0.05"><small>× median duration</small></label>
+          <label><span>Latency outlier</span><input data-profile-field="batchLatencyMultiplier" type="number" min="1" step="0.1"><small>× set median</small></label>
+          <label><span>Latency floor</span><input data-profile-field="batchLatencyFloorMs" type="number" min="0" step="1"><small>ms</small></label>
+          <label><span>Traffic spike</span><input data-profile-field="trafficSpikeMultiplier" type="number" min="1" step="0.1"><small>× set median</small></label>
+        </div>
+      </div>
+      <div class="profile-section profile-focus-section">
+        <div><p class="eyebrow">EMPHASIS</p><h3>Priority protocols</h3></div>
+        <label><span>Comma-separated protocols</span><input id="profileProtocolsInput" type="text" placeholder="TDS, SMB2, DNS"><small>Errors and slow service findings for these protocols are promoted to high severity.</small></label>
+      </div>
+      <div class="profile-footer">
+        <div class="profile-file-actions"><button class="text-button" id="importProfileButton" type="button">Import JSON ↑</button><input id="profileImportInput" type="file" accept="application/json,.json" hidden><button class="text-button" id="exportProfileButton" type="button">Export JSON ↓</button></div>
+        <div><button class="button button-quiet" id="deleteProfileButton" type="button">Delete</button><button class="button button-quiet" id="saveProfileButton" type="button">Save as custom</button><button class="button button-primary" id="applyProfileButton" type="button">Apply profile</button></div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="noteDialog" class="note-dialog">
+    <div class="dialog-heading"><div><p class="eyebrow">PACKET ANNOTATION</p><h2 id="noteDialogTitle">Frame note</h2></div><button id="closeNoteDialog" class="icon-button" type="button" aria-label="Close">×</button></div>
+    <div class="note-editor-wrap">
+      <div class="note-toolbar" role="toolbar" aria-label="Note formatting">
+        <button type="button" data-note-command="bold" aria-label="Bold" title="Bold"><strong>B</strong></button>
+        <button type="button" data-note-command="italic" aria-label="Italic" title="Italic"><em>I</em></button>
+        <button type="button" data-note-command="underline" aria-label="Underline" title="Underline"><u>U</u></button>
+        <button type="button" data-note-command="insertUnorderedList" aria-label="Bulleted list" title="Bulleted list">• List</button>
+        <button type="button" data-note-command="insertOrderedList" aria-label="Numbered list" title="Numbered list">1. List</button>
+        <button type="button" id="noteLinkButton" aria-label="Insert link" title="Insert link">↗ Link</button>
+        <button type="button" data-note-command="removeFormat" aria-label="Clear formatting" title="Clear formatting">Tx</button>
+      </div>
+      <div id="noteEditor" class="note-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Add investigation context, hypotheses, ticket references, or follow-up actions…"></div>
+      <label class="note-summary-option"><input id="noteAddToSummary" type="checkbox"><span>Add this frame to Capture Summary under Relevant Frames</span></label>
+      <div class="note-meta"><span id="noteSavedStatus">Not saved</span><span id="noteCharacterCount">0 characters</span></div>
+    </div>
+    <div class="note-footer"><button class="button button-quiet" id="deleteNoteButton" type="button">Delete note</button><div><button class="button button-quiet" id="cancelNoteButton" type="button">Cancel</button><button class="button button-primary" id="saveNoteButton" type="button">Save note</button></div></div>
+  </dialog>
+
+  <dialog id="captureSummaryDialog" class="capture-summary-dialog">
+    <div class="dialog-heading"><div><p class="eyebrow">CAPTURE NARRATIVE</p><h2>Analysis Summary</h2><small id="summaryCaptureName"></small></div><button id="closeCaptureSummaryDialog" class="icon-button" type="button" aria-label="Close">×</button></div>
+    <div class="capture-summary-form">
+      <label class="summary-field"><span>Problem Statement</span><textarea id="summaryProblemStatement" rows="4" maxlength="4000" placeholder="What behavior, outage, performance issue, or question prompted this capture?"></textarea><small>Explain the symptom, affected users or systems, and the question this analysis should answer.</small></label>
+      <section class="summary-narrative">
+        <div class="summary-label"><span>Analysis Narrative</span><small>Build the evidence-based story of the capture.</small></div>
+        <div class="note-toolbar summary-toolbar" role="toolbar" aria-label="Summary formatting">
+          <button type="button" data-summary-command="bold" aria-label="Bold" title="Bold"><strong>B</strong></button>
+          <button type="button" data-summary-command="italic" aria-label="Italic" title="Italic"><em>I</em></button>
+          <button type="button" data-summary-command="underline" aria-label="Underline" title="Underline"><u>U</u></button>
+          <button type="button" data-summary-command="insertUnorderedList" aria-label="Bulleted list" title="Bulleted list">• List</button>
+          <button type="button" data-summary-command="insertOrderedList" aria-label="Numbered list" title="Numbered list">1. List</button>
+          <button type="button" id="summaryLinkButton" aria-label="Insert link" title="Insert link">↗ Link</button>
+          <button type="button" data-summary-command="removeFormat" aria-label="Clear formatting" title="Clear formatting">Tx</button>
+        </div>
+        <div id="summaryNarrativeEditor" class="note-editor summary-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Document observations, timeline, evidence, conclusions, and recommended next steps…"></div>
+      </section>
+      <section class="summary-frames-section">
+        <div class="summary-label"><span>Relevant Frames</span><small id="summaryFrameCount">0 frames</small></div>
+        <div class="summary-frames" id="summaryFrames"></div>
+      </section>
+      <div class="note-meta"><span id="summarySavedStatus">Not saved</span><span id="summaryCharacterCount">0 characters</span></div>
+    </div>
+    <div class="note-footer"><button class="button button-quiet" id="deleteCaptureSummaryButton" type="button">Delete summary</button><div><button class="text-button" id="exportCaptureSummaryButton" type="button">Export JSON ↓</button><button class="button button-quiet" id="cancelCaptureSummaryButton" type="button">Cancel</button><button class="button button-primary" id="saveCaptureSummaryButton" type="button">Save summary</button></div></div>
+  </dialog>
+
+  <dialog id="setSummaryDialog" class="capture-summary-dialog set-summary-dialog">
+    <div class="dialog-heading"><div><p class="eyebrow">CAPTURE SET NARRATIVE</p><h2>Set Analysis Summary</h2><small id="setSummaryMeta"></small></div><button id="closeSetSummaryDialog" class="icon-button" type="button" aria-label="Close">×</button></div>
+    <div class="capture-summary-form">
+      <label class="summary-field"><span>Capture Set Name</span><input id="setSummaryName" type="text" maxlength="80" placeholder="Incident or investigation name"></label>
+      <label class="summary-field"><span>Problem Statement</span><textarea id="setSummaryProblemStatement" rows="4" maxlength="4000" placeholder="What problem is this rotated capture set intended to explain?"></textarea><small>Describe the incident window, affected systems, symptoms, and analysis objective.</small></label>
+      <section class="summary-narrative">
+        <div class="summary-label"><span>Analysis Narrative</span><small>Connect observations across the capture rotation.</small></div>
+        <div class="note-toolbar set-summary-toolbar" role="toolbar" aria-label="Set summary formatting">
+          <button type="button" data-set-summary-command="bold" aria-label="Bold" title="Bold"><strong>B</strong></button><button type="button" data-set-summary-command="italic" aria-label="Italic" title="Italic"><em>I</em></button><button type="button" data-set-summary-command="underline" aria-label="Underline" title="Underline"><u>U</u></button><button type="button" data-set-summary-command="insertUnorderedList" aria-label="Bulleted list" title="Bulleted list">• List</button><button type="button" data-set-summary-command="insertOrderedList" aria-label="Numbered list" title="Numbered list">1. List</button><button type="button" id="setSummaryLinkButton" aria-label="Insert link" title="Insert link">↗ Link</button><button type="button" data-set-summary-command="removeFormat" aria-label="Clear formatting" title="Clear formatting">Tx</button>
+        </div>
+        <div id="setSummaryNarrativeEditor" class="note-editor summary-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Document the timeline, file-to-file changes, relevant captures, conclusions, and follow-up actions…"></div>
+      </section>
+      <section class="summary-frames-section">
+        <div class="summary-label"><span>Files in Capture Set</span><small id="setSummaryFileCount">0 files</small></div>
+        <div class="summary-files" id="setSummaryFiles"></div>
+      </section>
+      <div class="note-meta"><span id="setSummarySavedStatus">Not saved</span><span id="setSummaryCharacterCount">0 characters</span></div>
+    </div>
+    <div class="note-footer"><button class="button button-quiet" id="deleteSetSummaryButton" type="button">Delete summary</button><div><button class="text-button" id="exportSetSummaryButton" type="button">Export JSON ↓</button><button class="button button-quiet" id="cancelSetSummaryButton" type="button">Cancel</button><button class="button button-primary" id="saveSetSummaryButton" type="button">Save summary</button></div></div>
+  </dialog>
+
+  <dialog id="processMapDialog" class="process-map-dialog">
+    <div class="dialog-heading"><div><p class="eyebrow">SOCKET ATTRIBUTION</p><h2>Import process map</h2><small id="processMapCaptureName"></small></div><button id="closeProcessMapDialog" class="icon-button" type="button" aria-label="Close">×</button></div>
+    <div class="process-map-body">
+      <div class="correlation-warning"><strong>Correlation can be wrong.</strong><p>Ports are reused, processes restart, NAT changes endpoints, and snapshots become stale. Treat PID/executable attribution as supporting evidence, not packet-capture fact. Verify timestamps and host context before drawing conclusions.</p></div>
+      <div class="confidence-guide"><span><b class="process-confidence exact">exact</b> full tuple + time</span><span><b class="process-confidence strong">strong</b> full tuple or host/time</span><span><b class="process-confidence possible">possible</b> partial socket</span><span><b class="process-confidence ambiguous">ambiguous</b> competing processes</span></div>
+      <div class="process-map-controls">
+        <label><span>Input format</span><select id="processMapFormat"><option value="auto">Auto-detect</option><option value="normalized-json">DataSnare JSON</option><option value="csv">CSV / TCPView / PowerShell</option><option value="netstat">netstat -ano</option><option value="ss">Linux ss -tunap</option><option value="lsof">Linux lsof -i</option></select></label>
+        <label><span>Snapshot time</span><input id="processMapTimestamp" type="datetime-local" step="1"><small>Used when rows contain no timestamp.</small></label>
+        <label><span>Time tolerance</span><input id="processMapTolerance" type="number" min="0" step="1" value="120"><small>seconds around snapshot · 0 ignores time</small></label>
+        <label><span>Capture host address</span><input id="processMapHost" type="text" placeholder="Optional, e.g. 10.0.0.8"><small>Improves local/remote direction matching.</small></label>
+      </div>
+      <div class="process-map-source">
+        <div class="process-map-source-heading"><label class="button button-quiet" for="processMapInput">Open export</label><input id="processMapInput" type="file" accept=".txt,.csv,.json,.log" hidden><span id="processMapFileName">Paste output or select a file</span></div>
+        <textarea id="processMapText" rows="13" spellcheck="false" placeholder="Paste netstat -ano, TCPView CSV, Get-NetTCPConnection CSV, ss -tunap, lsof -i, or DataSnare normalized CSV/JSON…"></textarea>
+      </div>
+      <div class="process-map-preview" id="processMapPreview">No process observations loaded.</div>
+    </div>
+    <div class="note-footer"><button class="button button-quiet" id="clearProcessMapButton" type="button">Clear mappings</button><div><button class="text-button" id="processMapTemplateButton" type="button">CSV template ↓</button><button class="button button-quiet" id="cancelProcessMapButton" type="button">Cancel</button><button class="button button-primary" id="applyProcessMapButton" type="button">Import and correlate</button></div></div>
+  </dialog>
+
+  <section class="two-sided" id="twoSidedWorkspace" hidden aria-labelledby="twoSidedTitle">
+    <div class="panel-heading"><h2 id="twoSidedTitle">Two-Sided</h2><button class="button button-quiet" id="twoSidedBack" type="button">Back to capture</button></div>
+    <form id="twoSidedForm" class="two-sided-controls">
+      <label>System A capture<input id="twoSidedFileA" type="file" accept=".pcap,.pcapng,.cap" required></label>
+      <label>System B capture<input id="twoSidedFileB" type="file" accept=".pcap,.pcapng,.cap" required></label>
+      <label>Add to System B clock (ms)<input id="twoSidedOffset" type="number" step="0.001" value="0" required></label>
+      <label>Match tolerance (ms)<input id="twoSidedTolerance" type="number" min="0" step="0.001" value="1000" required></label>
+      <label>System A local IP<input id="twoSidedHostA" type="text" placeholder="Optional: 10.0.0.1"></label>
+      <label>System B local IP<input id="twoSidedHostB" type="text" placeholder="Optional: 10.0.0.2"></label>
+      <button class="button button-primary" id="twoSidedAnalyze" type="submit">Analyze two traces</button>
+    </form>
+    <p class="two-sided-caveat">Corrected B time = original B time + offset. Negative offsets move B earlier. Intervals are observed capture-time differences, not validated wire latency; residual clock error and capture/offload effects remain. Unique matches use TCP headers, not payload verification. Concurrent downstream traffic is context, not proof of a dependency.</p>
+    <p id="twoSidedStatus" role="status">Choose both captures.</p>
+    <div class="two-sided-toolbar">
+      <label>Connection<select id="twoSidedConnection" aria-label="Connection"><option value="all">All connections</option></select></label>
+      <label><input id="twoSidedContext" type="checkbox" checked> Include other connection context</label>
+      <label>Find frames or endpoints<input id="twoSidedSearch" type="search"></label>
+      <button class="button button-quiet" id="twoSidedPrevious" type="button" disabled>Previous</button>
+      <span id="twoSidedPage"></span>
+      <button class="button button-quiet" id="twoSidedNext" type="button" disabled>Next</button>
+    </div>
+    <div class="two-sided-scroll" id="twoSidedScroll">
+      <div class="two-sided-heading"><strong id="twoSidedNameA">System A</strong><span>Correlation / corrected interval</span><strong id="twoSidedNameB">System B</strong></div>
+      <div id="twoSidedRows"></div>
+    </div>
+    <dialog id="twoSidedDialog" class="two-sided-dialog">
+      <div class="panel-heading"><h2>Packet correlation</h2><button class="button button-quiet" id="twoSidedClose" type="button">Close</button></div>
+      <div id="twoSidedDetail"></div>
+    </dialog>
+  </section>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="app.js"></script>
+  <script src="tuning.js"></script>
+  <script src="expert.js"></script>
+  <script src="topology-window.js"></script>
+  <script src="batch.js"></script>
+  <script src="flow-detail.js"></script>
+  <script src="watch.js"></script>
+  <script src="process-map.js"></script>
+  <script src="packet-workbench.js"></script>
+  <script src="two-sided-match.js"></script>
+  <script src="two-sided.js"></script>
+</body>
+</html>

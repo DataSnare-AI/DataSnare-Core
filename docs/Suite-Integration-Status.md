@@ -337,6 +337,31 @@ normalized packet previews, protocol counts, host/flow totals, and TCP-reset fin
 are indexed into the tenant knowledge fabric. Staging uploads are capped at 250 MiB and 1,000,000
 packets; larger captures should continue to use the local compact browser analyzer.
 
+AIAnalysis now exposes the full standalone JavaScript analyzer at `/ainetscope/index.html` while
+retaining the bounded Python PCAP path. Users can return to AIAnalysis, export
+`datasnare-ainetscope/analysis-v1`, and import that JSON into the selected tenant as normalized flow
+and finding events for shared timelines and saved cases. Before a Core web build, run
+`npm run sync:ainetscope` from the Core repository to copy the sibling AINetScope source into
+`public/ainetscope`; the Docker web build includes those copied assets. Keep `DataSnare-AINetScope` as
+the source of truth and sync after changing its static app.
+
+AIProcMon and AIPerf now follow the same hybrid pattern at `/aiprocmon/index.html` and
+`/aiperf/index.html`. Their AIAnalysis tabs open the existing JavaScript analyzers in separate tabs
+and import their versioned `datasnare-aiprocmon/events-v1` or `datasnare-aiperf/events-v1` JSON exports
+through authenticated tenant tool jobs. Successful imports refresh and select tenant evidence for the
+shared timeline; saved cases retain bounded event samples and provenance. Import limits are 25 MiB
+and 10,000 combined events/findings. Findings without timestamps remain untimed. AIPerf numeric
+timestamps are converted from Unix seconds to UTC; bounded metric evidence is preserved. Native PML
+and BLG still require Windows Procmon or relog.exe conversion.
+
+Run `npm run sync:native-tools` after changes in the sibling AIProcMon or AIPerf source repositories
+and commit the synchronized `public/aiprocmon` and `public/aiperf` assets with Core. The bundles also
+include their PowerShell converter helpers. Core Docker builds use these snapshots and do not require
+sibling repositories on the deployment host. Rebuild both core-api and core-web; no migration is
+required. `npm run test:browser` exercises real standalone demo exports, API import, case save/reopen,
+and desktop/mobile Core upload controls. These tests use installed Edge and the Core `.venv` by
+default; `DATASNARE_TEST_PYTHON` can override the test interpreter.
+
 AILogScope now has a matching React workbench and Python text adapter. It queues and uploads log/text
 artifacts through `/api/tenants/{tenant_id}/tools/ailogscope/jobs`, decodes UTF-8 and UTF-16 input,
 counts bounded non-empty event records, and returns `datasnare-ailogscope/events-v1`. AILogScope is now

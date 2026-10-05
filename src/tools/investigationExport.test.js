@@ -21,3 +21,9 @@ test('older cases without metadata export safely', () => {
   assert.deepEqual(result.investigation.metadata, {});
   assert.deepEqual(result.evidence, []);
 });
+
+test('metric provenance survives export without raw details', () => {
+  const result = buildInvestigationExport({ evidence: [{ events: [{ summary: 'CPU saturated',
+    evidence: { counter: 'Processor Time', observed: 99, threshold: 95, raw: 'excluded' } }] }] });
+  assert.deepEqual(result.evidence[0].events[0].evidence, { counter: 'Processor Time', threshold: 95, observed: 99 });
+});
