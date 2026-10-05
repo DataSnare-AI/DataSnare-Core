@@ -556,6 +556,16 @@ $("#workbenchSearch").addEventListener("input", () => renderWorkbenchList());
 $("#workbenchProtocolFilter").addEventListener("change", () => renderWorkbenchList());
 $("#timeDisplayMode").addEventListener("change", event => { currentFrameState().timeMode = event.target.value; persistFrameState(); renderWorkbenchList(workbenchState.selectedNumber); });
 $("#workbenchRows").addEventListener("click", event => { const note = event.target.closest("[data-note-frame]"); if (note) { openNoteEditor(Number(note.dataset.noteFrame)); return; } const mark = event.target.closest("[data-mark-toggle]"); if (mark) { toggleFrameMark(Number(mark.dataset.markToggle)); return; } const row = event.target.closest("tr[data-workbench-packet]"); if (row) selectWorkbenchPacket(Number(row.dataset.workbenchPacket), false); });
+$("#workbenchJumpForm").addEventListener("submit", event => {
+  event.preventDefault();
+  const number = Number($("#workbenchJumpNumber").value);
+  const status = $("#workbenchJumpStatus");
+  if (!Number.isSafeInteger(number) || number < 1) { status.textContent = "Enter a positive whole packet number."; return; }
+  if (!state.packets.some(packet => packet.number === number)) { status.textContent = `Packet ${number} is not in this capture.`; return; }
+  if (!workbenchFilteredPackets().some(packet => packet.number === number)) { status.textContent = `Packet ${number} is hidden by active filters. Clear filters to view it.`; return; }
+  selectWorkbenchPacket(number, true);
+  status.textContent = `Packet ${number} selected.`;
+});
 $("#workbenchRows").addEventListener("contextmenu", event => { const row = event.target.closest("tr[data-workbench-packet]"); if (row) openPacketContextMenu(event, row); });
 $("#workbenchListPane").addEventListener("scroll", () => { if (workbenchState._scrollFrame) return; workbenchState._scrollFrame = requestAnimationFrame(() => { workbenchState._scrollFrame = 0; renderWorkbenchList(null, false); }); });
 $("#workbenchStatus").addEventListener("click", event => { const control = event.target.closest("[data-workbench-page]"); if (!control) return; workbenchState.page += control.dataset.workbenchPage === "next" ? 1 : -1; renderWorkbenchList(workbenchState.selectedNumber, false); });

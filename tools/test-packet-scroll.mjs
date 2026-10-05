@@ -65,9 +65,19 @@ try {
       assert.ok(snapshot.firstFrame > 300, `Window did not advance: ${JSON.stringify(snapshot)}`);
       assert.equal(snapshot.selected, 1, 'Scrolling should retain selection without recentering');
     }
-    await page.evaluate(() => selectWorkbenchPacket(20000, true));
+    await page.getByRole('spinbutton', { name: 'Go to Packet number', exact: true }).fill('20000');
+    await page.locator('#workbenchJumpForm').getByRole('button', { name: 'Go', exact: true }).click();
     await page.locator('#workbenchRows tr[data-workbench-packet="20000"].selected').waitFor();
     assert.equal((await inspect()).selected, 20000);
+    await page.getByRole('spinbutton', { name: 'Go to Packet number', exact: true }).fill('99999');
+    await page.locator('#workbenchJumpForm').getByRole('button', { name: 'Go', exact: true }).click();
+    assert.match(await page.locator('#workbenchJumpStatus').textContent(), /not in this capture/);
+    assert.equal((await inspect()).selected, 20000);
+    await page.locator('#workbenchSearch').fill('Scroll fixture 30000');
+    await page.getByRole('spinbutton', { name: 'Go to Packet number', exact: true }).fill('20000');
+    await page.locator('#workbenchJumpForm').getByRole('button', { name: 'Go', exact: true }).click();
+    assert.match(await page.locator('#workbenchJumpStatus').textContent(), /hidden by active filters/);
+    await page.locator('#workbenchSearch').fill('');
     await page.evaluate(() => selectWorkbenchPacket(1, true));
     await page.locator('#workbenchRows tr[data-workbench-packet="1"].selected').waitFor();
     assert.ok((await inspect()).scrollTop < 100);

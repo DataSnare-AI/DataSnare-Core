@@ -74,6 +74,21 @@ try {
     await page.getByRole('button', { name: 'Analyze two traces', exact: true }).click();
     await page.waitForFunction(() => window.DataSnareTwoSided.records.some(record => record.direction === 'A to B' && Math.abs(record.transitMs - 15) < .001));
     assert.ok(await page.evaluate(() => window.DataSnareTwoSided.records.some(record => record.direction === 'B to A' && record.transitMs < 0)));
+    await page.evaluate(() => {
+      const match = twoSidedState.records.find(record => record.status === 'matched');
+      twoSidedState.records = [...Array.from({ length: 450 }, (_, index) => ({ ...match,
+        status: 'unmatched', packetB: null, deltaMs: null, transitMs: null,
+        packetA: { ...match.packetA, number: index + 1000 } })), match];
+      twoSidedState.page = 0;
+      document.querySelector('#twoSidedConnection').value = 'all';
+      document.querySelector('#twoSidedSearch').value = '';
+      renderTwoSided();
+    });
+    await page.getByRole('button', { name: 'Jump to First Matched Pair', exact: true }).click();
+    assert.match(await page.locator('#twoSidedPage').textContent(), /page 4 of 4/);
+    assert.equal(await page.locator('.two-sided-row--selected.two-sided-row--matched').count(), 1);
+    await page.getByLabel('Find frames or endpoints', { exact: true }).fill('unmatched');
+    assert.equal(await page.getByRole('button', { name: 'Jump to First Matched Pair', exact: true }).isDisabled(), true);
     await page.getByRole('button', { name: 'Back to capture', exact: true }).click();
     assert.equal(await page.locator('#twoSidedWorkspace').isVisible(), false);
     console.log(`PASS Two-Sided ${width}px: 2 real captures, offset, both directions, downstream context and linked inspection`);

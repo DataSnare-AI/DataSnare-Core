@@ -343,6 +343,9 @@ dialog::backdrop { background: rgba(23,33,29,.55); backdrop-filter: blur(2px); }
 .toast.visible { opacity: 1; transform: none; }
 
 .workbench { padding-top: 22px; }
+.workbench-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 12px; }
+.workbench-jump input { width: 120px; min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); }
+.workbench-jump [role=status] { color: var(--muted); overflow-wrap: anywhere; }
 .workbench-heading { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 14px; }
 .workbench-actions { display: flex; align-items: center; gap: 8px; }
 .workbench-actions #timeDisplayMode { max-width: 190px; }

@@ -168,6 +168,12 @@
         <div class="workbench-actions"><label class="workbench-search"><span aria-hidden="true">⌕</span><input id="workbenchSearch" type="search" placeholder="Filter packets…"></label><select id="workbenchProtocolFilter" aria-label="Filter workbench by protocol"><option value="all">All protocols</option></select><select id="timeDisplayMode" aria-label="Time display format" title="Time display format"><option value="capture">Since capture start</option><option value="timeofday">Time of day</option><option value="datetime">Date and time</option><option value="previous-captured">Since previous captured</option><option value="previous-displayed">Since previous displayed</option><option value="previous-marked">Since previous marked</option><option value="reference">Relative to T0 reference</option><option value="epoch">Unix epoch</option></select><button class="text-button process-map-trigger" id="processMapButton" type="button">Process Map</button><button class="text-button summary-trigger" id="captureSummaryButton" type="button">Analysis Summary</button><button class="text-button" id="workbenchCoreButton" type="button">← Core view</button></div>
       </div>
       <div class="workbench-field-filters" id="workbenchFieldFilters" hidden></div>
+      <form class="workbench-jump" id="workbenchJumpForm">
+        <label for="workbenchJumpNumber">Go to Packet</label>
+        <input id="workbenchJumpNumber" type="number" min="1" step="1" required aria-label="Go to Packet number">
+        <button class="button button-primary" type="submit">Go</button>
+        <span id="workbenchJumpStatus" role="status"></span>
+      </form>
       <div class="workbench-empty" id="workbenchEmpty"><h2>No packet data loaded</h2><p>Open a capture or load the demo from the core view, then return here.</p><button class="button button-primary" id="workbenchOpenCoreButton" type="button">Open core view</button></div>
       <div class="workbench-grid" id="workbenchGrid" hidden>
         <section class="workbench-list-pane" id="workbenchListPane" aria-label="Packet list" tabindex="0">
@@ -489,6 +495,7 @@
       <label><input id="twoSidedContext" type="checkbox" checked> Include other connection context</label>
       <label>Find frames or endpoints<input id="twoSidedSearch" type="search"></label>
       <button class="button button-quiet" id="twoSidedPrevious" type="button" disabled>Previous</button>
+      <button class="button button-primary" id="twoSidedFirstMatch" type="button" disabled>Jump to First Matched Pair</button>
       <span id="twoSidedPage"></span>
       <button class="button button-quiet" id="twoSidedNext" type="button" disabled>Next</button>
     </div>

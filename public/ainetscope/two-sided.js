@@ -30,15 +30,20 @@ function twoSidedPacketHtml(packet, side, recordIndex) {
   </button>`;
 }
 
-function renderTwoSided() {
+function twoSidedVisibleRecords() {
   const connection = $("#twoSidedConnection").value;
   const includeContext = $("#twoSidedContext").checked;
   const query = $("#twoSidedSearch").value.trim().toLowerCase();
-  const visible = twoSidedState.records.map((record, index) => ({ record, index })).filter(({ record }) => {
+  return twoSidedState.records.map((record, index) => ({ record, index })).filter(({ record }) => {
     if (connection !== "all" && record.connection !== connection && !includeContext) return false;
     return !query || [record.connection, record.status, record.packetA?.number, record.packetB?.number,
       record.packetA?.seq, record.packetA?.ack, record.packetB?.seq, record.packetB?.ack].join(" ").toLowerCase().includes(query);
   });
+}
+
+function renderTwoSided() {
+  const connection = $("#twoSidedConnection").value;
+  const visible = twoSidedVisibleRecords();
   const pageCount = Math.max(1, Math.ceil(visible.length / TWO_SIDED_PAGE_SIZE));
   twoSidedState.page = Math.min(twoSidedState.page, pageCount - 1);
   const pageRows = visible.slice(twoSidedState.page * TWO_SIDED_PAGE_SIZE, (twoSidedState.page + 1) * TWO_SIDED_PAGE_SIZE);
@@ -56,7 +61,20 @@ function renderTwoSided() {
   $("#twoSidedPage").textContent = `${visible.length.toLocaleString()} rows / page ${twoSidedState.page + 1} of ${pageCount}`;
   $("#twoSidedPrevious").disabled = twoSidedState.page === 0;
   $("#twoSidedNext").disabled = twoSidedState.page === pageCount - 1;
+  $("#twoSidedFirstMatch").disabled = !visible.some(({ record }) => record.status === "matched");
 }
+
+$("#twoSidedFirstMatch").addEventListener("click", () => {
+  const visible = twoSidedVisibleRecords();
+  const position = visible.findIndex(({ record }) => record.status === "matched");
+  if (position < 0) return;
+  twoSidedState.page = Math.floor(position / TWO_SIDED_PAGE_SIZE);
+  twoSidedState.selected = visible[position].index;
+  renderTwoSided();
+  const row = $("#twoSidedRows .two-sided-row--selected");
+  row?.scrollIntoView({ block: "center", inline: "nearest" });
+  row?.querySelector(".two-sided-link")?.focus({ preventScroll: true });
+});
 
 function inspectTwoSided(index) {
   const record = twoSidedState.records[index];
