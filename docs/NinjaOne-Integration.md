@@ -13,8 +13,8 @@ NinjaOne documents OAuth2 authorization-code and implicit grants. Core will use 
 
 Authorization endpoints:
 
-- Authorize: `https://oc.ninjarmm.com/ws/oauth/authorize`
-- Token: `https://oc.ninjarmm.com/ws/oauth/token`
+- Authorize: `https://app.ninjarmm.com/ws/oauth/authorize`
+- Token: `https://app.ninjarmm.com/ws/oauth/token`
 
 The callback validates a hashed, one-time `state` value that expires after 10 minutes, exchanges the code server-side, encrypts the resulting refresh token, and associates the connection with the tenant that initiated authorization. Access tokens remain in backend memory only.
 

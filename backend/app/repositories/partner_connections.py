@@ -49,7 +49,9 @@ class InMemoryPartnerConnectionRepository:
     async def save_oauth_state(self, state_hash: str, tenant_id: int, expires_at: datetime) -> None:
         now = datetime.now(timezone.utc)
         self._oauth_states = {
-            key: value for key, value in self._oauth_states.items() if value[1] > now
+            key: value
+            for key, value in self._oauth_states.items()
+            if value[1] > now and value[0] != tenant_id
         }
         self._oauth_states[state_hash] = (tenant_id, expires_at)
 

@@ -58,7 +58,10 @@ class PostgresPartnerConnectionRepository:
         return _record_from_row(row)
 
     async def save_oauth_state(self, state_hash: str, tenant_id: int, expires_at: datetime) -> None:
-        await self.db.execute("DELETE FROM ninjaone_oauth_states WHERE expires_at <= NOW()")
+        await self.db.execute(
+            "DELETE FROM ninjaone_oauth_states WHERE expires_at <= NOW() OR tenant_id = $1",
+            tenant_id,
+        )
         await self.db.execute(
             """
             INSERT INTO ninjaone_oauth_states (state_hash, tenant_id, expires_at)

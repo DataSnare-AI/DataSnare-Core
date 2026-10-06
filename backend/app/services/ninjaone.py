@@ -35,8 +35,8 @@ class NinjaOneOAuthConfig:
     client_id: str
     client_secret: str
     redirect_uri: str
-    authorization_url: str = "https://oc.ninjarmm.com/ws/oauth/authorize"
-    token_url: str = "https://oc.ninjarmm.com/ws/oauth/token"
+    authorization_url: str = "https://app.ninjarmm.com/ws/oauth/authorize"
+    token_url: str = "https://app.ninjarmm.com/ws/oauth/token"
 
     def authorization_request_url(self, state: str, *, scope: str | None = None) -> str:
         params = {

@@ -116,6 +116,33 @@ def test_callback_persists_encrypted_refresh_token_once(monkeypatch):
     assert replay.status_code == 400
 
 
+def test_new_authorization_invalidates_previous_state(monkeypatch):
+    monkeypatch.setenv("CORE_STORAGE_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv(
+        "NINJAONE_REDIRECT_URI",
+        "https://staging.app.datasnare.com/api/integrations/ninjaone/callback",
+    )
+    client = TestClient(create_app())
+    request_body = {
+        "base_url": "https://api.ninjarmm.com",
+        "client_id": "ninja-client",
+        "client_secret": "ninja-secret",
+        "redirect_uri": "https://staging.app.datasnare.com/api/integrations/ninjaone/callback",
+        "scopes": ["monitoring"],
+    }
+    headers = {"X-Actor": "admin@example.com", "X-Role": "tenant_admin"}
+    first = client.post("/api/tenants/7/integrations/ninjaone/authorize", headers=headers, json=request_body)
+    second = client.post("/api/tenants/7/integrations/ninjaone/authorize", headers=headers, json=request_body)
+
+    assert first.status_code == second.status_code == 200
+    response = client.get(
+        "/api/integrations/ninjaone/callback",
+        params={"state": first.json()["state"], "code": "unused"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "OAuth state is invalid, expired, or already used"
+
+
 def test_authorize_rejects_non_read_only_scopes(monkeypatch):
     monkeypatch.setenv("CORE_STORAGE_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.setenv(
