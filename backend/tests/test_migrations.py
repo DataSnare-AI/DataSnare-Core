@@ -24,6 +24,7 @@ def test_rag_foundation_migration_is_available():
         "009_aianalysis_product.sql",
         "010_analysis_investigations.sql",
         "011_investigation_metadata.sql",
+        "012_ninjaone_connections.sql",
     ]
     rag_sql = migrations[0].read_text(encoding="utf-8")
     jobs_sql = migrations[1].read_text(encoding="utf-8")
@@ -57,9 +58,13 @@ def test_rag_foundation_migration_is_available():
     assert "ADD COLUMN IF NOT EXISTS contract_start_date" in tenant_details_sql
     analysis_sql = migrations[8].read_text(encoding="utf-8")
     investigation_sql = migrations[9].read_text(encoding="utf-8")
+    ninjaone_sql = migrations[11].read_text(encoding="utf-8")
     assert "'aianalysis'" in analysis_sql
     assert "FALSE" in analysis_sql
     assert "ON CONFLICT (product_key) DO NOTHING" in analysis_sql
     assert "ON CONFLICT (product_key, plan_key) DO NOTHING" in analysis_sql
     assert "CREATE TABLE IF NOT EXISTS analysis_investigations" in investigation_sql
     assert "evidence JSONB NOT NULL" in investigation_sql
+    assert "CREATE TABLE IF NOT EXISTS core_partner_connections" in ninjaone_sql
+    assert "refresh_token_enc TEXT" in ninjaone_sql
+    assert "CREATE TABLE IF NOT EXISTS ninjaone_oauth_states" in ninjaone_sql

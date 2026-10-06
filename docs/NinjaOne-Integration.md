@@ -16,7 +16,15 @@ Authorization endpoints:
 - Authorize: `https://oc.ninjarmm.com/ws/oauth/authorize`
 - Token: `https://oc.ninjarmm.com/ws/oauth/token`
 
-The callback must validate the `state` value, exchange the one-time code server-side, encrypt the resulting refresh token, and associate the connection with the authenticated DataSnare tenant. Access tokens should be short-lived and held only in backend memory or an approved secret/token store.
+The callback validates a hashed, one-time `state` value that expires after 10 minutes, exchanges the code server-side, encrypts the resulting refresh token, and associates the connection with the tenant that initiated authorization. Access tokens remain in backend memory only.
+
+For staging, register this exact Redirect URI in NinjaOne:
+
+```text
+https://staging.app.datasnare.com/api/integrations/ninjaone/callback
+```
+
+Set `NINJAONE_REDIRECT_URI` to the same value in the Core backend and keep the existing `CORE_STORAGE_ENCRYPTION_KEY` stable across restarts and deployments. The same encryption key is used for the client secret and refresh token at rest. Apply `backend/migrations/012_ninjaone_connections.sql` before enabling the connection. The authorize endpoint currently permits only the `monitoring` scope; Management and Control remain unavailable for this read-only phase. Enable NinjaOne's Refresh token grant.
 
 ## Planned phases
 
@@ -77,13 +85,14 @@ The initial connector lives in `backend/app/services/ninjaone.py`. It is deliber
 - collection envelope normalization
 - stable external entity links for cross-tool evidence
 
-The connector does not persist credentials, expose browser routes, or perform NinjaOne management actions yet. Those belong behind Core/AIOps tenant authentication, encrypted secret storage, licensing checks, and audit/approval gates.
+The connector now persists encrypted client and refresh credentials plus OAuth state, and exposes tenant-protected setup/status routes and a state-protected callback. It remains read-only and does not perform NinjaOne management actions; those require licensing checks, tenant policy, audit, and approval gates.
 
 ## Core API boundary
 
 The initial Core API is in `backend/app/routes/ninjaone.py`:
 
-- `GET /api/tenants/{tenant_id}/integrations/ninjaone/connection` returns redacted connection metadata.
-- `POST /api/tenants/{tenant_id}/integrations/ninjaone/authorize` stores non-secret connection metadata and returns an OAuth2 authorization-code URL.
+- `GET /api/tenants/{tenant_id}/integrations/ninjaone/connection` returns redacted connection metadata and requires tenant configuration view permission.
+- `POST /api/tenants/{tenant_id}/integrations/ninjaone/authorize` requires tenant configuration edit permission, encrypts the client secret, stores expiring OAuth state, and returns an OAuth2 authorization-code URL.
+- `GET /api/integrations/ninjaone/callback` validates and consumes state, exchanges the code, and encrypts the refresh token.
 
-Both routes require the current temporary `X-Actor` boundary. This is a development seam for route tests, not the final authentication system. The next backend step is replacing the in-memory repository with encrypted, database-backed storage and binding the actor to Core/AIOps identity and tenant permissions.
+With a database configured, connection metadata, encrypted credentials, and state are persisted in PostgreSQL. Local route tests use an in-memory repository. The callback is public by design, with authorization bound to the unguessable one-time state; the authorize and status routes use Core tenant identity and permissions.

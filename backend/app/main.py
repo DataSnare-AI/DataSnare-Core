@@ -23,11 +23,13 @@ from app.services.aiprocmon_parser import ProcMonParser
 from app.repositories.postgres_knowledge_items import PostgresKnowledgeItemRepository
 from app.services.postgres_vector_store import PostgresVectorStore
 from app.repositories.partner_connections import InMemoryPartnerConnectionRepository
+from app.repositories.postgres_partner_connections import PostgresPartnerConnectionRepository
 from app.repositories.product_accounts import InMemoryProductAccountRepository, PostgresProductAccountRepository
 from app.security.core_identity import CoreIdentityProvider
 from app.security.authorization import resolve_actor
 from app.routes.ingest import router as ingest_router
 from app.routes.ninjaone import router as ninjaone_router
+from app.routes.ninjaone import callback_router as ninjaone_callback_router
 from app.routes.rag import router as rag_router
 from app.routes.knowledge import router as knowledge_router
 from app.routes.agent_manifests import router as agent_manifests_router
@@ -77,6 +79,8 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
             if knowledge_graph is None:
                 app.state.knowledge_graph = PostgresKnowledgeGraphRepository(pool)
             app.state.product_accounts = PostgresProductAccountRepository(pool)
+            if partner_connections is None:
+                app.state.partner_connections = PostgresPartnerConnectionRepository(pool)
         try:
             yield
         finally:
@@ -88,7 +92,11 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.state.artifact_storage = CoreArtifactStorage(database_pool) if database_pool is not None else None
     app.state.auth_provider = auth_provider or (CoreIdentityProvider(database_pool) if database_pool is not None else None)
     app.state.product_accounts = PostgresProductAccountRepository(database_pool) if database_pool is not None else InMemoryProductAccountRepository()
-    app.state.partner_connections = partner_connections or InMemoryPartnerConnectionRepository()
+    app.state.partner_connections = partner_connections or (
+        PostgresPartnerConnectionRepository(database_pool)
+        if database_pool is not None
+        else InMemoryPartnerConnectionRepository()
+    )
     app.state.ingest_jobs = ingest_jobs or (PostgresIngestJobRepository(database_pool) if database_pool is not None else InMemoryIngestJobRepository())
     app.state.knowledge_items = knowledge_items or (PostgresKnowledgeItemRepository(database_pool) if database_pool is not None else InMemoryKnowledgeItemRepository())
     app.state.embedding_provider = embedding_provider or LocalHashEmbeddingProvider()
@@ -115,6 +123,7 @@ def create_app(*, partner_connections=None, ingest_jobs=None, knowledge_items=No
     app.state.aiprocmon_parser = aiprocmon_parser or ProcMonParser()
     app.include_router(ingest_router)
     app.include_router(ninjaone_router)
+    app.include_router(ninjaone_callback_router)
     app.include_router(rag_router)
     app.include_router(knowledge_router)
     app.include_router(agent_manifests_router)

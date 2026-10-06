@@ -16,6 +16,7 @@ from app.repositories.postgres_ingest_jobs import PostgresIngestJobRepository
 from app.repositories.postgres_knowledge_items import PostgresKnowledgeItemRepository
 from app.repositories.postgres_knowledge_graph import PostgresKnowledgeGraphRepository
 from app.repositories.postgres_retrieval_audit import PostgresRetrievalAuditRepository
+from app.repositories.postgres_partner_connections import PostgresPartnerConnectionRepository
 from app.services.postgres_vector_store import PostgresVectorStore
 
 
@@ -29,6 +30,7 @@ def test_database_pool_selects_postgres_knowledge_services():
     assert isinstance(app.state.agent_manifests, PostgresAgentManifestRepository)
     assert isinstance(app.state.knowledge_graph, PostgresKnowledgeGraphRepository)
     assert isinstance(app.state.retrieval_audit, PostgresRetrievalAuditRepository)
+    assert isinstance(app.state.partner_connections, PostgresPartnerConnectionRepository)
     assert app.state.database_pool is database_pool
     assert app.state.auth_provider is not None
     assert app.state.product_accounts.pool is database_pool
@@ -65,6 +67,7 @@ def test_database_url_creates_and_closes_pool(monkeypatch: pytest.MonkeyPatch):
         assert isinstance(app.state.agent_manifests, PostgresAgentManifestRepository)
         assert isinstance(app.state.knowledge_graph, PostgresKnowledgeGraphRepository)
         assert isinstance(app.state.retrieval_audit, PostgresRetrievalAuditRepository)
+        assert isinstance(app.state.partner_connections, PostgresPartnerConnectionRepository)
     assert pool.closed
 
 

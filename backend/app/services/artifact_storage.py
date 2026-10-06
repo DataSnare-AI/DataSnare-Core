@@ -26,7 +26,7 @@ class CoreArtifactStorage:
         if not key:
             raise HTTPException(
                 status_code=503,
-                detail="CORE_STORAGE_ENCRYPTION_KEY is required to store Azure credentials",
+                detail="CORE_STORAGE_ENCRYPTION_KEY is required to store encrypted credentials",
             )
         try:
             return Fernet(key.encode())
@@ -46,7 +46,7 @@ class CoreArtifactStorage:
         try:
             return cls._fernet().decrypt(value.encode()).decode()
         except InvalidToken as error:
-            raise HTTPException(status_code=500, detail="Stored Azure credential cannot be decrypted; check CORE_STORAGE_ENCRYPTION_KEY") from error
+            raise HTTPException(status_code=500, detail="Stored credential cannot be decrypted; check CORE_STORAGE_ENCRYPTION_KEY") from error
 
     async def settings(self) -> dict[str, Any]:
         row = await self.pool.fetchrow(

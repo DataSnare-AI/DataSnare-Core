@@ -79,6 +79,8 @@ async def exchange_authorization_code(
 
     if not token.get("access_token"):
         raise NinjaOneError("NinjaOne OAuth response did not include an access token")
+    if not token.get("refresh_token"):
+        raise NinjaOneError("NinjaOne OAuth response did not include a refresh token")
     return token
 
 
