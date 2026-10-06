@@ -22,6 +22,7 @@ const partnerIntegrations = [
 ];
 
 function ProjectCard({ project, onOpen, onDetails }) {
+  const newTabUrl = project.id === 'aiops' ? 'https://datasnare-aiops.com' : project.path;
   return (
     <article className={`project-card project-card--${project.accent}`}>
       <div className="project-card__topline">
@@ -31,7 +32,7 @@ function ProjectCard({ project, onOpen, onDetails }) {
       <p className="eyebrow">{project.category}</p>
       <h3>{project.name}</h3>
       <p className="project-card__description">{project.description}</p>
-      {project.id === 'aianalysis' && <a className="project-card__details" href="/aianalysis" target="_blank" rel="noopener noreferrer" title="Open AIAnalysis in a new browser tab">Open in new tab <ExternalLink size={14} /></a>}
+      {['aianalysis', 'aiops', 'core'].includes(project.id) && <a className="project-card__details" href={newTabUrl} target="_blank" rel="noopener noreferrer" title={`Open ${project.name} in a new browser tab`}>Open in new tab <ExternalLink size={14} /></a>}
       <div className="project-card__actions"><button className="project-card__link" type="button" onClick={() => onOpen(project)}>Open project <ArrowUpRight size={16} /></button>{project.details && <a className="project-card__details" href={`#details-${project.id}`} onClick={() => onDetails(project)}>Details</a>}</div>
     </article>
   );
@@ -274,13 +275,13 @@ export default function App() {
           {route === 'ailogscope' && <AILogScopeWorkbench profile={accountProfile} token={authToken} />}
           {['aiperf', 'aiprocmon'].includes(route) && <NativeToolWorkbench key={route} toolId={route} profile={accountProfile} token={authToken} />}
         </div> : isArtifactPage ? <ArtifactLibrary token={authToken} profile={accountProfile} /> : isAdminPage ? <AdminConsole token={authToken} /> : <>
-        <section className="core-workspace-heading"><div><p className="eyebrow">DataSnare Core</p><h1>Workspace</h1></div><a className="primary-button" href="/aianalysis" onClick={(event) => navigate('/aianalysis', event)}>Open AIAnalysis <ArrowUpRight size={16} /></a></section>
+        <section className="core-workspace-heading"><h1>Workspace</h1></section>
 
         {detailsProject ? <ProjectDetails project={detailsProject} onBack={() => { setDetailsProject(null); window.location.hash = 'projects'; }} /> : <><section className="section-heading" id="projects">
           <div><p className="eyebrow">Project registry</p><h2>Projects</h2></div>
         </section>
         <section className="project-grid" aria-label="DataSnare projects">
-          {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} onDetails={setDetailsProject} />)}
+          {projects.filter((project) => ['aianalysis', 'aiops', 'core'].includes(project.id)).map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} onDetails={setDetailsProject} />)}
         </section></>}
 
         <SuiteStatus profile={accountProfile} token={authToken} />
