@@ -19,6 +19,8 @@ const assets = [
   'process-map.js',
   'set-analysis-worker.js',
   'styles.css',
+  'suite-theme.js',
+  'suite-theme.css',
   'topology-window.js',
   'tuning.js',
   'watch.js',

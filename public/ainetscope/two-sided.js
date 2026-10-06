@@ -208,6 +208,7 @@ async function analyzeTwoSided(event) {
     const packetsB = await parseFile(fileB, false);
     const records = DataSnareTwoSidedMatch.correlate(packetsA, packetsB, { offsetMs, toleranceMs, hostA, hostB });
     Object.assign(twoSidedState, { packetsA, packetsB, records, offsetMs, page: 0, selected: -1 });
+    twoSidedState.sessionCoverage = 'full_metadata';
     twoSidedState.analysisContext = { hostA, hostB, toleranceMs, sources: [fileA, fileB].map((file, index) => ({
       side: index ? 'B' : 'A', name: file.name, size: file.size, lastModified: file.lastModified,
     })) };

@@ -17,6 +17,12 @@ function analyticsValue(value, unit = '') {
 function buildTwoSidedFindingsExport() {
   const records = twoSidedVisibleRecords().map(item => item.record);
   const metrics = DataSnareTwoSidedAnalytics.summarize(records, twoSidedState.packetsA, twoSidedState.packetsB, twoSidedState.offsetMs, twoSidedState.analysisContext || {});
+  const reduced = twoSidedState.sessionCoverage === 'matched_pairs_only';
+  if (reduced) {
+    metrics.loss = { overlap: false, overlapMs: null, onlyA: null, onlyB: null, withinA: null, withinB: null, senderOnlyAtoB: null, senderOnlyBtoA: null };
+    metrics.ambiguous = null;
+    for (const side of ['A', 'B']) metrics[`flow${side}`] = { zeroWindows: null, windowSamples: 0, flight: DataSnareTwoSidedAnalytics.stats([]), advertisedWindow: DataSnareTwoSidedAnalytics.stats([]), windowBasis: 'Unavailable: matched-only session' };
+  }
   const sources = twoSidedState.analysisContext?.sources || ['A', 'B'].map(side => {
     const file = $(`#twoSidedFile${side}`).files[0];
     return { side, name: file?.name || `System ${side}`, size: file?.size ?? null, lastModified: file?.lastModified ?? null };
@@ -26,6 +32,7 @@ function buildTwoSidedFindingsExport() {
     search: $('#twoSidedSearch').value.trim(), observations: records.length, pagination: 'all_filtered_observations',
     bOffsetMs: twoSidedState.offsetMs, hostA: twoSidedState.analysisContext?.hostA || '', hostB: twoSidedState.analysisContext?.hostB || '',
     toleranceMs: twoSidedState.analysisContext?.toleranceMs ?? null,
+    sessionCoverage: reduced ? 'matched_pairs_only' : 'full_metadata',
     jitterDefinition: 'population standard deviation of corrected matched intervals', percentileMethod: 'linear interpolation at (n-1)*p' };
   const evidenceFor = record => ({ sourceFile: sources[record?.packetA ? 0 : 1].name,
     packetNumber: (record?.packetA || record?.packetB)?.number ?? null,
@@ -47,7 +54,7 @@ function buildTwoSidedFindingsExport() {
       group.negative ? 'warning' : 'info', sample, group);
   }
   add('network.loss-diagnostics', 'Cross-capture visibility gaps',
-    `A-only ${metrics.loss.onlyA}; B-only ${metrics.loss.onlyB}; ambiguous ${metrics.ambiguous}. Confirmed drop location unavailable; missing counterparts are not proof of network loss.`, 'info', null, metrics.loss);
+    `A-only ${analyticsValue(metrics.loss.onlyA)}; B-only ${analyticsValue(metrics.loss.onlyB)}; ambiguous ${analyticsValue(metrics.ambiguous)}. Confirmed drop location unavailable; missing counterparts are not proof of network loss.`, 'info', null, metrics.loss);
   add('network.middlebox', 'Handshake option comparison',
     `${metrics.middlebox.handshakesA.length} A and ${metrics.middlebox.handshakesB.length} B SYN observations; ${metrics.middlebox.optionDifferences.length} differing matched handshake options.`, 'info');
   for (const difference of metrics.middlebox.optionDifferences.slice(0, 100)) {
@@ -57,11 +64,13 @@ function buildTwoSidedFindingsExport() {
     const values = metrics[`flow${side}`];
     const sample = records.find(record => record[`packet${side}`]?.tcpWindow === 0 && !['syn', 'syn-ack', 'rst'].includes(tcpSignalClass(record[`packet${side}`])));
     add('network.flow-control', `System ${side} flow-control observations`,
-      `${values.zeroWindows} zero-window advertisements; estimated peak outstanding sequence space ${analyticsValue(values.flight.max, 'bytes')}; window basis ${values.windowBasis}.`,
+      `${analyticsValue(values.zeroWindows)} zero-window advertisements; estimated peak outstanding sequence space ${analyticsValue(values.flight.max, 'bytes')}; window basis ${values.windowBasis}.`,
       values.zeroWindows ? 'warning' : 'info', sample, { zeroWindows: values.zeroWindows, peakFlightBytes: values.flight.max });
   }
   return { schema: TWO_SIDED_FINDINGS_SCHEMA, generatedAt: new Date().toISOString(),
-    tool: { name: 'AINetScope Two-Sided', version: '1.0.0' }, sources, scope, caveats: TWO_SIDED_ANALYTICS_CAVEATS, findings,
+    tool: { name: 'AINetScope Two-Sided', version: '1.0.0' }, sources, scope,
+    caveats: reduced ? [...TWO_SIDED_ANALYTICS_CAVEATS, 'Matched-only session: unmatched and ambiguous traffic was omitted. Visibility/loss and flow-control metrics cannot be established from this reduced dataset.'] : TWO_SIDED_ANALYTICS_CAVEATS,
+    findings,
     metrics: { ...metrics, middlebox: { handshakesA: metrics.middlebox.handshakesA.slice(0, 100), handshakesB: metrics.middlebox.handshakesB.slice(0, 100),
       handshakesTotalA: metrics.middlebox.handshakesA.length, handshakesTotalB: metrics.middlebox.handshakesB.length,
       differencesTotal: metrics.middlebox.optionDifferences.length,
@@ -69,7 +78,7 @@ function buildTwoSidedFindingsExport() {
 }
 
 function metricList(entries) {
-  return `<dl class="two-analytics-metrics">${entries.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd></div>`).join('')}</dl>`;
+  return `<dl class="two-analytics-metrics">${entries.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value === null || value === undefined ? 'Unavailable' : String(value))}</dd></div>`).join('')}</dl>`;
 }
 
 function showTwoSidedAnalytics() {
@@ -85,6 +94,7 @@ function showTwoSidedAnalytics() {
       ['p95 outstanding sequence bytes', analyticsValue(values.flight.p95, 'bytes')], ['Flight sample count', values.flight.count], ['Maximum observed window', analyticsValue(values.advertisedWindow.max, 'bytes')], ['Window basis', values.windowBasis]])}`;
   };
   $('#twoSidedAnalyticsBody').innerHTML = `<p class="two-analytics-scope">${metrics.total.toLocaleString()} filtered observations / ${metrics.matched.toLocaleString()} matched pairs / B offset ${report.scope.bOffsetMs} ms / all pages. Snapshot ${escapeHtml(report.generatedAt)}.</p>
+    ${report.scope.sessionCoverage === 'matched_pairs_only' ? '<p class="two-analytics-scope">Reduced session: only matched pairs were retained. Visibility/loss and flow-control metrics are unavailable; omitted handshakes cannot establish absent options. Relink originals for full analysis.</p>' : ''}
     <section class="two-analytics-section"><h3>Path Performance</h3><div class="two-analytics-table"><table><thead><tr><th>Direction</th><th>Samples</th><th>Mean ms</th><th>p95 ms</th><th>p99 ms</th><th>Jitter ms</th><th>Negative</th></tr></thead><tbody>${timing}</tbody></table></div><p>${escapeHtml(report.caveats[0])} Jitter is population standard deviation. Negative samples remain included; small-sample percentiles are descriptive.</p></section>
     <section class="two-analytics-section"><h3>Loss Diagnostics</h3>${metricList([['A-only observations', metrics.loss.onlyA], ['B-only observations', metrics.loss.onlyB], ['A-only in aligned overlap', metrics.loss.withinA], ['B-only in aligned overlap', metrics.loss.withinB], ['Sender seen / receiver missing: A to B', analyticsValue(metrics.loss.senderOnlyAtoB)], ['Sender seen / receiver missing: B to A', analyticsValue(metrics.loss.senderOnlyBtoA)], ['Ambiguous observations', metrics.ambiguous], ['Aligned overlap', analyticsValue(metrics.loss.overlapMs, 'ms')], ['Confirmed drop location', 'Unavailable']])}<p>${escapeHtml(report.caveats[1])} Sender-only counts identify possible path-or-capture visibility gaps between observation points, not confirmed drops. Matched-only filters hide visibility gaps.</p></section>
     <section class="two-analytics-section"><h3>Middlebox Impact</h3><p>${metrics.middlebox.differencesTotal} option differences across uniquely matched, complete SYN observations. At most 30 handshake rows per side shown.</p><div class="two-analytics-table"><table><thead><tr><th>Side</th><th>Frame</th><th>MSS</th><th>WScale shift</th><th>SACK</th><th>TCP timestamps</th></tr></thead><tbody>${options(metrics.middlebox.handshakesA, 'A')}${options(metrics.middlebox.handshakesB, 'B') || '<tr><td colspan="6">No B handshake options available</td></tr>'}</tbody></table></div><p>${escapeHtml(report.caveats[2])}</p></section>

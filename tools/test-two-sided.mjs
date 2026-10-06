@@ -78,6 +78,10 @@ try {
     assert.equal(records.find(record => record.direction === 'B to A').frameB, 3);
     await page.getByRole('button', { name: 'Analytics / Expert', exact: true }).click();
     await page.getByRole('dialog', { name: 'Two-Sided Analytics', exact: true }).waitFor();
+    await page.locator('.two-analytics-help summary').click();
+    assert.match(await page.locator('.two-analytics-help').textContent(), /population standard deviation/i);
+    assert.match(await page.locator('.two-analytics-help').textContent(), /Handshake not captured/i);
+    await page.locator('.two-analytics-help summary').click();
     assert.deepEqual(await page.locator('#twoSidedAnalyticsBody h3').allTextContents(),
       ['Path Performance', 'Loss Diagnostics', 'Middlebox Impact', 'Flow Control', 'Supporting Findings']);
     const snapshot = await page.evaluate(() => twoSidedAnalyticsSnapshot);
@@ -210,6 +214,25 @@ try {
     assert.equal(await fresh.evaluate(() => twoSidedAnalyticsSnapshot.scope.bOffsetMs), -90);
     await fresh.getByRole('button', { name: 'Close analytics', exact: true }).click();
     const savedSession = JSON.parse(await readFile(sessionPath, 'utf8'));
+    await page.getByRole('checkbox', { name: 'Two-Sided save: matched pairs only', exact: true }).check();
+    const reducedDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Save Session', exact: true }).click();
+    const reducedPath = join(output, `matched-only-session-${width}.json`);
+    await (await reducedDownload).saveAs(reducedPath);
+    const reducedText = await readFile(reducedPath, 'utf8');
+    const reduced = JSON.parse(reducedText);
+    assert.ok(reducedText.length < (await readFile(sessionPath, 'utf8')).length);
+    assert.equal(reduced.data.sessionCoverage, 'matched_pairs_only');
+    assert.deepEqual(reduced.data.packetsB.map(packet => packet.number), [1, 3]);
+    await fresh.locator('#sessionRestoreInput').setInputFiles(reducedPath);
+    await fresh.waitForFunction(() => twoSidedState.sessionCoverage === 'matched_pairs_only');
+    assert.equal(await fresh.evaluate(() => twoSidedAnnotations.deltas.B.get(3).toFixed(3)), '180.000');
+    await fresh.getByRole('button', { name: 'Analytics / Expert', exact: true }).click();
+    assert.equal(await fresh.evaluate(() => twoSidedAnalyticsSnapshot.scope.sessionCoverage), 'matched_pairs_only');
+    assert.equal(await fresh.evaluate(() => twoSidedAnalyticsSnapshot.metrics.loss.onlyA), null);
+    assert.equal(await fresh.evaluate(() => twoSidedAnalyticsSnapshot.metrics.flowA.flight.max), null);
+    assert.match(await fresh.locator('#twoSidedAnalyticsBody').textContent(), /Reduced session/);
+    await fresh.getByRole('button', { name: 'Close analytics', exact: true }).click();
     const relinkBytes = [
       [...pcap([{ ...request, time: 100 }, { ...reply, time: 100.205 }])],
       [...pcap([{ ...request, time: 100.105 }, { ...request, dst: '10.0.0.3', seq: 50, time: 100.12 }, { ...reply, time: 100.3 }])],
@@ -218,6 +241,8 @@ try {
       await relinkSessionFiles(metadata.map((item, index) => new File([new Uint8Array(bytes[index])], item.name, { lastModified: item.lastModified })));
     }, { metadata: savedSession.data.context.sources, bytes: relinkBytes });
     assert.match(await fresh.locator('#sessionStatus').textContent(), /Both original captures relinked/);
+    assert.equal(await fresh.evaluate(() => twoSidedState.sessionCoverage), 'full_metadata');
+    assert.equal(await fresh.evaluate(() => twoSidedState.packetsB.length), 3);
     assert.equal(await fresh.evaluate(() => twoSidedNote('B', 1)), 'B receive note');
     assert.ok(await fresh.evaluate(() => twoSidedFrameStates.B.marks.includes(3)));
     await fresh.close();

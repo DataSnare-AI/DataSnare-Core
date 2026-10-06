@@ -61,6 +61,7 @@
       if (!data.packets.length) throw new Error('Capture session has no packet metadata.');
     }
     if (result.mode === 'two-sided') {
+      if (data.sessionCoverage !== undefined && !['full_metadata', 'matched_pairs_only'].includes(data.sessionCoverage)) throw new Error('Invalid saved capture coverage.');
       data.packetsA = packets(data.packetsA); data.packetsB = packets(data.packetsB);
       if (!data.packetsA.length || !data.packetsB.length) throw new Error('Two-Sided session requires both packet lists.');
       if (!data.context || !Number.isFinite(data.offsetMs) || !Number.isFinite(data.context.toleranceMs) || data.context.toleranceMs < 0

@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "sync:ainetscope": "node tools/sync-ainetscope.mjs",
     "sync:native-tools": "node tools/sync-native-tools.mjs",
-    "test:browser": "node tools/test-timeline-viewport.mjs && node tools/test-airca-workbench.mjs && node tools/test-ainetscope-launch.mjs && node tools/test-native-tools.mjs && node tools/test-two-sided.mjs && node tools/test-packet-scroll.mjs && node tools/test-capture-launch.mjs && node tools/test-sessions.mjs"
+    "test:browser": "node tools/test-timeline-viewport.mjs && node tools/test-airca-workbench.mjs && node tools/test-ainetscope-launch.mjs && node tools/test-native-tools.mjs && node tools/test-two-sided.mjs && node tools/test-packet-scroll.mjs && node tools/test-capture-launch.mjs && node tools/test-sessions.mjs && node tools/test-ainetscope-theme.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.2.1",

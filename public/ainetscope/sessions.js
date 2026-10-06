@@ -58,13 +58,22 @@ function exportWorkspaceSession() {
     } else if (mode === 'two-sided') {
       if (!twoSidedState.packetsA.length || !twoSidedState.packetsB.length) throw new Error('Analyze both captures before saving.');
       name = 'two-sided';
-      data = { packetsA: sessionContract.packets(twoSidedState.packetsA), packetsB: sessionContract.packets(twoSidedState.packetsB),
+      const reduced = $('#sessionMatchedOnly').checked || twoSidedState.sessionCoverage === 'matched_pairs_only';
+      const pairs = twoSidedState.records.filter(record => record.status === 'matched');
+      if (reduced && !pairs.length) throw new Error('No matched pairs to save.');
+      const retained = { A: new Set(pairs.map(record => record.packetA.number)), B: new Set(pairs.map(record => record.packetB.number)) };
+      const selectedPackets = side => (side === 'A' ? twoSidedState.packetsA : twoSidedState.packetsB).filter(packet => !reduced || retained[side].has(packet.number));
+      const notes = side => Object.fromEntries(Object.entries(sessionNotes(twoSidedAnnotations.notes[side])).filter(([number]) => !reduced || retained[side].has(Number(number))));
+      const frames = side => { const saved = sessionFrames(twoSidedFrameStates[side]); return reduced ? { ...saved, marks: saved.marks.filter(number => retained[side].has(number)), referenceNumber: retained[side].has(saved.referenceNumber) ? saved.referenceNumber : null } : saved; };
+      data = { packetsA: sessionContract.packets(selectedPackets('A')), packetsB: sessionContract.packets(selectedPackets('B')),
+        sessionCoverage: reduced ? 'matched_pairs_only' : 'full_metadata',
+        capturedDeltas: reduced ? { A: [...twoSidedAnnotations.deltas.A].filter(([number]) => retained.A.has(number)), B: [...twoSidedAnnotations.deltas.B].filter(([number]) => retained.B.has(number)) } : null,
         context: twoSidedState.analysisContext, offsetMs: twoSidedState.offsetMs,
-        notes: { A: sessionNotes(twoSidedAnnotations.notes.A), B: sessionNotes(twoSidedAnnotations.notes.B) },
-        frames: { A: sessionFrames(twoSidedFrameStates.A), B: sessionFrames(twoSidedFrameStates.B) },
+        notes: { A: notes('A'), B: notes('B') },
+        frames: { A: frames('A'), B: frames('B') },
         view: { connection: $('#twoSidedConnection').value, context: $('#twoSidedContext').checked, utc: $('#twoSidedUtc').checked,
           status: $('#twoSidedObservationFilter').value, matchedOnly: $('#twoSidedMatchedOnly').getAttribute('aria-pressed') === 'true',
-          search: $('#twoSidedSearch').value, page: twoSidedState.page, selected: twoSidedState.selected,
+          search: $('#twoSidedSearch').value, page: reduced ? 0 : twoSidedState.page, selected: reduced ? -1 : twoSidedState.selected,
           pageSize: twoSidedPageSize(), scrollTop: $('#twoSidedScroll').scrollTop, scrollLeft: $('#twoSidedScroll').scrollLeft } };
     } else {
       if (!state.packets.length) throw new Error('No individual capture to save.');
@@ -78,12 +87,13 @@ function exportWorkspaceSession() {
           listHeight: workbenchLayout.listHeight, detailRatio: workbenchLayout.detailRatio,
           streamWidth: $('#workbenchGrid').style.getPropertyValue('--stream-width') } };
     }
+    data.skin = document.documentElement.dataset.skin || 'modern';
     const json = sessionContract.encode(mode, data, getActiveAnalysisProfile());
     const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url;
     link.download = `${name.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 80)}.ainetscope-session.json`;
     link.click(); URL.revokeObjectURL(url);
-    $('#sessionStatus').textContent = `Saved ${mode} session. Keep the original captures for byte inspection and relinking.`;
+    $('#sessionStatus').textContent = `Saved ${mode} session${data.sessionCoverage === 'matched_pairs_only' ? ' (matched pairs only; omitted traffic cannot support loss/flow conclusions)' : ''}. Keep originals for relinking.`;
   } catch (error) { showToast(`Session save failed: ${error.message}`); }
 }
 
@@ -167,9 +177,13 @@ function restoreTwoSidedData(data) {
   const records = DataSnareTwoSidedMatch.correlate(data.packetsA, data.packetsB, { offsetMs: data.offsetMs,
     toleranceMs: context.toleranceMs, hostA: context.hostA || '', hostB: context.hostB || '' });
   Object.assign(twoSidedState, { packetsA: data.packetsA, packetsB: data.packetsB, records,
+    sessionCoverage: data.sessionCoverage === 'matched_pairs_only' ? 'matched_pairs_only' : 'full_metadata',
     offsetMs: data.offsetMs, analysisContext: context, page: Math.max(0, Number(data.view?.page) || 0), selected: Number.isInteger(data.view?.selected) ? data.view.selected : -1 });
   ['A', 'B'].forEach((side, index) => {
     prepareTwoSidedAnnotations(side, context.sources[index], side === 'A' ? data.packetsA : data.packetsB);
+    if (twoSidedState.sessionCoverage === 'matched_pairs_only' && Array.isArray(data.capturedDeltas?.[side])) {
+      twoSidedAnnotations.deltas[side] = new Map(data.capturedDeltas[side].filter(entry => Array.isArray(entry) && Number.isSafeInteger(entry[0]) && (entry[1] === null || Number.isFinite(entry[1]))));
+    }
     twoSidedAnnotations.notes[side] = sessionNotes(data.notes?.[side]);
     twoSidedFrameStates[side] = sessionFrames(data.frames?.[side]);
     localStorage.setItem(twoSidedAnnotations.keys[side], JSON.stringify(twoSidedAnnotations.notes[side]));
@@ -205,12 +219,14 @@ async function restoreWorkspaceSession(file) {
     const session = sessionContract.decode(await file.text());
     if (!confirm(`Restore ${session.mode} session? This replaces the current ${session.mode} workspace. Save current work first.`)) return;
     setSessionProfile(session.profile);
+    applyAINetScopeTheme(session.data.skin || 'modern', true);
     if (session.mode === 'standard') restoreStandardData(session.data);
     else if (session.mode === 'set') restoreSetData(session.data);
     else restoreTwoSidedData(session.data);
     $('#sessionRelinkButton').disabled = false;
     $('#sessionResumeButton').disabled = true;
-    $('#sessionStatus').textContent = `Restored ${session.mode} session: metadata only. Relink original captures for raw bytes or unfinished work. Notes may contain sensitive investigation data.`;
+    $('#sessionMatchedOnly').checked = session.mode === 'two-sided' && twoSidedState.sessionCoverage === 'matched_pairs_only';
+    $('#sessionStatus').textContent = `Restored ${session.mode} session: ${session.mode === 'two-sided' && twoSidedState.sessionCoverage === 'matched_pairs_only' ? 'matched pairs only; unmatched/ambiguous traffic omitted' : 'metadata only'}. Relink originals for full evidence. Notes may contain sensitive data.`;
   } catch (error) { showToast(`Session restore failed: ${error.message}`); }
 }
 
@@ -245,11 +261,21 @@ async function relinkSessionFiles(files) {
       const sources = context.sources.map(metadata => sessionContract.matches(metadata, files));
       if (sources.some(matches => matches.length !== 1)) throw new Error('Select both original captures with unique matching name, size and modification time.');
       const packetsA = await parseFile(sources[0][0], false); const packetsB = await parseFile(sources[1][0], false);
-      if (captureFingerprint(packetsA, context.sources[0].name) !== captureFingerprint(twoSidedState.packetsA, context.sources[0].name)
-        || captureFingerprint(packetsB, context.sources[1].name) !== captureFingerprint(twoSidedState.packetsB, context.sources[1].name)) throw new Error('Capture metadata does not match the session.');
+      const verify = (full, saved, name) => {
+        if (twoSidedState.sessionCoverage !== 'matched_pairs_only') return captureFingerprint(full, name) === captureFingerprint(saved, name);
+        const indexed = new Map(full.map(packet => [packet.number, packet]));
+        return saved.every(packet => { const original = indexed.get(packet.number); return original && ['timestamp', 'length', 'seq', 'ack', 'src', 'dst', 'payloadLength'].every(key => original[key] === packet[key]); });
+      };
+      if (!verify(packetsA, twoSidedState.packetsA, context.sources[0].name) || !verify(packetsB, twoSidedState.packetsB, context.sources[1].name)) throw new Error('Capture metadata does not match the session.');
       Object.assign(twoSidedState, { packetsA, packetsB, records: DataSnareTwoSidedMatch.correlate(packetsA, packetsB,
         { offsetMs: twoSidedState.offsetMs, toleranceMs: context.toleranceMs, hostA: context.hostA, hostB: context.hostB }) });
       sources.forEach((matches, index) => { const transfer = new DataTransfer(); transfer.items.add(matches[0]); $(`#twoSidedFile${index ? 'B' : 'A'}`).files = transfer.files; });
+      twoSidedState.sessionCoverage = 'full_metadata'; $('#sessionMatchedOnly').checked = false;
+      ['A', 'B'].forEach((side, index) => {
+        const notes = twoSidedAnnotations.notes[side]; const frames = twoSidedFrameStates[side];
+        prepareTwoSidedAnnotations(side, sources[index][0], index ? packetsB : packetsA);
+        twoSidedAnnotations.notes[side] = notes; twoSidedFrameStates[side] = frames;
+      });
       renderTwoSided(); $('#sessionStatus').textContent = 'Both original captures relinked; notes, marks and clock context preserved.';
     }
   } catch (error) { showToast(`Relink failed: ${error.message}`); }

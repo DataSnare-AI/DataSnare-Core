@@ -1,0 +1,38 @@
+:root[data-skin="light"] { --paper: #f5f7fa; --panel: #fff; --ink: #1f2933; --muted: #566573; --line: #ccd5df; --green: #176648; --blue: #1766ac; }
+:root[data-skin="dark"] { --paper: #171c20; --panel: #222a30; --ink: #edf2f5; --muted: #b2bec8; --line: #47555f; --green: #7ed3aa; --blue: #83bef2; --gold: #f0c36b; --coral: #fa9985; }
+.suite-theme-picker { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; align-self: center; }
+.suite-theme-picker button { padding: 8px; border: 0; border-right: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 11px; }
+.suite-theme-picker button:last-child { border-right: 0; }
+.suite-theme-picker button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+:root[data-skin="dark"] body::before, :root[data-skin="light"] body::before { opacity: .08; }
+:root[data-skin="dark"] .capture-action-group { border-color: #81978d; background: rgba(126,211,170,.06); }
+:root[data-skin="dark"] input, :root[data-skin="dark"] select, :root[data-skin="dark"] textarea,
+:root[data-skin="dark"] dialog, :root[data-skin="dark"] .two-sided-scroll, :root[data-skin="dark"] .two-sided-packet,
+:root[data-skin="dark"] .two-sided-link, :root[data-skin="dark"] .field-context-menu,
+:root[data-skin="dark"] .field-context-menu button { background: var(--panel); color: var(--ink); border-color: var(--line); }
+:root[data-skin="dark"] .workbench-pane-title, :root[data-skin="dark"] .workbench-field-filters,
+:root[data-skin="dark"] .two-sided-heading, :root[data-skin="dark"] .two-sided-columns,
+:root[data-skin="dark"] th { background: #303b43; color: var(--ink); }
+:root[data-skin="dark"] .two-sided-columns span, :root[data-skin="dark"] .two-sided-packet > span,
+:root[data-skin="dark"] .two-sided-packet > time, :root[data-skin="dark"] .two-sided-details dd { color: var(--ink); }
+:root[data-skin="dark"] .two-sided-caveat, :root[data-skin="dark"] .two-sided-missing, :root[data-skin="dark"] .two-sided-details dt { color: var(--muted); }
+:root[data-skin="dark"] .two-sided-packet:hover, :root[data-skin="dark"] .two-sided-link:hover,
+:root[data-skin="dark"] .capture-choice:hover, :root[data-skin="dark"] .two-sided-row--selected { background: #304b5b; }
+:root[data-skin="dark"] .two-sided-packet-line.marked { background: #554627; }
+:root[data-skin="dark"] .two-sided-packet-line.time-reference { background: #62472f; }
+:root[data-skin="dark"] .two-sided-packet-line.marked .two-sided-packet,
+:root[data-skin="dark"] .two-sided-packet-line.time-reference .two-sided-packet { background: transparent; }
+:root[data-skin="dark"] .two-sided-row--ambiguous .two-sided-link { background: #614818; color: #ffe1a3; }
+:root[data-skin="dark"] .two-sided-row--ambiguous .two-sided-link b { color: #ffe1a3; }
+:root[data-skin="dark"] .two-sided-flags--syn, :root[data-skin="dark"] .tcp-signal--syn { color: #83bef2; }
+:root[data-skin="dark"] .two-sided-flags--syn-ack, :root[data-skin="dark"] .tcp-signal--syn-ack { color: #89daa0; }
+:root[data-skin="dark"] .two-sided-flags--fin, :root[data-skin="dark"] .tcp-signal--fin { color: #ffb66d; }
+:root[data-skin="dark"] .two-sided-flags--fin-ack, :root[data-skin="dark"] .tcp-signal--fin-ack { color: #80d5da; }
+:root[data-skin="dark"] .two-sided-flags--rst, :root[data-skin="dark"] .tcp-signal--rst { color: #ffb3ae; background: #642d2a; }
+:root[data-skin="dark"] .workbench-table tbody tr.selected { background: #304b5b; }
+:root[data-skin="dark"] .workbench-table tbody tr.time-reference { background: #62472f; }
+:root[data-skin="dark"] .workbench-table tbody tr.flagged { color: #ffb3ae; }
+:root[data-skin="dark"] .byte-hex, :root[data-skin="dark"] .byte-ascii, :root[data-skin="dark"] .tree-field { color: var(--ink); }
+:root[data-skin="dark"] .button-primary { background: #28634e; color: #fff; border-color: #83b79f; }
+:root[data-skin="dark"] .button-set { background: #303b43; color: var(--ink); border-color: #81939f; }
+:root[data-skin="dark"] .toast { background: #303b43; color: var(--ink); border: 1px solid var(--line); }

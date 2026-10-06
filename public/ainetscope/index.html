@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="suite-theme.css">
 </head>
 <body>
   <header class="topbar">
@@ -18,6 +19,7 @@
     </a>
     <nav class="top-actions" aria-label="Capture actions">
       <a class="button button-quiet" id="coreReturnLink" href="/aianalysis" hidden>Back to AIAnalysis</a>
+      <div class="suite-theme-picker" role="group" aria-label="Suite palette"><button type="button" data-suite-theme="modern" aria-pressed="true">Modern</button><button type="button" data-suite-theme="dark" aria-pressed="false">Dark</button><button type="button" data-suite-theme="light" aria-pressed="false">Light</button></div>
       <button class="button button-quiet" id="demoButton" type="button">Load demo</button>
       <input id="baselineInput" type="file" accept=".pcap,.pcapng,.cap" hidden>
       <button class="button button-set" id="settingsButton" type="button" aria-label="Capture capacity settings" title="Capture capacity settings"><span aria-hidden="true">⚙</span><span class="button-label">Settings</span></button>
@@ -41,6 +43,7 @@
   <main>
     <div class="session-toolbar" role="group" aria-label="Session management">
       <button class="button button-quiet" id="sessionSaveButton" type="button">Save Session</button>
+      <label><input id="sessionMatchedOnly" type="checkbox"> Two-Sided save: matched pairs only</label>
       <button class="button button-quiet" id="sessionRestoreButton" type="button">Restore Session</button>
       <input id="sessionRestoreInput" type="file" accept=".json,application/json" hidden>
       <button class="button button-quiet" id="sessionRelinkButton" type="button" disabled>Relink originals</button>
@@ -537,6 +540,25 @@
   <dialog id="twoSidedAnalyticsDialog" class="two-analytics-dialog" aria-labelledby="twoSidedAnalyticsTitle">
     <header class="two-analytics-heading"><h2 id="twoSidedAnalyticsTitle">Two-Sided Analytics</h2><div><button id="twoSidedAnalyticsExport" class="button button-primary" type="button">Export findings JSON</button><button id="twoSidedAnalyticsClose" class="button button-quiet" type="button">Close analytics</button></div></header>
     <div id="twoSidedAnalyticsBody"></div>
+    <details class="two-analytics-help"><summary>Metric help: definitions and unavailable values</summary>
+      <p>Unavailable is not zero, healthy, or an application failure. It means the current evidence cannot support that metric. Analytics is a snapshot of all filtered observations; reopen it after changing filters or re-analyzing clock settings.</p>
+      <div class="two-analytics-table"><table><thead><tr><th>Metric</th><th>Definition</th><th>Why unavailable or limited</th></tr></thead><tbody>
+        <tr><th>Samples / mean / p95 / p99</th><td>Count, average and interpolated percentiles of matched capture intervals in milliseconds, separated by direction.</td><td>No matched samples in that direction under current filters. Without both local IPs, use Unknown direction / B minus A. Small sample tail percentiles are descriptive only.</td></tr>
+        <tr><th>Jitter</th><td>Population standard deviation of the matched intervals, in milliseconds.</td><td>No eligible timing samples. A single sample gives zero but does not establish stable path behavior.</td></tr>
+        <tr><th>Negative intervals</th><td>Number of timing samples below zero; retained in statistics.</td><td>Check residual clock offset/drift, endpoint identity and capture location. Negative is not physical negative transit.</td></tr>
+        <tr><th>A-only / B-only / ambiguous</th><td>Observations with no unique counterpart; repeated TCP signatures are ambiguous, not diagnosed retransmissions.</td><td>Filters or a matched-only session omit these observations. Capture loss, offload, NAT and incomplete coverage can also prevent matching.</td></tr>
+        <tr><th>Aligned overlap</th><td>Intersection of both captured time ranges after B clock correction.</td><td>No overlapping ranges, missing timestamps, or reduced session coverage. It does not prove both captures recorded every packet.</td></tr>
+        <tr><th>Sender seen / receiver missing</th><td>Sender-only observations inside aligned overlap, in the identified direction.</td><td>Requires both endpoint IPs and full capture coverage. This is a visibility gap, not confirmed loss.</td></tr>
+        <tr><th>Confirmed drop location</th><td>A device or path point proven to drop traffic.</td><td>Intentionally unavailable from these two captures alone; additional observation points or device evidence are required.</td></tr>
+        <tr><th>MSS / WScale</th><td>Maximum segment size offered in SYN; window-scale exponent (receive window multiplier 2^shift).</td><td>Handshake not captured, option not advertised, or incomplete option bytes. WScale 0 is valid. Both offers are needed for negotiated scaling.</td></tr>
+        <tr><th>SACK / TCP timestamps</th><td>Whether a captured handshake advertises these TCP options.</td><td>Missing/incomplete handshake. No means a complete handshake did not advertise the option, rather than unavailable.</td></tr>
+        <tr><th>Option differences</th><td>Changed options across a uniquely matched complete handshake.</td><td>No comparable handshake pairs; zero differences does not rule out a middlebox.</td></tr>
+        <tr><th>Zero windows</th><td>Observed zero receive-window advertisements, excluding SYN and RST.</td><td>No usable window observations, filtered-out packets, or reduced session coverage. Zero observations is not proof that no stalls occurred.</td></tr>
+        <tr><th>Outstanding sequence bytes / flight samples</th><td>Handshake-anchored sequence high-water minus cumulative ACK, including SYN/FIN; peak and p95 over eligible sends.</td><td>Missing SYN, sequence data or ACK context; matched-only sessions omit necessary context. Gaps/reordering can inflate estimates; not exact application payload bytes.</td></tr>
+        <tr><th>Maximum window / window basis</th><td>Largest observed advertised window; scaled when both complete scale offers exist, otherwise raw.</td><td>No TCP windows. Raw values cannot be assumed to be the negotiated receive capacity.</td></tr>
+      </tbody></table></div>
+      <p>Start with All observations and clear search when investigating unavailable metrics. Include connection context as needed. Changing local IPs or B clock offset requires re-analysis; display UTC/local and T0 references do not change analytics.</p>
+    </details>
   </dialog>
   <dialog id="captureChooser" class="capture-chooser">
     <div class="panel-heading"><h2>Open capture</h2><button id="captureChooserClose" class="button button-quiet" type="button">Cancel</button></div>
@@ -549,6 +571,7 @@
     <p id="captureLaunchName"></p>
     <button id="captureLaunchOpen" class="button button-primary" type="button">Open in New Window</button>
   </dialog>
+  <script src="suite-theme.js"></script>
   <script src="app.js"></script>
   <script src="tuning.js"></script>
   <script src="expert.js"></script>
