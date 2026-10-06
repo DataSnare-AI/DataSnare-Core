@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import aiohttp
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from app.repositories.partner_connections import PartnerConnectionRecord
@@ -18,6 +19,7 @@ from app.services.ninjaone import NinjaOneError, NinjaOneOAuthConfig, exchange_a
 
 router = APIRouter(prefix="/api/tenants/{tenant_id}/integrations/ninjaone", tags=["NinjaOne"])
 callback_router = APIRouter(prefix="/api/integrations/ninjaone", tags=["NinjaOne"])
+bearer_auth = HTTPBearer(auto_error=False)
 
 
 class AuthorizationRequest(BaseModel):
@@ -51,7 +53,11 @@ def _configured_redirect_uri() -> str:
 
 
 @router.get("/connection")
-async def get_connection(tenant_id: int, request: Request):
+async def get_connection(
+    tenant_id: int,
+    request: Request,
+    _credentials: HTTPAuthorizationCredentials | None = Depends(bearer_auth),
+):
     await _require_tenant_admin(tenant_id, request, "tenant.config.view")
     record = await request.app.state.partner_connections.get(tenant_id, "ninjaone")
     if not record:
@@ -74,6 +80,7 @@ async def begin_authorization(
     tenant_id: int,
     body: AuthorizationRequest,
     request: Request,
+    _credentials: HTTPAuthorizationCredentials | None = Depends(bearer_auth),
 ):
     await _require_tenant_admin(tenant_id, request, "tenant.config.edit")
     redirect_uri = _configured_redirect_uri()

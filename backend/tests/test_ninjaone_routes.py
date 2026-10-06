@@ -20,6 +20,16 @@ def test_connection_requires_actor():
     assert response.status_code == 401
 
 
+def test_ninjaone_tenant_routes_advertise_bearer_auth_in_openapi():
+    schema = create_app().openapi()
+    authorize = schema["paths"]["/api/tenants/{tenant_id}/integrations/ninjaone/authorize"]["post"]
+    connection = schema["paths"]["/api/tenants/{tenant_id}/integrations/ninjaone/connection"]["get"]
+
+    assert schema["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+    assert authorize["security"] == [{"HTTPBearer": []}]
+    assert connection["security"] == [{"HTTPBearer": []}]
+
+
 def test_authorize_stores_redacted_tenant_connection_and_returns_oauth_url(monkeypatch):
     monkeypatch.setenv("CORE_STORAGE_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.setenv(
