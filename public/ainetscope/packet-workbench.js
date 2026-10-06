@@ -314,7 +314,8 @@ function refreshPacketWorkbench(preferredNumber = null) {
       state.backgroundWorkbenchQueued = false;
       $("#workbenchCaptureMeta").textContent = `${state.packets.length.toLocaleString()} packets · packet workbench ready`;
       $("#timeDisplayMode").value = currentFrameState().timeMode;
-      const protocols = [...new Set(state.packets.map(packet => packet.protocol))].sort(); const current = $("#workbenchProtocolFilter").value;
+      const protocols = [...new Set(state.packets.map(packet => packet.protocol))].sort(); const current = workbenchState.sessionProtocol || $("#workbenchProtocolFilter").value;
+      workbenchState.sessionProtocol = null;
       $("#workbenchProtocolFilter").innerHTML = `<option value="all">All protocols</option>${protocols.map(protocol => `<option value="${escapeHtml(protocol)}">${escapeHtml(protocol)}</option>`).join("")}`;
       $("#workbenchProtocolFilter").value = protocols.includes(current) ? current : "all";
       renderWorkbenchList(preferredNumber);
@@ -322,7 +323,8 @@ function refreshPacketWorkbench(preferredNumber = null) {
     return;
   }
   $("#timeDisplayMode").value = currentFrameState().timeMode;
-  const protocols = [...new Set(state.packets.map(packet => packet.protocol))].sort(); const current = $("#workbenchProtocolFilter").value;
+  const protocols = [...new Set(state.packets.map(packet => packet.protocol))].sort(); const current = workbenchState.sessionProtocol || $("#workbenchProtocolFilter").value;
+  workbenchState.sessionProtocol = null;
   $("#workbenchProtocolFilter").innerHTML = `<option value="all">All protocols</option>${protocols.map(protocol => `<option value="${escapeHtml(protocol)}">${escapeHtml(protocol)}</option>`).join("")}`;
   $("#workbenchProtocolFilter").value = protocols.includes(current) ? current : "all";
   renderWorkbenchList(preferredNumber);
@@ -334,13 +336,18 @@ function renderWorkbenchList(preferredNumber = null, renderFilterControls = true
   if (preferredNumber && workbenchState.packets.some(packet => packet.number === preferredNumber)) workbenchState.selectedNumber = preferredNumber;
   if (!workbenchState.packets.some(packet => packet.number === workbenchState.selectedNumber)) workbenchState.selectedNumber = workbenchState.packets[0]?.number || null;
   const listPane = $("#workbenchListPane");
+  let sessionScrollTop = null;
+  if (Number.isFinite(workbenchState.sessionListTop)) {
+    sessionScrollTop = Math.max(0, Math.min(workbenchState.sessionListTop, workbenchState.packets.length * workbenchState.rowHeight));
+    workbenchState.sessionListTop = null;
+  }
   if (preferredNumber) {
     const preferredIndex = workbenchState.packets.findIndex(packet => packet.number === preferredNumber);
     if (preferredIndex >= 0) listPane.scrollTop = Math.max(0, preferredIndex * workbenchState.rowHeight - (listPane.clientHeight - workbenchState.rowHeight) / 2);
   }
-  const renderScrollTop = listPane.scrollTop;
+  const renderScrollTop = sessionScrollTop ?? listPane.scrollTop;
   const totalRows = workbenchState.packets.length;
-  const firstVisible = Math.max(0, Math.floor(listPane.scrollTop / workbenchState.rowHeight) - 20);
+  const firstVisible = Math.max(0, Math.floor(renderScrollTop / workbenchState.rowHeight) - 20);
   const visible = workbenchState.packets.slice(firstVisible, firstVisible + workbenchState.maxRows);
   const processColumns = typeof processWorkbenchColumns === "function" ? processWorkbenchColumns() : [];
   const columns = [...workbenchBaseColumns, ...processColumns];
@@ -353,6 +360,10 @@ function renderWorkbenchList(preferredNumber = null, renderFilterControls = true
   const bottomHeight = Math.max(0, (totalRows - firstVisible - visible.length) * workbenchState.rowHeight);
   $("#workbenchRows").innerHTML = `${topSpacer}${rows || `<tr><td colspan="${columns.length + workbenchState.columns.length}">No matching packets</td></tr>`}${bottomHeight ? `<tr class="workbench-virtual-spacer" style="height:${bottomHeight}px">${spacer}</tr>` : ""}`;
   listPane.scrollTop = renderScrollTop;
+  if (Number.isFinite(workbenchState.sessionListLeft)) {
+    listPane.scrollLeft = workbenchState.sessionListLeft;
+    workbenchState.sessionListLeft = null;
+  }
   const fieldFilterStatus = workbenchState.fieldFilters.length ? ` · ${workbenchState.fieldFilters.length} field filter${workbenchState.fieldFilters.length === 1 ? "" : "s"}` : "";
   const markStatus = frameState.marks.length ? ` · ${frameState.marks.length} marked${frameState.referenceNumber ? ` · T0 frame ${frameState.referenceNumber}` : ""}` : "";
   $("#workbenchStatus").innerHTML = `<span>${totalRows ? `${firstVisible + 1}-${Math.min(firstVisible + visible.length, totalRows)} of ` : ""}${totalRows.toLocaleString()} matching packets${fieldFilterStatus}${markStatus}</span>`;

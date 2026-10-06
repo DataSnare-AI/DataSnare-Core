@@ -34,4 +34,10 @@ assert reopened.json()["evidence"] == saved.json()["evidence"]
 if tool_id == "aiperf":
     assert any(event["evidence"].get("counter") or event["evidence"].get("metric")
                for event in reopened.json()["evidence"][0]["events"])
+if uploaded.json()["evidence"]["source_schema"] == "datasnare-ainetscope/two-sided-findings-v1":
+    snapshot = reopened.json()["evidence"][0]
+    assert snapshot["analytics"]["scope"]["bOffsetMs"] == -100
+    assert snapshot["analytics"]["metrics"]["matched"] == 2
+    assert snapshot["events"][0]["evidence"]["frameB"] == 1
+    assert any(event["timestamp"] is None for event in events)
 print(f"PASS {tool_id}: actual export API upload, catalog, saved case and reopen ({len(events)} events)")

@@ -24,7 +24,11 @@ const assets = [
   'watch.js',
   'two-sided-match.js',
   'two-sided.js',
+  'two-sided-analytics.js',
+  'two-sided-dashboard.js',
   'capture-launch.js',
+  'session-contract.js',
+  'sessions.js',
 ];
 
 await mkdir(destinationRoot, { recursive: true });

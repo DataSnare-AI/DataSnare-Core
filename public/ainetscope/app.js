@@ -715,6 +715,27 @@ function parseFrame(frame, number, timestamp, linkType, options = {}) {
     const headerLength = dataOffset;
     packet.tcpFlagsValue = bytes[offset + 13];
     packet.tcpWindow = view.getUint16(offset + 14);
+    packet.tcpOptions = { complete: headerLength >= 20 && offset + headerLength <= bytes.length,
+      mss: null, windowScale: null, sackPermitted: false, timestamps: false };
+    const optionEnd = Math.min(bytes.length, offset + headerLength);
+    for (let optionOffset = offset + 20; optionOffset < optionEnd;) {
+      const kind = bytes[optionOffset];
+      if (kind === 0) break;
+      if (kind === 1) { optionOffset++; continue; }
+      const size = bytes[optionOffset + 1];
+      if (!size || size < 2 || optionOffset + size > optionEnd) { packet.tcpOptions.complete = false; break; }
+      if ((kind === 2 && size !== 4) || (kind === 3 && size !== 3) || (kind === 4 && size !== 2) || (kind === 8 && size !== 10)) {
+        packet.tcpOptions.complete = false;
+      }
+      if (kind === 2 && size === 4) packet.tcpOptions.mss = view.getUint16(optionOffset + 2);
+      if (kind === 3 && size === 3) {
+        packet.tcpOptions.windowScale = Math.min(14, bytes[optionOffset + 2]);
+        if (bytes[optionOffset + 2] > 14) packet.tcpOptions.complete = false;
+      }
+      if (kind === 4 && size === 2) packet.tcpOptions.sackPermitted = true;
+      if (kind === 8 && size === 10) packet.tcpOptions.timestamps = true;
+      optionOffset += size;
+    }
     packet.tcpChecksum = view.getUint16(offset + 16);
     packet.tcpUrgent = view.getUint16(offset + 18);
     packet.payloadLength = Math.max(0, bytes.length - offset - headerLength);
@@ -1382,6 +1403,7 @@ async function openFile(file) {
   try {
     const packets = await parseFile(file, true, { compactThreshold: SINGLE_CAPTURE_COMPACT_THRESHOLD });
     if (typeof showCoreMode === "function") showCoreMode();
+    state.captureSource = { name: file.name, size: file.size, lastModified: file.lastModified, path: file.webkitRelativePath || file.name };
     loadPackets(packets, file.name, `${file.webkitRelativePath || file.name}:${file.size}:${file.lastModified}`);
     const slowFileMessage = packets.length > 25000 ? "Parsed locally; the summary and packet workbench are loading in the background." : `Parsed ${file.name} locally.`;
     showToast(slowFileMessage);

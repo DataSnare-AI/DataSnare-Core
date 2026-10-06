@@ -24,6 +24,7 @@ ANALYSIS_PLUGIN_IDS = {"airca", "ailogscope", "aiperf", "aiprocmon", "ainetscope
 PREVIEW_EVIDENCE_FIELDS = (
     "sourceFile", "sourceLine", "packetNumber", "counter", "threshold", "direction", "observed",
     "sampleCount", "start", "end", "metric", "value", "xmlElement", "ordinal",
+    "sourceA", "sourceB", "frameA", "frameB", "bOffsetMs",
 )
 
 
@@ -139,6 +140,7 @@ def _evidence_snapshot(job) -> dict:
         **_event_time_range(envelope),
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "events": events,
+        "analytics": (envelope.get("metadata") or {}).get("analytics"),
     }
 
 

@@ -38,6 +38,9 @@ body::before {
 .capture-choice { display: block; width: 100%; padding: 12px; border: 0; border-bottom: 1px solid var(--line); text-align: left; background: var(--panel); color: var(--ink); overflow-wrap: anywhere; cursor: pointer; }
 .capture-choice:hover { background: #dfedf4; }
 .capture-chooser .button-quiet { display: inline-flex; }
+.session-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.session-toolbar .button-quiet { display: inline-flex; }
+.session-toolbar [role=status] { flex: 1 1 260px; font-size: 11px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .brand { color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 800; }
 .brand-mark { width: 26px; height: 24px; display: flex; align-items: end; gap: 3px; }
 .brand-mark i { display: block; width: 6px; background: var(--green); }
@@ -45,7 +48,7 @@ body::before {
 .brand-mark i:nth-child(2) { height: 22px; }
 .brand-mark i:nth-child(3) { height: 15px; background: var(--coral); }
 .top-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.two-sided { margin: 24px auto; width: min(2400px, calc(100% - 32px)); }
+.two-sided { margin: 24px auto; width: min(3400px, calc(100% - 32px)); }
 .two-sided-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 12px; align-items: end; padding: 16px 0; }
 .two-sided-controls label, .two-sided-toolbar label { display: grid; gap: 6px; font: 12px var(--sans); min-width: 0; }
 .two-sided-controls input, .two-sided-toolbar input, .two-sided-toolbar select { min-width: 0; max-width: 100%; padding: 8px; border: 1px solid #a6b5af; border-radius: 3px; background: #fff; color: #17211d; }
@@ -80,16 +83,34 @@ body::before {
 .two-sided-details h3 { font-size: 16px; }
 .two-sided-details dt { color: #53645a; font-size: 11px; margin-top: 10px; }
 .two-sided-details dd { margin: 4px 0; overflow-wrap: anywhere; font: 11px/1.5 var(--mono); }
-.two-sided-heading, .two-sided-row, .two-sided-columns { grid-template-columns: minmax(920px, 1fr) 210px minmax(920px, 1fr); min-width: 2050px; }
+.two-analytics-dialog { width: min(1200px, calc(100% - 24px)); max-height: 90vh; overflow: auto; padding: 20px; background: var(--panel); color: var(--ink); }
+.two-analytics-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.two-analytics-heading h2 { font-size: 22px; margin: 0; }
+.two-analytics-heading > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.two-analytics-dialog .button-quiet { display: inline-flex; }
+.two-analytics-scope, .two-analytics-section p { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.two-analytics-section { padding: 18px 0; border-top: 1px solid var(--line); }
+.two-analytics-section h3 { font-size: 18px; margin: 0 0 12px; }
+.two-analytics-section h4 { font-size: 14px; margin: 12px 0; }
+.two-analytics-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 14px; }
+.two-analytics-metrics dt { font-size: 11px; color: var(--muted); }
+.two-analytics-metrics dd { margin: 5px 0; font: 600 16px var(--mono); overflow-wrap: anywhere; }
+.two-analytics-table { max-width: 100%; overflow: auto; }
+.two-analytics-table table { min-width: 650px; font: 11px var(--mono); }
+.two-analytics-finding { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); padding: 12px 0; cursor: pointer; }
+.two-analytics-finding b, .two-analytics-finding span { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.two-analytics-finding span { margin-top: 5px; color: var(--muted); }
+.two-analytics-finding:disabled { cursor: default; }
+.two-sided-heading, .two-sided-row, .two-sided-columns { grid-template-columns: minmax(1404px, 1fr) 210px minmax(1404px, 1fr); min-width: 3018px; }
 .two-sided-heading { height: 40px; }
 .two-sided-heading > * { padding: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .two-sided-columns { display: grid; position: sticky; top: 40px; z-index: 1; background: #e6eee9; border-bottom: 1px solid #a6b5af; }
-.two-sided-column-side { display: grid; grid-template-columns: 36px 64px 210px 84px 135px 135px minmax(256px, 1fr); }
-.two-sided-column-side--B { grid-template-columns: 64px 210px 84px 135px 135px minmax(256px, 1fr) 36px; }
+.two-sided-column-side { display: grid; grid-template-columns: 64px 110px 230px 120px 260px 260px minmax(360px, 1fr); }
+.two-sided-column-side--B { grid-template-columns: 110px 230px 120px 260px 260px minmax(360px, 1fr) 64px; }
 .two-sided-columns span { padding: 7px 5px; font: 10px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.two-sided-packet-line { display: grid; grid-template-columns: 36px minmax(0, 1fr); min-width: 0; align-items: stretch; }
-.two-sided-packet-line--B { grid-template-columns: minmax(0, 1fr) 36px; }
-.two-sided-packet-line .two-sided-packet { display: grid; grid-template-columns: 64px 210px 84px 135px 135px minmax(256px, 1fr); padding: 0; align-items: center; font: 10px var(--mono); min-height: 34px; }
+.two-sided-packet-line { display: grid; grid-template-columns: 64px minmax(0, 1fr); min-width: 0; align-items: stretch; }
+.two-sided-packet-line--B { grid-template-columns: minmax(0, 1fr) 64px; }
+.two-sided-packet-line .two-sided-packet { display: grid; grid-template-columns: 110px 230px 120px 260px 260px minmax(360px, 1fr); padding: 0; align-items: center; font: 10px var(--mono); min-height: 34px; }
 .two-sided-packet-line .two-sided-packet > span, .two-sided-packet-line .two-sided-packet > time { display: block; margin: 0; padding: 7px 5px; font: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .two-sided-note-button { border: 0; background: transparent; color: #17668a; cursor: pointer; padding: 4px; font-size: 16px; }
 .two-sided-note-button:hover, .two-sided-note-button:focus-visible { background: #dfedf4; }

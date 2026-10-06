@@ -121,12 +121,14 @@ async def upload_capture_artifact(
             analysis_payload = analyze_ainetscope_export(data, record.artifact_name)
             preview = analysis_payload["preview"]
             findings = analysis_payload["findings"]
-            source_schema = "datasnare-ainetscope/analysis-v1"
+            source_schema = analysis_payload.get("schema", "datasnare-ainetscope/analysis-v1")
             metadata = {
                 key: analysis_payload[key]
                 for key in ("packets", "flows", "hosts", "bytes", "service_count", "event_count", "parser", "status")
             }
             message = analysis_payload["message"]
+            if analysis_payload.get("analytics"):
+                metadata["analytics"] = analysis_payload["analytics"]
         else:
             analysis = await request.app.state.capture_parser.analyze(data, record.artifact_name)
             analysis_payload = analysis.__dict__

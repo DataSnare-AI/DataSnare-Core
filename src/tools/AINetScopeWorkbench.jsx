@@ -83,7 +83,7 @@ function CaptureWorkbench({ tenantId, onJobCompleted }) {
       <label>AINetScope analysis JSON<input type="file" accept=".json,application/json" onChange={(event) => setAnalysisFile(event.target.files?.[0] || null)} /></label>
       <button className="primary-button" type="submit" disabled={!analysisFile || !tenantId.trim() || analysisFile.size > 25 * 1024 * 1024}><Upload size={16} /> Import analysis</button>
     </form>
-    <p className="tool-workbench__notice">Import accepts `datasnare-ainetscope/analysis-v1` exports up to 25 MiB. Raw PCAP uploads remain capped at 250 MiB.</p>
+    <p className="tool-workbench__notice">Import accepts single-capture analysis and Two-Sided findings JSON exports up to 25 MiB. Raw PCAP uploads remain capped at 250 MiB.</p>
     {importError && <p className="tool-workbench__error" role="alert">{importError}</p>}
     {importedAnalysis && <div className="tool-workbench__status" role="status"><Activity size={18} /><div><strong>{importedAnalysis.job.artifact_name}</strong><span>{importedAnalysis.job.state} · {importedAnalysis.analysis.event_count} events · {importedAnalysis.analysis.packets?.toLocaleString() ?? 'Unknown'} packets · Job {importedAnalysis.job.job_id}</span><small>{importedAnalysis.analysis.message}</small>{importedAnalysis.analysis.preview.slice(0, 8).map((item, index) => <p key={`${item.category}-${index}`}>{item.timestamp || 'No timestamp'} · {item.severity} · {item.summary}</p>)}</div></div>}
   </section>;

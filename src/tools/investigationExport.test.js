@@ -27,3 +27,11 @@ test('metric provenance survives export without raw details', () => {
     evidence: { counter: 'Processor Time', observed: 99, threshold: 95, raw: 'excluded' } }] }] });
   assert.deepEqual(result.evidence[0].events[0].evidence, { counter: 'Processor Time', threshold: 95, observed: 99 });
 });
+
+test('Two-Sided saved analytics retain paired sources and correction context', () => {
+  const result = buildInvestigationExport({ evidence: [{ source_schema: 'datasnare-ainetscope/two-sided-findings-v1',
+    analytics: { scope: { bOffsetMs: -100 }, caveats: ['Capture intervals only'] },
+    events: [{ summary: 'Path timing', evidence: { sourceA: 'a.pcap', sourceB: 'b.pcap', frameA: 1001, frameB: 3405, bOffsetMs: -100 } }] }] });
+  assert.equal(result.evidence[0].analytics.scope.bOffsetMs, -100);
+  assert.equal(result.evidence[0].events[0].evidence.frameB, 3405);
+});

@@ -410,6 +410,7 @@ function refreshCaptureSetProfile() {
 
 async function openSetCapture(index) {
   const result = batchState.results.find(item => item.index === index); if (!result || result.status !== "Analyzed") return;
+  if (!result.source && !result.demoPackets) { showToast('Relink the original capture using Relink originals before opening this restored set file.'); return; }
   const launch = reserveCaptureWindow();
   deliverCaptureWindow(launch, result.demoPackets ? { demoPackets: result.demoPackets, name: result.path } : { file: result.source, name: result.path });
 }

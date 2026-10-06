@@ -39,6 +39,15 @@
   </header>
 
   <main>
+    <div class="session-toolbar" role="group" aria-label="Session management">
+      <button class="button button-quiet" id="sessionSaveButton" type="button">Save Session</button>
+      <button class="button button-quiet" id="sessionRestoreButton" type="button">Restore Session</button>
+      <input id="sessionRestoreInput" type="file" accept=".json,application/json" hidden>
+      <button class="button button-quiet" id="sessionRelinkButton" type="button" disabled>Relink originals</button>
+      <input id="sessionRelinkInput" type="file" accept=".pcap,.pcapng,.cap" multiple hidden>
+      <button class="button button-quiet" id="sessionResumeButton" type="button" disabled>Resume pending set files</button>
+      <span id="sessionStatus" role="status">Sessions store metadata and notes, not original capture bytes.</span>
+    </div>
     <section class="intro" id="dropZone">
       <div>
         <p class="eyebrow">LOCAL PACKET INTELLIGENCE</p>
@@ -506,6 +515,7 @@
       <button class="button button-quiet" id="twoSidedPrevious" type="button" disabled>Previous</button>
       <span id="twoSidedPage"></span>
       <button class="button button-quiet" id="twoSidedNext" type="button" disabled>Next</button>
+      <button class="button button-set" id="twoSidedAnalyticsButton" type="button">Analytics / Expert</button>
     </div>
     <div class="two-sided-scroll" id="twoSidedScroll">
       <div class="two-sided-heading"><strong id="twoSidedNameA">System A</strong><span>Correlation / corrected interval</span><strong id="twoSidedNameB">System B</strong></div>
@@ -524,6 +534,10 @@
     <div class="two-sided-toolbar"><button id="twoSidedNoteCancel" class="button button-quiet" type="button">Cancel</button><button id="twoSidedNoteDelete" class="button button-quiet" type="button">Delete note</button><button id="twoSidedNoteSave" class="button button-primary" type="button">Save note</button></div>
   </dialog>
   <div class="toast" id="toast" role="status"></div>
+  <dialog id="twoSidedAnalyticsDialog" class="two-analytics-dialog" aria-labelledby="twoSidedAnalyticsTitle">
+    <header class="two-analytics-heading"><h2 id="twoSidedAnalyticsTitle">Two-Sided Analytics</h2><div><button id="twoSidedAnalyticsExport" class="button button-primary" type="button">Export findings JSON</button><button id="twoSidedAnalyticsClose" class="button button-quiet" type="button">Close analytics</button></div></header>
+    <div id="twoSidedAnalyticsBody"></div>
+  </dialog>
   <dialog id="captureChooser" class="capture-chooser">
     <div class="panel-heading"><h2>Open capture</h2><button id="captureChooserClose" class="button button-quiet" type="button">Cancel</button></div>
     <p>Open a capture from your loaded set or choose a new file?</p>
@@ -548,6 +562,10 @@
   <script src="workbench-layout.js"></script>
   <script src="two-sided-match.js"></script>
   <script src="two-sided.js"></script>
+  <script src="two-sided-analytics.js"></script>
+  <script src="two-sided-dashboard.js"></script>
   <script src="capture-launch.js"></script>
+  <script src="session-contract.js"></script>
+  <script src="sessions.js"></script>
 </body>
 </html>

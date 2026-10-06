@@ -27,6 +27,7 @@ export function buildInvestigationExport(savedCase, exportedAt = new Date().toIS
       time_range_scope: item.time_range_scope || 'stored_event_sample',
       event_count: item.event_count,
       finding_count: item.finding_count,
+      analytics: item.source_schema === 'datasnare-ainetscope/two-sided-findings-v1' ? item.analytics : undefined,
       events: (item.events || []).map(event => ({
         timestamp: event.timestamp,
         severity: event.severity,
@@ -34,7 +35,7 @@ export function buildInvestigationExport(savedCase, exportedAt = new Date().toIS
         host: event.host,
         process: event.process,
         summary: event.summary,
-        evidence: Object.fromEntries(['sourceFile', 'sourceLine', 'packetNumber', 'counter', 'threshold', 'direction', 'observed', 'sampleCount', 'start', 'end', 'metric', 'value', 'xmlElement', 'ordinal']
+        evidence: Object.fromEntries(['sourceFile', 'sourceLine', 'packetNumber', 'counter', 'threshold', 'direction', 'observed', 'sampleCount', 'start', 'end', 'metric', 'value', 'xmlElement', 'ordinal', 'sourceA', 'sourceB', 'frameA', 'frameB', 'bOffsetMs']
           .filter(key => event.evidence?.[key] !== undefined).map(key => [key, event.evidence[key]])),
       })),
     })),
