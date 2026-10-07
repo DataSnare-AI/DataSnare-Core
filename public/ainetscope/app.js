@@ -243,10 +243,21 @@ function parseDNS(bytes, view, offset) {
 function parseTLS(bytes, view, offset) {
   if (offset + 5 > bytes.length || ![20, 21, 22, 23].includes(bytes[offset]) || bytes[offset + 1] !== 3) return null;
   const recordType = bytes[offset];
-  const version = `TLS ${bytes[offset + 2] === 4 ? "1.3" : bytes[offset + 2] === 3 ? "1.2" : "1.x"}`;
+  const versionNumber = view.getUint16(offset + 1);
+  const recordLength = view.getUint16(offset + 3);
+  const version = `TLS ${{ 0x0301: "1.0", 0x0302: "1.1", 0x0303: "1.2", 0x0304: "1.3" }[versionNumber] || "1.x"}`;
   const details = { "Record type": { 20: "Change Cipher Spec", 21: "Alert", 22: "Handshake", 23: "Application Data" }[recordType], Version: version };
   let info = `${details["Record type"]}, ${version}`;
   let alpn = "";
+  let tlsAlertLevel = null;
+  let tlsAlertDescription = null;
+  if (recordType === 21 && recordLength >= 2 && offset + 7 <= bytes.length) {
+    tlsAlertLevel = bytes[offset + 5];
+    tlsAlertDescription = bytes[offset + 6];
+    const alertNames = { 0: "close_notify", 10: "unexpected_message", 20: "bad_record_mac", 40: "handshake_failure", 42: "bad_certificate", 43: "unsupported_certificate", 45: "certificate_expired", 46: "certificate_revoked", 47: "certificate_unknown", 48: "illegal_parameter", 70: "protocol_version", 71: "insufficient_security", 80: "internal_error", 90: "user_canceled", 109: "missing_extension", 112: "unrecognized_name", 116: "certificate_required", 120: "no_application_protocol" };
+    details.Alert = `${tlsAlertLevel === 2 ? "fatal" : tlsAlertLevel === 1 ? "warning" : `level ${tlsAlertLevel}`} · ${alertNames[tlsAlertDescription] || `description ${tlsAlertDescription}`}`;
+    info = `Alert, ${version} · ${details.Alert}`;
+  }
   if (recordType === 22 && offset + 9 < bytes.length) {
     const handshake = bytes[offset + 5];
     const handshakeNames = { 1: "Client Hello", 2: "Server Hello", 11: "Certificate", 20: "Finished" };
@@ -279,7 +290,7 @@ function parseTLS(bytes, view, offset) {
       } catch (_) { /* Truncated hello remains a valid TLS record. */ }
     }
   }
-  return { protocol: alpn === "h2" ? "HTTP/2" : "TLS", tlsSni: details.SNI || "", tlsAlpn: alpn, info, details };
+  return { protocol: alpn === "h2" ? "HTTP/2" : "TLS", tlsSni: details.SNI || "", tlsAlpn: alpn, tlsVersion: version, tlsRecordType: recordType, tlsAlertLevel, tlsAlertDescription, info, details };
 }
 
 function parseHTTP2(bytes, view, offset) {
@@ -331,7 +342,8 @@ function parseQUIC(bytes, view, offset) {
   if (offset + 6 > bytes.length) return null;
   const version = view.getUint32(offset + 1, false);
   const type = (bytes[offset] >> 4) & 0x03;
-  const names = ["Initial", "0-RTT", "Handshake", "Retry"];
+  const names = version === 0x6b3343cf ? ["Retry", "Initial", "0-RTT", "Handshake"]
+    : version === 1 ? ["Initial", "0-RTT", "Handshake", "Retry"] : ["Type 0", "Type 1", "Type 2", "Type 3"];
   const dcidLength = bytes[offset + 5] || 0;
   const scidLength = bytes[offset + 6] || 0;
   const dcidStart = offset + 6;
@@ -346,6 +358,7 @@ function parseQUIC(bytes, view, offset) {
   return {
     protocol: http3 ? "HTTP/3" : "QUIC",
     quicVersion: `0x${version.toString(16)}`,
+    quicPacketType: names[type] || `TYPE${type}`,
     info: `${names[type] || `TYPE${type}`} v${version.toString(16)} DCID=${dcid.slice(0, 12)} SCID=${scid.slice(0, 12)}`,
     details: {
       Header: "Long",
@@ -369,6 +382,7 @@ function parseSMB(bytes, offset) {
   if (cursor + 4 > bytes.length) return null;
   if ((bytes[cursor] !== 0xfe && bytes[cursor] !== 0xff) || bytes[cursor + 1] !== 0x53 || bytes[cursor + 2] !== 0x4d || bytes[cursor + 3] !== 0x42) return null;
   const smb2 = bytes[cursor] === 0xfe;
+  if (smb2 && cursor + 64 > bytes.length) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const command = smb2 ? view.getUint16(cursor + 12, false) : view.getUint16(cursor + 4, false);
   const status = smb2 ? view.getUint32(cursor + 8, false) : 0;
@@ -404,7 +418,7 @@ function parseSMB(bytes, offset) {
       if (dialects.length) details.Dialects = dialects.join(", ");
     }
   }
-  return { protocol: smb2 ? "SMB2" : "SMB", smbCommand: name, info: `${name}${smb2 ? ` · 0x${status.toString(16).padStart(8, "0")}` : ""}`, details };
+  return { protocol: smb2 ? "SMB2" : "SMB", smbCommand: name, smbStatus: smb2 ? status : null, smbResponse: smb2 ? Boolean(flags & 0x0001) : false, info: `${name}${smb2 ? ` · 0x${status.toString(16).padStart(8, "0")}` : ""}`, details };
 }
 
 function tdsUcs2(bytes, offset, characters) {
@@ -433,6 +447,7 @@ function decodeTdsToken(bytes, token, start, end, view) {
     const tokenEnd = Math.min(end, start + 2 + view.getUint16(start)); result.next = tokenEnd;
     if (start + 8 <= tokenEnd) {
       const number = view.getUint32(start + 2); const state = bytes[start + 6]; const severity = bytes[start + 7];
+      result.number = number; result.severity = severity;
       const message = tdsVariableString(bytes, start + 8, tokenEnd); let cursor = message.next;
       const server = tdsVariableString(bytes, cursor, tokenEnd); cursor = server.next;
       const procedure = tdsVariableString(bytes, cursor, tokenEnd); cursor = procedure.next;
@@ -520,11 +535,11 @@ function parseTDS(bytes, view, offset) {
   if (type === 0x04 && length > 8) {
     decodedTokens = decodeTdsTokens(bytes, offset + 8, length - 8, view);
     decodedTokens.forEach((token, index) => { details[`Token ${index + 1} · ${token.name}`] = token.detail; });
-    const errors = decodedTokens.filter(token => token.name === "ERROR");
+    const errors = decodedTokens.filter(token => token.name === "ERROR" && token.severity > 10);
     if (errors.length) { details["Error token"] = `${errors.length} decoded`; info += ` · ${errors.length} error token${errors.length === 1 ? "" : "s"}`; }
     if (decodedTokens.length) details["Token count"] = decodedTokens.length;
   }
-  return { protocol: "TDS", tdsType: packetTypes[type], tdsError: decodedTokens.some(token => token.name === "ERROR"), info, details };
+  return { protocol: "TDS", tdsType: packetTypes[type], tdsError: decodedTokens.some(token => token.name === "ERROR" && token.severity > 10), tdsErrorCount: decodedTokens.filter(token => token.name === "ERROR" && token.severity > 10).length, tdsLoginAck: decodedTokens.some(token => token.name === "LOGINACK"), info, details };
 }
 
 function parseDceRpc(bytes, view, offset) {
@@ -680,6 +695,10 @@ function parseFrame(frame, number, timestamp, linkType, options = {}) {
     const protocol = bytes[offset + 9];
     const headerChecksum = view.getUint16(offset + 10);
     nextHeader = protocol; packet.src = ipv4(bytes, offset + 12); packet.dst = ipv4(bytes, offset + 16);
+    packet.ipTtl = ttl;
+    packet.ipv4MoreFragments = Boolean(flagsFragment & 0x2000);
+    packet.ipv4FragmentOffset = flagsFragment & 0x1fff;
+    packet.ipv4Fragmented = packet.ipv4MoreFragments || packet.ipv4FragmentOffset > 0;
     if (detailed) packet.details.IP = `IPv4 · TTL ${ttl}`; offset += headerLength;
     if (detailed) packet.layers.push({
       name: "Internet Protocol Version 4",
@@ -708,6 +727,12 @@ function parseFrame(frame, number, timestamp, linkType, options = {}) {
     if (detailed) packet.layers.push({ name: "Internet Protocol Version 6", summary: `${packet.src} → ${packet.dst}`, start: networkStart, length: offset - networkStart, fields: [{ name: "Next header", value: nextHeader, start: networkStart + 6, length: 1 }, { name: "Hop limit", value: bytes[networkStart + 7], start: networkStart + 7, length: 1 }, { name: "Source", value: packet.src, start: networkStart + 8, length: 16 }, { name: "Destination", value: packet.dst, start: networkStart + 24, length: 16 }] });
   } else {
     packet.protocol = `EtherType 0x${(etherType || 0).toString(16)}`; packet.info = "Link-layer frame";
+    return packet;
+  }
+
+  if (packet.ipv4FragmentOffset > 0) {
+    packet.protocol = "IPv4 Fragment";
+    packet.info = `Non-initial IPv4 fragment · offset ${packet.ipv4FragmentOffset}`;
     return packet;
   }
 
@@ -763,8 +788,9 @@ function parseFrame(frame, number, timestamp, linkType, options = {}) {
     const application = parseApplication(packet, bytes, view, applicationOffset);
     if (application) { const baseDetails = packet.details; Object.assign(packet, application); if (detailed) packet.details = { ...baseDetails, ...application.details }; else delete packet.details; }
     if (application && applicationOffset < bytes.length && detailed) packet.layers.push({ name: application.protocol, summary: application.info, start: applicationOffset, length: bytes.length - applicationOffset, fields: Object.entries(application.details || {}).map(([name, value]) => ({ name, value, start: applicationOffset, length: bytes.length - applicationOffset })) });
-  } else if ([1, 58].includes(nextHeader)) {
-    packet.protocol = nextHeader === 1 ? "ICMP" : "ICMPv6"; packet.info = `Type ${bytes[offset]}, code ${bytes[offset + 1]}`;
+  } else if ([1, 58].includes(nextHeader) && offset + 2 <= bytes.length) {
+    packet.protocol = nextHeader === 1 ? "ICMP" : "ICMPv6"; packet.icmpType = bytes[offset]; packet.icmpCode = bytes[offset + 1]; packet.info = `Type ${packet.icmpType}, code ${packet.icmpCode}`;
+    packet.icmpPacketTooBig = nextHeader === 58 && packet.icmpType === 2;
     if (detailed) packet.layers.push({ name: packet.protocol, summary: packet.info, start: offset, length: bytes.length - offset, fields: [{ name: "Type", value: bytes[offset], start: offset, length: 1 }, { name: "Code", value: bytes[offset + 1], start: offset + 1, length: 1 }] });
   } else {
     packet.protocol = `IP protocol ${nextHeader}`; packet.info = "Network-layer payload";
@@ -1552,4 +1578,8 @@ if (typeof window !== "undefined") {
     buildExportReport,
     get summary() { return { packets: state.packets.length, filtered: state.filtered.length, flows: aggregate(state.filtered.length ? state.filtered : state.packets).flows.length, captureId: state.captureId }; }
   });
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { parseFrame, parseTLS, parseQUIC, parseSMB, parseTDS };
 }

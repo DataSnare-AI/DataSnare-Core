@@ -5,7 +5,9 @@
   const PACKET_FIELDS = ['number', 'timestamp', 'length', 'capturedLength', 'linkType', 'protocol', 'transport',
     'src', 'dst', 'srcPort', 'dstPort', 'info', 'seq', 'ack', 'payloadLength', 'flags', 'tcpFlagsValue',
     'tcpWindow', 'tcpOptions', 'latency', 'dnsRcode', 'dnsResponse', 'httpKind', 'httpMethod', 'httpStatus',
-    'tdsType', 'tdsError', 'smbCommand', 'processCorrelation'];
+    'tdsType', 'tdsError', 'tdsErrorCount', 'tdsLoginAck', 'smbCommand', 'smbStatus', 'smbResponse', 'icmpType', 'icmpCode', 'icmpPacketTooBig',
+    'ipv4Fragmented', 'ipv4MoreFragments', 'ipv4FragmentOffset', 'ipTtl', 'tlsVersion', 'tlsRecordType',
+    'tlsAlertLevel', 'tlsAlertDescription', 'quicVersion', 'quicPacketType', 'processCorrelation'];
   const RESULT_FIELDS = ['index', 'name', 'path', 'status', 'start', 'end', 'summary', 'protocols', 'hostTraffic',
     'edges', 'protocolNames', 'services', 'serviceStats', 'findings', 'rankedObservations', 'highFindings', 'mediumFindings', 'error'];
   const blocked = new Set(['__proto__', 'prototype', 'constructor', 'raw', 'rawBytes', 'rawPreview', 'packetData',
