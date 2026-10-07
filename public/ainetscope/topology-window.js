@@ -39,6 +39,53 @@ function normalizeHostnameMapProfile(profile) {
     mappings };
 }
 
+function topologyEndpointHost(value, transport) {
+  const text = String(value ?? "");
+  return transport ? text.slice(0, text.lastIndexOf(":")) || text : text;
+}
+
+function buildSingleCaptureTopologyPayload(packets, flows, metadata = {}, hostMapProfile = null) {
+  const hosts = new Map();
+  for (const packet of packets || []) {
+    for (const address of [packet.src, packet.dst]) {
+      if (!address || address === "—") continue;
+      hosts.set(address, (hosts.get(address) || 0) + (Number(packet.length) || 0));
+    }
+  }
+  const edges = [];
+  for (const flow of flows || []) {
+    const a = topologyEndpointHost(flow.a, flow.transport);
+    const b = topologyEndpointHost(flow.b, flow.transport);
+    if (!a || !b || a === b) continue;
+    edges.push({ a, b, bytes: Number(flow.bytes) || 0, packets: Number(flow.packets) || 0,
+      protocols: { [flow.protocol || "Unknown"]: Number(flow.bytes) || 0 }, files: [] });
+  }
+  return {
+    schema: "datasnare-ainetscope/topology-v1",
+    generatedAt: new Date().toISOString(),
+    setId: `single:${metadata.captureId || metadata.name || "capture"}`,
+    setName: metadata.name || "Single capture",
+    fileCount: 1,
+    hosts: [...hosts.entries()].map(([host, bytes]) => ({ host, bytes })),
+    edges,
+    hostMapProfile: hostMapProfile?.profileName ? {
+      profileName: hostMapProfile.profileName,
+      mappings: Object.fromEntries((hostMapProfile.mappings || []).filter(item => item.source !== "captured-dns").map(item => [item.ip, item.hostname]))
+    } : null
+  };
+}
+
+function openSingleCaptureTopology() {
+  if (!state.filtered.length) { showToast("Open a capture before creating its topology map."); return; }
+  const aggregation = aggregate(state.filtered);
+  const payload = buildSingleCaptureTopologyPayload(state.filtered, aggregation.flows,
+    { captureId: state.captureId, name: state.fileName }, activeHostnameProfile());
+  if (!payload.edges.length) { showToast("No host-to-host flows were observed in this capture view."); return; }
+  const win = window.open("", "_blank", "width=1440,height=920");
+  if (!win) { showToast("Pop-up blocked. Allow pop-ups for this site to open the topology map."); return; }
+  win.document.open(); win.document.write(buildTopologyDocument(payload)); win.document.close();
+}
+
 function escapeForHtml(value) {
   return String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
 }
@@ -201,8 +248,8 @@ const TOPOLOGY_SCRIPT = `
       ],
       hostLane: {},
       hostOrder: {},
-      hostNames: {},
-      hostNamesProfileName: DATA.setName || "Current capture set"
+      hostNames: DATA.hostMapProfile?.mappings || {},
+      hostNamesProfileName: DATA.hostMapProfile?.profileName || DATA.setName || "Current capture set"
     };
   }
 
@@ -212,8 +259,8 @@ const TOPOLOGY_SCRIPT = `
       if (saved && Array.isArray(saved.lanes)) {
         saved.hostLane = saved.hostLane || {};
         saved.hostOrder = saved.hostOrder || {};
-        saved.hostNames = saved.hostNames || {};
-        saved.hostNamesProfileName = saved.hostNamesProfileName || DATA.setName || "Current capture set";
+        saved.hostNames = { ...(DATA.hostMapProfile?.mappings || {}), ...(saved.hostNames || {}) };
+        saved.hostNamesProfileName = DATA.hostMapProfile?.profileName || saved.hostNamesProfileName || DATA.setName || "Current capture set";
         return saved;
       }
     } catch (error) { /* fall through to defaults */ }
@@ -1114,5 +1161,7 @@ const TOPOLOGY_SCRIPT = `
 `;
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { buildTopologyDocument, normalizeHostnameMapProfile, HOSTNAME_MAP_SCHEMA };
+  module.exports = { buildTopologyDocument, buildSingleCaptureTopologyPayload, normalizeHostnameMapProfile, HOSTNAME_MAP_SCHEMA };
 }
+
+if (typeof document !== "undefined") document.querySelector("#singleTopologyButton")?.addEventListener("click", openSingleCaptureTopology);
