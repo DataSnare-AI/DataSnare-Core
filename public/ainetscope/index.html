@@ -236,7 +236,7 @@
     <section class="set-workspace" id="setWorkspace" aria-live="polite" hidden>
       <div class="set-heading">
         <div><p class="eyebrow">ROTATED CAPTURE INTELLIGENCE</p><h1>Capture set analysis</h1><p>Summarize dumpcap rotations as one incident window while preserving every file as an inspectable trace.</p></div>
-        <div class="set-heading-actions"><button class="text-button summary-trigger" id="setSummaryButton" type="button" hidden>Set Summary</button><button class="text-button" id="setReportButton" type="button" hidden>Print set report</button><button class="text-button" id="setTopologyButton" type="button">Topology map ↗</button><button class="text-button" id="coreModeButton" type="button">← Single capture</button></div>
+        <div class="set-heading-actions"><button class="text-button summary-trigger" id="setSummaryButton" type="button" hidden>Set Summary</button><button class="text-button" id="setReportButton" type="button" hidden>Print Set PDF</button><button class="text-button" id="setTopologyButton" type="button">Topology map ↗</button><button class="text-button" id="coreModeButton" type="button">← Single capture</button></div>
       </div>
 
       <div class="set-actions">
@@ -371,7 +371,9 @@
         <label><span>Capture Set file rows</span><input id="setReportFileLimit" type="number" min="1" max="1000" step="10"><small>1–1,000 · default 100</small></label>
         <label><span>Capture Set finding rows</span><input id="setReportFindingLimit" type="number" min="1" max="1000" step="10"><small>1–1,000 · default 100</small></label>
         <label><span>Topology host rows</span><input id="setReportHostLimit" type="number" min="1" max="500" step="5"><small>1–500 · default 30</small></label>
+        <label class="settings-toggle"><input id="setReportAllHosts" type="checkbox"><span><strong>Include all hosts</strong><small>Ignore the host row limit. Large inventories can make PDFs slower and substantially larger.</small></span></label>
         <label><span>Topology connection rows</span><input id="setReportEdgeLimit" type="number" min="1" max="1000" step="10"><small>1–1,000 · default 50</small></label>
+        <label class="settings-toggle"><input id="setReportAllEdges" type="checkbox"><span><strong>Include all connections</strong><small>Ignore the connection row limit. Large inventories can make PDFs slower and substantially larger.</small></span></label>
         <label><span>Protocol rows</span><input id="setReportProtocolLimit" type="number" min="1" max="100" step="1"><small>1–100 · default 12</small></label>
         <label><span>PDF page orientation</span><select id="setReportOrientation"><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select><small>Landscape is better for wide comparison tables</small></label>
         <label class="settings-toggle"><input type="checkbox" value="TCP" data-report-check-group><span><strong>TCP</strong><small>Resets, handshakes, windows, retransmission signatures, and latency</small></span></label>

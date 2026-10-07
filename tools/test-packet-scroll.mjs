@@ -17,7 +17,7 @@ try {
     await page.evaluate(() => {
       state.packets = Array.from({ length: 30000 }, (_, index) => ({ number: index + 1,
         timestamp: 1700000000 + index / 1000, length: 64, protocol: 'TEST', transport: '',
-        src: '192.0.2.1', dst: '192.0.2.2', info: `Scroll fixture ${index + 1}` }));
+        src: '192.0.2.1', dst: '192.0.2.2', info: `Scroll fixture ${index + 1} ${'extended packet detail '.repeat(12)}` }));
       state.fileName = 'scroll-fixture.pcap';
       state.captureId = 'scroll-regression';
       const flagSets = [['SYN'], ['SYN', 'ACK'], ['FIN'], ['FIN', 'ACK'], ['RST', 'SYN', 'ACK']];
@@ -25,6 +25,38 @@ try {
       showPacketWorkbench(1);
     });
     await page.locator('#workbenchRows tr[data-workbench-packet="1"]').waitFor();
+    const horizontalScroll = await page.locator('#workbenchListPane').evaluate(element => ({
+      overflowX: getComputedStyle(element).overflowX,
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    assert.equal(horizontalScroll.overflowX, 'scroll');
+    assert.ok(horizontalScroll.scrollWidth > horizontalScroll.clientWidth,
+      `Packet columns should expose horizontal scrolling: ${JSON.stringify(horizontalScroll)}`);
+    if (width > 900) {
+    const infoHandle = page.locator('#workbenchHeadRow [data-column-resize="base:Info"]');
+    const infoColumn = page.locator('#workbenchHeadRow th[data-column-width-key="base:Info"]');
+    await infoHandle.scrollIntoViewIfNeeded();
+    const originalInfoWidth = (await infoColumn.boundingBox()).width;
+    const infoHandleBox = await infoHandle.boundingBox();
+    await page.mouse.move(infoHandleBox.x + infoHandleBox.width / 2, infoHandleBox.y + infoHandleBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(infoHandleBox.x + infoHandleBox.width / 2 + 120, infoHandleBox.y + infoHandleBox.height / 2, { steps: 8 });
+    await page.mouse.up();
+    const draggedInfoWidth = (await infoColumn.boundingBox()).width;
+    assert.ok(draggedInfoWidth >= originalInfoWidth + 110,
+      `Dragging the Info divider should widen the column: ${originalInfoWidth} -> ${draggedInfoWidth}`);
+    const persistedWidth = await page.evaluate(() => JSON.parse(localStorage.getItem('datasnare-workbench-column-widths:scroll-regression'))['base:Info']);
+    assert.equal(persistedWidth, Math.round(draggedInfoWidth));
+    await infoHandle.focus();
+    await infoHandle.press('ArrowLeft');
+    const keyboardInfoWidth = (await infoColumn.boundingBox()).width;
+    assert.ok(keyboardInfoWidth < draggedInfoWidth, 'Keyboard resizing should narrow the Info column');
+    await page.evaluate(() => renderWorkbenchList(null, false));
+    assert.equal((await infoColumn.boundingBox()).width, keyboardInfoWidth, 'Column width should persist across table rerender');
+    console.log('PASS desktop: packet columns resize and persist');
+    }
+    console.log(`PASS ${width}px: packet list exposes horizontal scrolling`);
     const signalColors = await page.locator('#workbenchRows .tcp-signal').evaluateAll(elements => elements.slice(0, 5).map(element => ({
       className: element.className, color: getComputedStyle(element).color,
     })));

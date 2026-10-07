@@ -1677,11 +1677,18 @@ if (typeof document !== "undefined") {
     $("#maxCaptureMB").value = settings.maxCaptureMB; $("#maxSessionMB").value = settings.maxSessionMB; $("#maxPackets").value = settings.maxPackets; $("#twoSidedRowsPerPage").value = settings.twoSidedRowsPerPage || 150; $("#rawPreviewBytes").value = settings.rawPreviewBytes; $("#compactMode").checked = settings.compactMode; $("#cacheEnabled").checked = settings.cacheEnabled; $("#debugLogEnabled").checked = settings.debugLogEnabled; $("#streamMiniMapRows").value = settings.streamMiniMapRows || DEFAULT_SETTINGS.streamMiniMapRows; $("#sansFont").value = settings.sansFont; $("#monoFont").value = settings.monoFont; $("#referenceLinks").value = settings.referenceLinks.map(link => `${link.label} | ${link.url}`).join("\n");
     const setReportOptions = settings.captureSetReportOptions || DEFAULT_SETTINGS.captureSetReportOptions;
     $("#setReportFileLimit").value = setReportOptions.fileLimit; $("#setReportFindingLimit").value = setReportOptions.findingLimit;
-    $("#setReportHostLimit").value = setReportOptions.hostLimit; $("#setReportEdgeLimit").value = setReportOptions.edgeLimit;
+    $("#setReportAllHosts").checked = setReportOptions.hostLimit === "all";
+    $("#setReportAllEdges").checked = setReportOptions.edgeLimit === "all";
+    $("#setReportHostLimit").value = setReportOptions.hostLimit === "all" ? DEFAULT_SETTINGS.captureSetReportOptions.hostLimit : setReportOptions.hostLimit;
+    $("#setReportEdgeLimit").value = setReportOptions.edgeLimit === "all" ? DEFAULT_SETTINGS.captureSetReportOptions.edgeLimit : setReportOptions.edgeLimit;
+    $("#setReportHostLimit").disabled = $("#setReportAllHosts").checked;
+    $("#setReportEdgeLimit").disabled = $("#setReportAllEdges").checked;
     $("#setReportProtocolLimit").value = setReportOptions.protocolLimit; $("#setReportOrientation").value = setReportOptions.orientation;
     document.querySelectorAll("[data-report-check-group]").forEach(input => { input.checked = settings.reportCheckGroups[input.value] !== false; });
     $("#settingsDialog").showModal();
   });
+  $("#setReportAllHosts").addEventListener("change", event => { $("#setReportHostLimit").disabled = event.target.checked; });
+  $("#setReportAllEdges").addEventListener("change", event => { $("#setReportEdgeLimit").disabled = event.target.checked; });
   const settingsTabs = [...document.querySelectorAll("[data-settings-tab]")];
   settingsTabs.forEach(button => {
     button.addEventListener("click", () => {
@@ -1708,7 +1715,8 @@ if (typeof document !== "undefined") {
     const reportCheckGroups = Object.fromEntries([...document.querySelectorAll("[data-report-check-group]")].map(input => [input.value, input.checked]));
     const captureSetReportOptions = globalThis.DataSnareReportCommon?.normalizeCaptureSetReportOptions({
       fileLimit: $("#setReportFileLimit").value, findingLimit: $("#setReportFindingLimit").value,
-      hostLimit: $("#setReportHostLimit").value, edgeLimit: $("#setReportEdgeLimit").value,
+      hostLimit: $("#setReportAllHosts").checked ? "all" : $("#setReportHostLimit").value,
+      edgeLimit: $("#setReportAllEdges").checked ? "all" : $("#setReportEdgeLimit").value,
       protocolLimit: $("#setReportProtocolLimit").value, orientation: $("#setReportOrientation").value
     }) || { ...DEFAULT_SETTINGS.captureSetReportOptions };
     settings = { ...settings, maxCaptureMB: Math.max(1, Math.min(4096, Math.floor(Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB))), maxSessionMB: Math.max(1, Math.min(512, Math.floor(Number($("#maxSessionMB").value) || DEFAULT_SETTINGS.maxSessionMB))), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), twoSidedRowsPerPage: Math.max(25, Math.min(1000, Math.floor(Number($("#twoSidedRowsPerPage").value) || 150))), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, streamMiniMapRows: Math.max(100, Math.min(5000, Math.floor(Number($("#streamMiniMapRows").value) || DEFAULT_SETTINGS.streamMiniMapRows))), captureSetReportOptions, sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS], reportCheckGroups: normalizeReportCheckGroups(reportCheckGroups) };

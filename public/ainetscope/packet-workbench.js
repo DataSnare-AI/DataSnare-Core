@@ -1,6 +1,6 @@
 "use strict";
 
-const workbenchState = { selectedNumber: null, noteFrame: null, notesCaptureId: "", frameStateCaptureId: "", frameState: null, summaryDraftFrames: [], packets: [], highlight: { start: 0, length: 0 }, fieldFilters: [], columns: [], contextField: null, maxFrameLength: 1, maxRows: 300, rowHeight: 31, maxBytes: 16384 };
+const workbenchState = { selectedNumber: null, noteFrame: null, notesCaptureId: "", frameStateCaptureId: "", frameState: null, summaryDraftFrames: [], packets: [], highlight: { start: 0, length: 0 }, fieldFilters: [], columns: [], columnWidthsCaptureId: "", columnWidths: {}, contextField: null, maxFrameLength: 1, maxRows: 300, rowHeight: 31, maxBytes: 16384 };
 const workbenchBaseColumns = [
   { label: "Notes", html: packet => packetNote(packet.number) ? `<button class="note-indicator" type="button" data-note-frame="${packet.number}" aria-label="Edit note for frame ${packet.number}" title="${escapeHtml(notePreview(packetNote(packet.number)))}">▤</button>` : "" },
   { label: "Mark", html: packet => frameIndicator(packet) },
@@ -13,6 +13,77 @@ const workbenchBaseColumns = [
   { label: "Size profile", html: packet => frameSizeBar(packet) },
   { label: "Info", html: packet => `<span class="tcp-signal tcp-signal--${tcpSignalClass(packet)}">${escapeHtml(packet.info || '')}</span>` }
 ];
+
+const workbenchBaseColumnWidths = [52, 45, 60, 190, 170, 170, 90, 75, 120, 360];
+
+function workbenchColumnStorageKey() {
+  return `datasnare-workbench-column-widths:${state.captureId || captureFingerprint(state.packets, state.fileName)}`;
+}
+
+function loadWorkbenchColumnWidths() {
+  const captureId = state.captureId || captureFingerprint(state.packets, state.fileName);
+  if (workbenchState.columnWidthsCaptureId === captureId) return workbenchState.columnWidths;
+  workbenchState.columnWidthsCaptureId = captureId;
+  try {
+    const saved = JSON.parse(localStorage.getItem(workbenchColumnStorageKey())) || {};
+    workbenchState.columnWidths = Object.fromEntries(Object.entries(saved)
+      .filter(([, width]) => Number.isFinite(width))
+      .map(([key, width]) => [key, Math.max(40, Math.min(1200, Math.round(width)))]));
+  } catch (_) { workbenchState.columnWidths = {}; }
+  return workbenchState.columnWidths;
+}
+
+function defaultWorkbenchColumnWidth(index, custom = false) {
+  return custom ? 145 : workbenchBaseColumnWidths[index] || 145;
+}
+
+function workbenchColumnWidth(key, defaultWidth) {
+  const width = loadWorkbenchColumnWidths()[key];
+  return Number.isFinite(width) ? Math.max(40, Math.min(1200, width)) : defaultWidth;
+}
+
+function persistWorkbenchColumnWidths() {
+  try { localStorage.setItem(workbenchColumnStorageKey(), JSON.stringify(workbenchState.columnWidths)); }
+  catch (_) { showToast("Packet column widths could not be saved locally."); }
+}
+
+function applyWorkbenchColumnWidths() {
+  const headers = [...document.querySelectorAll("#workbenchHeadRow th[data-column-width-key]")];
+  const table = $(".workbench-table");
+  const totalWidth = headers.reduce((sum, header) => {
+    const width = workbenchColumnWidth(header.dataset.columnWidthKey, Number(header.dataset.defaultWidth));
+    header.style.width = `${width}px`;
+    return sum + width;
+  }, 0);
+  const listPane = $("#workbenchListPane");
+  table.style.width = `${Math.max(totalWidth, listPane.clientWidth)}px`;
+  table.style.minWidth = `${totalWidth}px`;
+}
+
+function updateWorkbenchColumnWidth(key, width) {
+  const next = Math.max(40, Math.min(1200, Math.round(width)));
+  workbenchState.columnWidths[key] = next;
+  const header = [...document.querySelectorAll("#workbenchHeadRow th[data-column-width-key]")]
+    .find(item => item.dataset.columnWidthKey === key);
+  if (header) {
+    header.style.width = `${next}px`;
+    header.querySelector(".column-resize-handle")?.setAttribute("aria-valuenow", String(next));
+  }
+  applyWorkbenchColumnWidths();
+}
+
+function resetWorkbenchColumnWidth(key) {
+  delete workbenchState.columnWidths[key];
+  const header = [...document.querySelectorAll("#workbenchHeadRow th[data-column-width-key]")]
+    .find(item => item.dataset.columnWidthKey === key);
+  if (header) {
+    const defaultWidth = Number(header.dataset.defaultWidth) || 145;
+    header.style.width = `${defaultWidth}px`;
+    header.querySelector(".column-resize-handle")?.setAttribute("aria-valuenow", String(defaultWidth));
+  }
+  applyWorkbenchColumnWidths();
+  persistWorkbenchColumnWidths();
+}
 
 function frameSizeBar(packet) {
   const percentage = Math.max(2, packet.length / workbenchState.maxFrameLength * 100);
@@ -351,12 +422,18 @@ function renderWorkbenchList(preferredNumber = null, renderFilterControls = true
   const visible = workbenchState.packets.slice(firstVisible, firstVisible + workbenchState.maxRows);
   const processColumns = typeof processWorkbenchColumns === "function" ? processWorkbenchColumns() : [];
   const columns = [...workbenchBaseColumns, ...processColumns];
-  $("#workbenchHeadRow").innerHTML = columns.map(column => `<th>${column.label}</th>`).join("") + workbenchState.columns.map(column => `<th class="custom-column" title="Right-click the matching tree field to remove">${escapeHtml(column.label)}</th>`).join("");
-  $(".workbench-table").style.minWidth = `${1380 + processColumns.length * 145 + workbenchState.columns.length * 145}px`;
+  const renderedColumns = [
+    ...columns.map((column, index) => ({ ...column, resizeKey: `${index < workbenchBaseColumns.length ? "base" : "process"}:${column.label}`,
+      defaultWidth: defaultWorkbenchColumnWidth(index < workbenchBaseColumns.length ? index : -1) })),
+    ...workbenchState.columns.map(column => ({ ...column, resizeKey: `custom:${column.key}`, defaultWidth: defaultWorkbenchColumnWidth(-1, true),
+      renderCell: packet => { const value = packetField(packet, column.key); return escapeHtml(value ?? "—"); } }))
+  ];
+  $("#workbenchHeadRow").innerHTML = renderedColumns.map(column => `<th class="${column.resizeKey.startsWith("custom:") ? "custom-column" : ""}" data-column-width-key="${escapeHtml(column.resizeKey)}" data-default-width="${column.defaultWidth}">${escapeHtml(column.label)}<span class="column-resize-handle" data-column-resize="${escapeHtml(column.resizeKey)}" role="separator" aria-orientation="vertical" aria-label="Resize ${escapeHtml(column.label)} column" aria-valuenow="${workbenchColumnWidth(column.resizeKey, column.defaultWidth)}" tabindex="0" title="Drag to resize; arrow keys adjust; double-click to reset"></span></th>`).join("");
+  applyWorkbenchColumnWidths();
   const frameState = currentFrameState();
-  const spacer = `<td colspan="${columns.length + workbenchState.columns.length}" aria-hidden="true"></td>`;
+  const spacer = `<td colspan="${renderedColumns.length}" aria-hidden="true"></td>`;
   const topSpacer = firstVisible ? `<tr class="workbench-virtual-spacer" style="height:${firstVisible * workbenchState.rowHeight}px">${spacer}</tr>` : "";
-  const rows = visible.map((packet, displayedIndex) => `<tr data-workbench-packet="${packet.number}" class="${packet.number === workbenchState.selectedNumber ? "selected" : ""} ${frameState.marks.includes(packet.number) ? "marked" : ""} ${frameState.referenceNumber === packet.number ? "time-reference" : ""} ${packet.flags?.includes("RST") || packet.tdsError || packet.dnsRcode ? "flagged" : ""}">${columns.map(column => `<td title="${column.label === "Time" ? escapeHtml(new Date(packet.timestamp * 1000).toISOString()) : column.label === "Source" ? escapeHtml(packet.src) : column.label === "Destination" ? escapeHtml(packet.dst) : ""}">${column.html ? column.html(packet) : escapeHtml(column.value(packet, firstVisible + displayedIndex))}</td>`).join("")}${workbenchState.columns.map(column => { const value = packetField(packet, column.key); return `<td title="${escapeHtml(value ?? "Not present")}">${escapeHtml(value ?? "—")}</td>`; }).join("")}</tr>`).join("");
+  const rows = visible.map((packet, displayedIndex) => `<tr data-workbench-packet="${packet.number}" class="${packet.number === workbenchState.selectedNumber ? "selected" : ""} ${frameState.marks.includes(packet.number) ? "marked" : ""} ${frameState.referenceNumber === packet.number ? "time-reference" : ""} ${packet.flags?.includes("RST") || packet.tdsError || packet.dnsRcode ? "flagged" : ""}">${renderedColumns.map(column => `<td title="${column.label === "Time" ? escapeHtml(new Date(packet.timestamp * 1000).toISOString()) : column.label === "Source" ? escapeHtml(packet.src) : column.label === "Destination" ? escapeHtml(packet.dst) : ""}">${column.renderCell ? column.renderCell(packet, firstVisible + displayedIndex) : column.html ? column.html(packet) : escapeHtml(column.value(packet, firstVisible + displayedIndex))}</td>`).join("")}</tr>`).join("");
   const bottomHeight = Math.max(0, (totalRows - firstVisible - visible.length) * workbenchState.rowHeight);
   $("#workbenchRows").innerHTML = `${topSpacer}${rows || `<tr><td colspan="${columns.length + workbenchState.columns.length}">No matching packets</td></tr>`}${bottomHeight ? `<tr class="workbench-virtual-spacer" style="height:${bottomHeight}px">${spacer}</tr>` : ""}`;
   listPane.scrollTop = renderScrollTop;
@@ -529,6 +606,50 @@ $("#workbenchSearch").addEventListener("input", () => renderWorkbenchList());
 $("#workbenchProtocolFilter").addEventListener("change", () => renderWorkbenchList());
 $("#timeDisplayMode").addEventListener("change", event => { currentFrameState().timeMode = event.target.value; persistFrameState(); renderWorkbenchList(workbenchState.selectedNumber); });
 $("#workbenchRows").addEventListener("click", event => { const note = event.target.closest("[data-note-frame]"); if (note) { openNoteEditor(Number(note.dataset.noteFrame)); return; } const mark = event.target.closest("[data-mark-toggle]"); if (mark) { toggleFrameMark(Number(mark.dataset.markToggle)); return; } const row = event.target.closest("tr[data-workbench-packet]"); if (row) selectWorkbenchPacket(Number(row.dataset.workbenchPacket), false); });
+$("#workbenchHeadRow").addEventListener("pointerdown", event => {
+  const handle = event.target.closest("[data-column-resize]");
+  if (!handle || event.button !== 0 || !event.isPrimary) return;
+  event.preventDefault();
+  const key = handle.dataset.columnResize;
+  const header = handle.closest("th");
+  const startX = event.clientX;
+  const startWidth = header.getBoundingClientRect().width;
+  handle.setPointerCapture(event.pointerId);
+  const move = moveEvent => {
+    if (moveEvent.pointerId !== event.pointerId) return;
+    updateWorkbenchColumnWidth(key, startWidth + moveEvent.clientX - startX);
+  };
+  const stop = stopEvent => {
+    if (stopEvent.pointerId !== event.pointerId) return;
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", stop);
+    handle.removeEventListener("pointercancel", stop);
+    handle.removeEventListener("lostpointercapture", stop);
+    persistWorkbenchColumnWidths();
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", stop);
+  handle.addEventListener("pointercancel", stop);
+  handle.addEventListener("lostpointercapture", stop);
+});
+$("#workbenchHeadRow").addEventListener("dblclick", event => {
+  const handle = event.target.closest("[data-column-resize]");
+  if (handle) resetWorkbenchColumnWidth(handle.dataset.columnResize);
+});
+$("#workbenchHeadRow").addEventListener("keydown", event => {
+  const handle = event.target.closest("[data-column-resize]");
+  if (!handle || !["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
+  event.preventDefault();
+  const header = handle.closest("th");
+  const current = header.getBoundingClientRect().width;
+  const step = event.shiftKey ? 40 : 10;
+  if (event.key === "Home") resetWorkbenchColumnWidth(handle.dataset.columnResize);
+  else {
+    updateWorkbenchColumnWidth(handle.dataset.columnResize, current + (event.key === "ArrowRight" ? step : -step));
+    persistWorkbenchColumnWidths();
+  }
+});
 $("#workbenchJumpForm").addEventListener("submit", event => {
   event.preventDefault();
   const number = Number($("#workbenchJumpNumber").value);

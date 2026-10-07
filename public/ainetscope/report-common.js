@@ -41,6 +41,10 @@ function normalizeReportCheck(check = {}) {
 function normalizeCaptureSetReportOptions(options = {}) {
   const normalized = {};
   for (const key of Object.keys(CAPTURE_SET_REPORT_MAXIMA)) {
+    if ((key === "hostLimit" || key === "edgeLimit") && options[key] === "all") {
+      normalized[key] = "all";
+      continue;
+    }
     const parsed = Number(options[key]);
     normalized[key] = Number.isFinite(parsed)
       ? Math.max(1, Math.min(CAPTURE_SET_REPORT_MAXIMA[key], Math.floor(parsed)))
