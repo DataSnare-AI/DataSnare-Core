@@ -7,6 +7,9 @@ const context = { console, Uint8Array, DataView, ArrayBuffer, TextDecoder, TextE
 vm.createContext(context);
 vm.runInContext(fs.readFileSync("app.js", "utf8"), context);
 
+if (context.singleCaptureCompactThreshold(true) !== 10000) throw new Error("Compact setting threshold changed unexpectedly.");
+if (context.singleCaptureCompactThreshold(false) !== Infinity) throw new Error("Disabled compact setting still applies a compact threshold.");
+
 const packetCount = 1001;
 const buffer = new ArrayBuffer(24 + packetCount * 30);
 const bytes = new Uint8Array(buffer);

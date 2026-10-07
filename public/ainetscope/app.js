@@ -13,6 +13,10 @@ const MAX_CACHE_BYTES = 32 * 1024 * 1024;
 const state = { packets: [], flows: [], filtered: [], fileName: "", captureId: "", duration: 0, baseTime: 0, activeFlowKey: "", baseline: null, cacheKey: "", captureBuffer: null, compactMode: false, backgroundRenderQueued: false, backgroundWorkbenchQueued: false };
 const DEBUG_LOG_STATE = { enabled: false, panel: null };
 
+function singleCaptureCompactThreshold(compactMode) {
+  return compactMode ? SINGLE_CAPTURE_COMPACT_THRESHOLD : Infinity;
+}
+
 function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
@@ -1419,7 +1423,7 @@ async function openFile(file) {
   debugLog("openFile:start", { name: file.name, size: file.size });
   showToast(`Reading ${file.name}…`);
   try {
-    const packets = await parseFile(file, true, { compactThreshold: SINGLE_CAPTURE_COMPACT_THRESHOLD });
+    const packets = await parseFile(file, true, { compactThreshold: singleCaptureCompactThreshold(settings.compactMode) });
     if (typeof showCoreMode === "function") showCoreMode();
     state.captureSource = { name: file.name, size: file.size, lastModified: file.lastModified, path: file.webkitRelativePath || file.name };
     loadPackets(packets, file.name, `${file.webkitRelativePath || file.name}:${file.size}:${file.lastModified}`);
