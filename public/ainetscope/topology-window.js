@@ -4,12 +4,39 @@
 // capture-set topology map, opened in a new browser window/tab.
 function buildTopologyDocument(payload) {
   const json = JSON.stringify(payload).replace(/</g, "\\u003c");
-  const script = TOPOLOGY_SCRIPT.replace("__PAYLOAD_JSON__", json);
+  const script = TOPOLOGY_SCRIPT.replace("__PAYLOAD_JSON__", json).replace("__HOST_MAP_HELPER__", normalizeHostnameMapProfile.toString());
   const title = escapeForHtml((payload.setName || "Capture set") + " \u2014 Topology map");
   return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
     "<title>" + title + "</title><style>" + TOPOLOGY_STYLES + "</style></head><body>" +
     TOPOLOGY_BODY + "<script>" + script + "</" + "script></body></html>";
+}
+
+const HOSTNAME_MAP_SCHEMA = "datasnare-ainetscope/hostname-map-v1";
+function normalizeHostnameMapProfile(profile) {
+  if (!profile || profile.schema !== "datasnare-ainetscope/hostname-map-v1") throw new Error("Unsupported IP-to-hostname map format.");
+  if (!Array.isArray(profile.mappings) || profile.mappings.length > 100000) throw new Error("Hostname map must contain no more than 100,000 mappings.");
+  const ipv4 = value => {
+    const parts = value.split(".");
+    return parts.length === 4 && parts.every(part => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+  };
+  const isIpAddress = value => {
+    if (ipv4(value)) return true;
+    if (!value.includes(":")) return false;
+    try { return new URL("http://[" + value + "]/").hostname.length > 0; } catch (_) { return false; }
+  };
+  const mappings = Object.create(null);
+  for (const item of profile.mappings) {
+    const ip = String(item?.ip || "").trim();
+    const hostname = String(item?.hostname || "").trim();
+    if (!isIpAddress(ip)) throw new Error("Invalid IP address in hostname map: " + ip);
+    if (!hostname || hostname.length > 253 || /[\u0000-\u001f\u007f]/.test(hostname)) throw new Error("Invalid hostname for " + ip);
+    if (Object.prototype.hasOwnProperty.call(mappings, ip) && mappings[ip] !== hostname) throw new Error("Conflicting duplicate mapping for " + ip);
+    mappings[ip] = hostname;
+  }
+  return { schema: "datasnare-ainetscope/hostname-map-v1",
+    profileName: String(profile.profileName || "Imported hostname map").trim().slice(0, 100) || "Imported hostname map",
+    mappings };
 }
 
 function escapeForHtml(value) {
@@ -83,6 +110,7 @@ svg.edge-layer path.edge-selected { filter: drop-shadow(0 0 5px rgba(23,33,29,.4
 .host-names-panel { padding: 12px 20px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.5); }
 .host-names-panel p { margin: 0 0 8px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .host-names-panel textarea { width: 100%; min-height: 110px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: white; color: var(--ink); font: 400 10px/1.6 var(--mono); resize: vertical; }
+.host-names-panel input[type="text"] { width: min(360px, 100%); height: 30px; margin: 4px 0 8px; padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; background: white; color: var(--ink); font-size: 11px; }
 .host-names-panel .host-names-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 `;
 
@@ -96,6 +124,9 @@ const TOPOLOGY_BODY = `
   <button type="button" id="autoArrangeButton">Auto-arrange</button>
   <button type="button" id="redrawButton">Redraw</button>
   <button type="button" id="hostNamesButton">Hostnames</button>
+  <button type="button" id="exportHostMapButton">Export IP map</button>
+  <button type="button" id="importHostMapButton">Import IP map</button>
+  <input type="file" id="importHostMapInput" accept="application/json,.json" hidden>
   <button type="button" id="lanePresetsButton">Lane presets</button>
   <button type="button" id="resetLayoutButton">Reset layout</button>
   <button type="button" id="exportLayoutButton">Export layout JSON</button>
@@ -111,6 +142,8 @@ const TOPOLOGY_BODY = `
 </div>
 <p class="help-tip">Drag hosts between lanes, or right-click a host for "Move to lane". Lane order affects Auto-arrange and Redraw priority: put more specific prefixes or ranges (e.g. "10.242.88.17-32") above broader ones (e.g. "10."). After adding or editing a lane, click Redraw to move hosts into the right lane without losing your manual placements. Click a node or a connection line for full details.</p>
 <div class="host-names-panel" id="hostNamesPanel" hidden>
+  <p>Offline mappings are authoritative. Import/export reusable, set-independent JSON IP maps; imports replace this set's hostname map without changing lanes or positions. Captured DNS hints and live DNS are not used automatically.</p>
+  <label for="hostMapProfileName">Profile name</label><input type="text" id="hostMapProfileName" maxlength="100" placeholder="TenantA-Location1">
   <p>One mapping per line: <strong>IP address = hostname</strong>. Cards show hostname, IP, and traffic when a mapping exists.</p>
   <textarea id="hostNamesInput" spellcheck="false" placeholder="10.242.88.6 = APP-SVC-01"></textarea>
   <div class="host-names-actions"><button type="button" id="applyHostNamesButton">Apply hostnames</button></div>
@@ -138,6 +171,7 @@ const TOPOLOGY_BODY = `
 const TOPOLOGY_SCRIPT = `
 (function () {
   "use strict";
+  var normalizeHostnameMapProfile = __HOST_MAP_HELPER__;
   var DATA = __PAYLOAD_JSON__;
   var STORAGE_KEY = "datasnare-ainetscope-topology-layout:" + (DATA.setId || "default");
   var UNCLASSIFIED_ID = "lane-unclassified";
@@ -167,7 +201,8 @@ const TOPOLOGY_SCRIPT = `
       ],
       hostLane: {},
       hostOrder: {},
-      hostNames: {}
+      hostNames: {},
+      hostNamesProfileName: DATA.setName || "Current capture set"
     };
   }
 
@@ -178,6 +213,7 @@ const TOPOLOGY_SCRIPT = `
         saved.hostLane = saved.hostLane || {};
         saved.hostOrder = saved.hostOrder || {};
         saved.hostNames = saved.hostNames || {};
+        saved.hostNamesProfileName = saved.hostNamesProfileName || DATA.setName || "Current capture set";
         return saved;
       }
     } catch (error) { /* fall through to defaults */ }
@@ -915,22 +951,69 @@ const TOPOLOGY_SCRIPT = `
   document.getElementById("hostNamesButton").addEventListener("click", function () {
     var panel = document.getElementById("hostNamesPanel");
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) document.getElementById("hostNamesInput").value = hostNamesText();
+    if (!panel.hidden) {
+      document.getElementById("hostNamesInput").value = hostNamesText();
+      document.getElementById("hostMapProfileName").value = layout.hostNamesProfileName || DATA.setName || "Current capture set";
+    }
   });
 
   document.getElementById("applyHostNamesButton").addEventListener("click", function () {
     var lines = document.getElementById("hostNamesInput").value.split("\\n");
-    var hostNames = {};
+    var mappings = [];
     lines.forEach(function (line) {
       var separator = line.indexOf("=");
       if (separator < 0) return;
       var ip = line.slice(0, separator).trim();
       var name = line.slice(separator + 1).trim();
-      if (ip && name) hostNames[ip] = name;
+      if (ip && name) mappings.push({ ip: ip, hostname: name });
     });
-    layout.hostNames = hostNames;
+    try {
+      var profile = normalizeHostnameMapProfile({ schema: "datasnare-ainetscope/hostname-map-v1",
+        profileName: document.getElementById("hostMapProfileName").value, mappings: mappings });
+      layout.hostNames = profile.mappings;
+      layout.hostNamesProfileName = profile.profileName;
+    } catch (error) {
+      alert("Could not apply IP map: " + error.message);
+      return;
+    }
+    layout.hostNamesProfileName = document.getElementById("hostMapProfileName").value.trim().slice(0, 100) || DATA.setName || "Current capture set";
     document.getElementById("hostNamesInput").value = hostNamesText();
     saveLayout(); render();
+  });
+
+  document.getElementById("exportHostMapButton").addEventListener("click", function () {
+    var mappings = Object.keys(layout.hostNames).sort().map(function (ip) { return { ip: ip, hostname: layout.hostNames[ip] }; });
+    var profile = { schema: "datasnare-ainetscope/hostname-map-v1", profileName: layout.hostNamesProfileName || DATA.setName || "Hostname map", mappings: mappings };
+    downloadBlob(new Blob([JSON.stringify(profile, null, 2)], { type: "application/json" }), fileBaseName() + "-ip-hostname-map.json");
+  });
+
+  document.getElementById("importHostMapButton").addEventListener("click", function () {
+    document.getElementById("importHostMapInput").click();
+  });
+
+  document.getElementById("importHostMapInput").addEventListener("change", function (event) {
+    var file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert("IP map files are limited to 5 MiB."); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var profile = normalizeHostnameMapProfile(JSON.parse(String(reader.result || "{}")));
+        layout.hostNames = profile.mappings;
+        layout.hostNamesProfileName = profile.profileName;
+        saveLayout();
+        if (!document.getElementById("hostNamesPanel").hidden) {
+          document.getElementById("hostNamesInput").value = hostNamesText();
+          document.getElementById("hostMapProfileName").value = layout.hostNamesProfileName;
+        }
+        render();
+        alert("Applied hostname map: " + profile.profileName + " (" + Object.keys(profile.mappings).length + " entries). This capture set's lanes and positions were not changed.");
+      } catch (error) {
+        alert("Could not import IP map: " + error.message);
+      }
+    };
+    reader.readAsText(file);
   });
 
   document.getElementById("lanePresetsButton").addEventListener("click", function () {
@@ -995,7 +1078,8 @@ const TOPOLOGY_SCRIPT = `
           }),
           hostLane: importedLayout.hostLane || {},
           hostOrder: importedLayout.hostOrder || {},
-          hostNames: importedLayout.hostNames || {}
+          hostNames: importedLayout.hostNames || {},
+          hostNamesProfileName: importedLayout.hostNamesProfileName || DATA.setName || "Current capture set"
         };
         selection = null;
         saveLayout(); render();
@@ -1028,3 +1112,7 @@ const TOPOLOGY_SCRIPT = `
   render();
 })();
 `;
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { buildTopologyDocument, normalizeHostnameMapProfile, HOSTNAME_MAP_SCHEMA };
+}

@@ -4,13 +4,13 @@ const $ = (selector) => document.querySelector(selector);
 const COLORS = ["#1d6b4f", "#e86d4c", "#e2ac45", "#4182a4", "#89a63e", "#946c9b", "#7a817a"];
 const TCP_FLAGS = { 0x01: "FIN", 0x02: "SYN", 0x04: "RST", 0x08: "PSH", 0x10: "ACK", 0x20: "URG", 0x40: "ECE", 0x80: "CWR" };
 const SETTINGS_KEY = "datasnare-ainetscope-settings-v1";
-const REPORT_CHECK_GROUPS = Object.freeze(["TCP", "IP", "ICMP", "UDP", "DNS", "HTTP", "TLS", "SMB", "TDS / SQL", "QUIC", "Behavior"]);
+const REPORT_CHECK_GROUPS = Object.freeze(["TCP", "IP", "ICMP", "UDP", "DNS", "HTTP", "TLS", "SMB", "TDS / SQL", "QUIC", "Capture quality", "Behavior"]);
 const DEFAULT_REFERENCE_LINKS = Object.freeze([{ label: "TCP reference", url: "https://www.rfc-editor.org/rfc/rfc9293" }, { label: "TCP state diagram", url: "https://commons.wikimedia.org/wiki/File:Tcp_state_diagram_fixed_new.svg" }, { label: "UDP reference", url: "https://www.rfc-editor.org/rfc/rfc768" }, { label: "DNS reference", url: "https://www.rfc-editor.org/rfc/rfc1035" }, { label: "HTTP reference", url: "https://www.rfc-editor.org/rfc/rfc9110" }, { label: "HTTP/2 reference", url: "https://www.rfc-editor.org/rfc/rfc9113" }, { label: "HTTP/3 reference", url: "https://www.rfc-editor.org/rfc/rfc9114" }, { label: "TLS reference", url: "https://www.rfc-editor.org/rfc/rfc8446" }, { label: "QUIC reference", url: "https://www.rfc-editor.org/rfc/rfc9000" }, { label: "SMB reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-smb" }, { label: "SMB2 reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-smb2" }, { label: "TDS reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-tds" }, { label: "DCE/RPC reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-rpce" }, { label: "OSI model", url: "https://www.iso.org/standard/14256.html" }, { label: "CIDR subnet map", url: "https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing" }]);
 function normalizeReportCheckGroups(value) {
   const groups = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   return Object.fromEntries(REPORT_CHECK_GROUPS.map(group => [group, groups[group] !== false]));
 }
-const DEFAULT_SETTINGS = Object.freeze({ maxCaptureMB: 250, maxSessionMB: 100, maxPackets: 1500000, rawPreviewBytes: 512, cacheEnabled: false, compactMode: true, debugLogEnabled: false, sansFont: "Manrope, sans-serif", monoFont: "DM Mono, monospace", referenceLinks: DEFAULT_REFERENCE_LINKS, reportCheckGroups: normalizeReportCheckGroups() });
+const DEFAULT_SETTINGS = Object.freeze({ maxCaptureMB: 250, maxSessionMB: 100, maxPackets: 1500000, rawPreviewBytes: 512, cacheEnabled: false, compactMode: true, debugLogEnabled: false, sansFont: "Manrope, sans-serif", monoFont: "DM Mono, monospace", referenceLinks: DEFAULT_REFERENCE_LINKS, reportCheckGroups: normalizeReportCheckGroups(), hostMapProfiles: [], activeHostMapProfile: "" });
 const COMPACT_PACKET_THRESHOLD = 100000;
 const SINGLE_CAPTURE_COMPACT_THRESHOLD = 10000;
 const LARGE_CAPTURE_FAST_PATH_PACKETS = 50000;
@@ -20,6 +20,22 @@ const DEBUG_LOG_STATE = { enabled: false, panel: null };
 
 function singleCaptureCompactThreshold(compactMode) {
   return compactMode ? SINGLE_CAPTURE_COMPACT_THRESHOLD : Infinity;
+}
+
+function activeHostnameProfile() {
+  return settings.hostMapProfiles?.find(profile => profile.profileName === settings.activeHostMapProfile) || null;
+}
+
+function displayHostName(address) {
+  const value = String(address ?? "");
+  return globalThis.DataSnareHostMaps?.displayName(value, activeHostnameProfile()) || value;
+}
+
+function displayEndpointName(endpointValue) {
+  const value = String(endpointValue ?? "");
+  const match = (activeHostnameProfile()?.mappings || []).filter(item => value === item.ip || value.startsWith(`${item.ip}:`))
+    .sort((left, right) => right.ip.length - left.ip.length)[0];
+  return match ? `${match.hostname}${value.slice(match.ip.length)}` : value;
 }
 
 function loadSettings() {
@@ -40,7 +56,9 @@ function loadSettings() {
       sansFont: typeof saved.sansFont === "string" && saved.sansFont.trim() ? saved.sansFont.trim().slice(0, 160) : DEFAULT_SETTINGS.sansFont,
       monoFont: typeof saved.monoFont === "string" && saved.monoFont.trim() ? saved.monoFont.trim().slice(0, 160) : DEFAULT_SETTINGS.monoFont,
       referenceLinks: referenceLinks.length ? referenceLinks : DEFAULT_REFERENCE_LINKS,
-      reportCheckGroups: normalizeReportCheckGroups(saved.reportCheckGroups)
+      reportCheckGroups: normalizeReportCheckGroups(saved.reportCheckGroups),
+      hostMapProfiles: globalThis.DataSnareHostMaps?.normalizeProfiles(saved.hostMapProfiles) || [],
+      activeHostMapProfile: typeof saved.activeHostMapProfile === "string" ? saved.activeHostMapProfile.slice(0, 100) : ""
     };
   } catch (_) { return { ...DEFAULT_SETTINGS, referenceLinks: [...DEFAULT_REFERENCE_LINKS] }; }
 }
@@ -223,6 +241,7 @@ function parseDNS(bytes, view, offset) {
     "Response code": rcode,
     "Flags": `0x${flags.toString(16).padStart(4, "0")}`
   };
+  const dnsAnswers = [];
   if (qr && answerCount > 0) {
     let recordCursor = cursor;
     const answers = [];
@@ -239,11 +258,14 @@ function parseDNS(bytes, view, offset) {
       let value = rrType === 1 && rdata.length >= 4 ? ipv4(rdata, 0) : rrType === 28 && rdata.length >= 16 ? ipv6(new DataView(rdata.buffer, rdata.byteOffset, rdata.byteLength), 0) : safeText(rdata).replace(/\s+/g, " ");
       if (value && value.length > 64) value = value.slice(0, 64) + "…";
       answers.push(`${nameInfo.name} ${typeNames[rrType] || `TYPE${rrType}`} TTL=${ttl} ${value}`);
+      if ((rrType === 1 && rdata.length === 4 || rrType === 28 && rdata.length === 16) && rrClass === 1) {
+        dnsAnswers.push({ name: nameInfo.name, type: typeNames[rrType], ttl, address: value });
+      }
       recordCursor += rdLength;
     }
     if (answers.length) details.Answers = answers.join("; ");
   }
-  return { protocol: "DNS", dnsId: id, dnsResponse: qr, dnsRcode: rcode, dnsName: question.name, info: dnsInfo, details };
+  return { protocol: "DNS", dnsId: id, dnsResponse: qr, dnsRcode: rcode, dnsName: question.name, dnsAnswers, info: dnsInfo, details };
 }
 
 function parseTLS(bytes, view, offset) {
@@ -659,7 +681,10 @@ function parseFrame(frame, number, timestamp, linkType, options = {}) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const detailed = options.detailed !== false;
   const previewLength = Math.min(bytes.length, Math.max(0, options.rawPreviewBytes || 0));
-  const packet = { number, timestamp, length: bytes.length, capturedLength: bytes.length, captureOffset: options.captureOffset ?? -1, linkType, protocol: "Unknown", transport: "", src: "—", dst: "—", srcPort: null, dstPort: null, info: "Unrecognized frame" };
+  const originalLength = Number.isFinite(options.originalLength) ? options.originalLength : bytes.length;
+  const packet = { number, timestamp, length: bytes.length, capturedLength: bytes.length, originalLength,
+    truncated: originalLength > bytes.length, captureOffset: options.captureOffset ?? -1, linkType,
+    protocol: "Unknown", transport: "", src: "—", dst: "—", srcPort: null, dstPort: null, info: "Unrecognized frame" };
   if (detailed) { packet.details = {}; packet.layers = [{ name: "Frame", summary: `${bytes.length} bytes captured`, start: 0, length: bytes.length, fields: [{ name: "Frame number", value: number, start: 0, length: bytes.length }, { name: "Arrival time", value: new Date(timestamp * 1000).toISOString(), start: 0, length: bytes.length }, { name: "Captured length", value: `${bytes.length} bytes`, start: 0, length: bytes.length }] }]; }
   if (previewLength) packet.rawPreview = bytes.slice(0, previewLength);
   let offset = 0;
@@ -828,10 +853,11 @@ function parsePcap(buffer, options = {}) {
     const seconds = view.getUint32(offset, littleEndian);
     const fraction = view.getUint32(offset + 4, littleEndian);
     const capturedLength = view.getUint32(offset + 8, littleEndian);
+    const originalLength = view.getUint32(offset + 12, littleEndian);
     if (!Number.isFinite(capturedLength) || capturedLength < 0 || capturedLength > bytes.length - offset - 16) break;
     const timestamp = seconds + fraction / (nanoseconds ? 1e9 : 1e6);
     if (packets.length >= options.maxPackets) throw new Error(`Packet limit exceeded (${options.maxPackets.toLocaleString()}). Increase it in Settings.`);
-    const packet = parseFrame(bytes.subarray(offset + 16, offset + 16 + capturedLength), packets.length + 1, timestamp, linkType, { captureOffset: offset + 16, rawPreviewBytes: options.retainPreviews ? options.rawPreviewBytes : 0, detailed: !options.compact });
+    const packet = parseFrame(bytes.subarray(offset + 16, offset + 16 + capturedLength), packets.length + 1, timestamp, linkType, { originalLength, captureOffset: offset + 16, rawPreviewBytes: options.retainPreviews ? options.rawPreviewBytes : 0, detailed: !options.compact });
     packets.push(options.compact ? compactPacket(packet) : packet);
     if (options.onProgress && packets.length % 10000 === 0) options.onProgress(packets.length);
     const nextOffset = offset + 16 + capturedLength; if (nextOffset <= offset) break; offset = nextOffset;
@@ -877,18 +903,20 @@ function parsePcapng(buffer, options = {}) {
       const iface = interfaces[interfaceId] || { linkType: 1, resolution: 1e-6 };
       const high = view.getUint32(offset + 12, littleEndian); const low = view.getUint32(offset + 16, littleEndian);
       const capturedLength = view.getUint32(offset + 20, littleEndian);
+      const originalLength = view.getUint32(offset + 24, littleEndian);
       const packetStart = offset + 28;
       if (packetStart + capturedLength <= offset + length) {
         const timestamp = (high * 4294967296 + low) * iface.resolution;
         if (packets.length >= options.maxPackets) throw new Error(`Packet limit exceeded (${options.maxPackets.toLocaleString()}). Increase it in Settings.`);
-        const packet = parseFrame(bytes.subarray(packetStart, packetStart + capturedLength), packets.length + 1, timestamp, iface.linkType, { captureOffset: packetStart, rawPreviewBytes: options.retainPreviews ? options.rawPreviewBytes : 0, detailed: !options.compact });
+        const packet = parseFrame(bytes.subarray(packetStart, packetStart + capturedLength), packets.length + 1, timestamp, iface.linkType, { originalLength, captureOffset: packetStart, rawPreviewBytes: options.retainPreviews ? options.rawPreviewBytes : 0, detailed: !options.compact });
         packets.push(options.compact ? compactPacket(packet) : packet);
         if (options.onProgress && packets.length % 10000 === 0) options.onProgress(packets.length);
       }
     } else if (type === 3 && length >= 16) {
-      const capturedLength = length - 16;
+      const originalLength = view.getUint32(offset + 8, littleEndian);
+      const capturedLength = Math.min(originalLength, length - 16);
       if (packets.length >= options.maxPackets) throw new Error(`Packet limit exceeded (${options.maxPackets.toLocaleString()}). Increase it in Settings.`);
-      const packet = parseFrame(bytes.subarray(offset + 12, offset + 12 + capturedLength), packets.length + 1, packets.length, interfaces[0]?.linkType || 1, { captureOffset: offset + 12, rawPreviewBytes: options.retainPreviews ? options.rawPreviewBytes : 0, detailed: !options.compact });
+      const packet = parseFrame(bytes.subarray(offset + 12, offset + 12 + capturedLength), packets.length + 1, packets.length, interfaces[0]?.linkType || 1, { originalLength, captureOffset: offset + 12, rawPreviewBytes: options.retainPreviews ? options.rawPreviewBytes : 0, detailed: !options.compact });
       packets.push(options.compact ? compactPacket(packet) : packet);
       if (options.onProgress && packets.length % 10000 === 0) options.onProgress(packets.length);
     }
@@ -1208,7 +1236,7 @@ function render() {
   $("#donutValue").textContent = Object.keys(protocols).length;
   $("#protocolLegend").innerHTML = Object.entries(protocols).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, value], index) => `<div class="protocol-item"><i style="background:${COLORS[index % COLORS.length]}"></i><b>${escapeHtml(name)}</b><span>${Math.round(value / Math.max(bytes, 1) * 100)}%</span></div>`).join("");
   drawTimeline(); drawDonut(protocols);
-  $("#flowRows").innerHTML = aggregation.flows.slice(0, 100).map(flow => `<tr data-flow="${encodeURIComponent(flow.key)}"><td class="endpoint-pair"><strong>${escapeHtml(flow.a)}</strong><small>↔ ${escapeHtml(flow.b)}</small></td><td><span class="badge">${escapeHtml(flow.protocol)}</span></td><td>${flow.packets}</td><td>${formatBytes(flow.bytes)}</td><td>${formatBytes(flow.bytesA)} ↔ ${formatBytes(flow.bytesB)}</td><td>${formatLatency(flow.latencyValue)}</td><td><span class="badge ${flow.resets || flow.state === "Handshake failed" ? "warn" : "good"}">${escapeHtml(flow.state)}</span></td></tr>`).join("") || `<tr><td colspan="7">No matching connections</td></tr>`;
+  $("#flowRows").innerHTML = aggregation.flows.slice(0, 100).map(flow => `<tr data-flow="${encodeURIComponent(flow.key)}"><td class="endpoint-pair"><strong title="${escapeHtml(flow.a)}">${escapeHtml(displayEndpointName(flow.a))}</strong><small title="${escapeHtml(flow.b)}">↔ ${escapeHtml(displayEndpointName(flow.b))}</small></td><td><span class="badge">${escapeHtml(flow.protocol)}</span></td><td>${flow.packets}</td><td>${formatBytes(flow.bytes)}</td><td>${formatBytes(flow.bytesA)} ↔ ${formatBytes(flow.bytesB)}</td><td>${formatLatency(flow.latencyValue)}</td><td><span class="badge ${flow.resets || flow.state === "Handshake failed" ? "warn" : "good"}">${escapeHtml(flow.state)}</span></td></tr>`).join("") || `<tr><td colspan="7">No matching connections</td></tr>`;
   if (typeof renderFlowDetail === "function") renderFlowDetail(aggregation.flows);
   const retransmissions = aggregation.flows.reduce((sum, flow) => sum + flow.retransmissions, 0); const resets = aggregation.flows.reduce((sum, flow) => sum + flow.resets, 0); const quic = packets.filter(packet => packet.protocol === "QUIC").length; const smb = packets.filter(packet => packet.protocol.startsWith("SMB")).length;
   const insights = [
@@ -1218,7 +1246,7 @@ function render() {
     ["S", `${smb} SMB packets`, smb ? "File-sharing operations are represented in the capture." : "No SMB file-sharing traffic detected."]
   ];
   $("#insightList").innerHTML = insights.map(item => `<div class="insight"><span class="insight-icon">${item[0]}</span><div><strong>${item[1]}</strong><p>${item[2]}</p></div></div>`).join("");
-  $("#packetRows").innerHTML = packets.slice(0, 1500).map(packet => `<tr data-packet="${packet.number}"><td>${packet.number}</td><td>${(packet.timestamp - state.baseTime).toFixed(6)}</td><td>${escapeHtml(packet.src)}</td><td>${escapeHtml(packet.dst)}</td><td><span class="badge">${escapeHtml(packet.protocol)}</span></td><td>${packet.length}</td><td>${escapeHtml(packet.info)}</td></tr>`).join("");
+  $("#packetRows").innerHTML = packets.slice(0, 1500).map(packet => `<tr data-packet="${packet.number}"><td>${packet.number}</td><td>${(packet.timestamp - state.baseTime).toFixed(6)}</td><td title="${escapeHtml(packet.src)}">${escapeHtml(displayHostName(packet.src))}</td><td title="${escapeHtml(packet.dst)}">${escapeHtml(displayHostName(packet.dst))}</td><td><span class="badge">${escapeHtml(packet.protocol)}</span></td><td>${packet.length}</td><td>${escapeHtml(packet.info)}</td></tr>`).join("");
   $("#rowCount").textContent = `${Math.min(packets.length, 1500).toLocaleString()} of ${packets.length.toLocaleString()}`;
   if (state.compactMode && packets.length > LARGE_CAPTURE_FAST_PATH_PACKETS) renderLargeCaptureMode(packets, aggregation);
   else renderExpert(packets, aggregation);
@@ -1290,7 +1318,7 @@ async function reparseCurrentCaptureExpanded() {
 
 function applyFilters() {
   const query = $("#searchInput").value.trim().toLowerCase(); const protocol = $("#protocolFilter").value;
-  state.filtered = state.packets.filter(packet => (protocol === "all" || packet.protocol === protocol) && (!query || `${packet.src} ${packet.dst} ${packet.protocol} ${packet.info}`.toLowerCase().includes(query)));
+  state.filtered = state.packets.filter(packet => (protocol === "all" || packet.protocol === protocol) && (!query || `${packet.src} ${packet.dst} ${displayHostName(packet.src)} ${displayHostName(packet.dst)} ${packet.protocol} ${packet.info}`.toLowerCase().includes(query)));
   render();
 }
 
@@ -1574,7 +1602,7 @@ if (typeof document !== "undefined") {
     const wasCompactMode = settings.compactMode;
     const referenceLinks = $("#referenceLinks").value.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => { const separator = line.indexOf("|"); return separator > 0 ? { label: line.slice(0, separator).trim().slice(0, 80), url: line.slice(separator + 1).trim().slice(0, 500) } : null; }).filter(link => link?.label && /^(https?:|mailto:)/i.test(link.url));
     const reportCheckGroups = Object.fromEntries([...document.querySelectorAll("[data-report-check-group]")].map(input => [input.value, input.checked]));
-    settings = { maxCaptureMB: Math.max(1, Math.min(4096, Math.floor(Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB))), maxSessionMB: Math.max(1, Math.min(512, Math.floor(Number($("#maxSessionMB").value) || DEFAULT_SETTINGS.maxSessionMB))), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), twoSidedRowsPerPage: Math.max(25, Math.min(1000, Math.floor(Number($("#twoSidedRowsPerPage").value) || 150))), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS], reportCheckGroups: normalizeReportCheckGroups(reportCheckGroups) };
+    settings = { ...settings, maxCaptureMB: Math.max(1, Math.min(4096, Math.floor(Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB))), maxSessionMB: Math.max(1, Math.min(512, Math.floor(Number($("#maxSessionMB").value) || DEFAULT_SETTINGS.maxSessionMB))), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), twoSidedRowsPerPage: Math.max(25, Math.min(1000, Math.floor(Number($("#twoSidedRowsPerPage").value) || 150))), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS], reportCheckGroups: normalizeReportCheckGroups(reportCheckGroups) };
     document.documentElement.style.setProperty("--sans", settings.sansFont); document.documentElement.style.setProperty("--mono", settings.monoFont);
     toggleDebugLogPanel(settings.debugLogEnabled);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); $("#settingsDialog").close();
@@ -1607,5 +1635,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { parseFrame, parseTLS, parseQUIC, parseSMB, parseTDS, normalizeReportCheckGroups, REPORT_CHECK_GROUPS };
+  module.exports = { parseFrame, parseDNS, parsePcap, parseTLS, parseQUIC, parseSMB, parseTDS, normalizeReportCheckGroups, REPORT_CHECK_GROUPS };
 }

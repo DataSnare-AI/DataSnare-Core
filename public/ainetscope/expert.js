@@ -130,7 +130,7 @@ function drawTopology(flows) {
   nodeMap.forEach(node => {
     const size = 6 + node.bytes / maximumNode * 8;
     context.beginPath(); context.arc(node.x, node.y, size, 0, Math.PI * 2); context.fillStyle = COLORS[0]; context.fill(); context.strokeStyle = "#fbfaf6"; context.lineWidth = 2; context.stroke();
-    context.fillStyle = "#17211d"; context.font = "9px DM Mono"; context.textAlign = node.x < centerX ? "right" : "left"; context.fillText(node.name, node.x + (node.x < centerX ? -size - 4 : size + 4), node.y + 3);
+    context.fillStyle = "#17211d"; context.font = "9px DM Mono"; context.textAlign = node.x < centerX ? "right" : "left"; context.fillText(displayHostName(node.name), node.x + (node.x < centerX ? -size - 4 : size + 4), node.y + 3);
     topologyHitTargets.push({ type: "node", ...node, size, paths: [...edges.values()].filter(edge => edge.from === node.name || edge.to === node.name).length });
   });
   context.textAlign = "left";

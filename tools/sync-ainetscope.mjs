@@ -12,6 +12,7 @@ const assets = [
   'capacity-check.js',
   'expert.js',
   'flow-detail.js',
+  'host-maps.js',
   'index.html',
   'packet-workbench.js',
   'tcp-signals.js',

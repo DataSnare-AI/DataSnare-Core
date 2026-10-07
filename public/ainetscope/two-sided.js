@@ -111,7 +111,7 @@ function twoSidedPacketHtml(packet, side, recordIndex) {
     <button class="two-sided-packet" type="button" data-two-record="${recordIndex}" aria-label="Inspect System ${side} frame ${packet.number}">
       <span>${markButton}${packet.number}</span><time title="Original: ${twoSidedTime(packet.timestamp)}">${twoSidedTime(corrected)}</time>
       <span>${delta === null || delta === undefined ? '—' : delta.toFixed(3)}</span>
-      <span title="Port ${packet.srcPort ?? 'N/A'}">${escapeHtml(packet.src)}</span><span title="Port ${packet.dstPort ?? 'N/A'}">${escapeHtml(packet.dst)}</span>
+      <span title="${escapeHtml(`${packet.src}:${packet.srcPort ?? ''}`)}">${escapeHtml(displayHostName(packet.src))}</span><span title="${escapeHtml(`${packet.dst}:${packet.dstPort ?? ''}`)}">${escapeHtml(displayHostName(packet.dst))}</span>
       <span title="${escapeHtml(packet.info || '')}">${packet.seq ?? '—'} / ${packet.ack ?? '—'} / ${packet.payloadLength ?? '—'} / <strong class="two-sided-flags two-sided-flags--${flagStyle}">${escapeHtml(flags.join(' ') || packet.protocol || '')}</strong></span>
     </button>${side === 'B' ? noteButton : ''}
   </div>`;
@@ -126,8 +126,10 @@ function twoSidedVisibleRecords() {
     if (statusFilter !== 'all' && record.status !== statusFilter) return false;
     if ($("#twoSidedMatchedOnly").getAttribute("aria-pressed") === "true" && record.status !== "matched") return false;
     if (connection !== "all" && record.connection !== connection && !includeContext) return false;
+    const endpointText = [record.packetA, record.packetB].filter(Boolean).flatMap(packet => [packet.src, packet.dst,
+      displayHostName(packet.src), displayHostName(packet.dst)]);
     return !query || [record.connection, record.status, record.packetA?.number, record.packetB?.number,
-      record.packetA?.seq, record.packetA?.ack, record.packetB?.seq, record.packetB?.ack].join(" ").toLowerCase().includes(query);
+      record.packetA?.seq, record.packetA?.ack, record.packetB?.seq, record.packetB?.ack, ...endpointText].join(" ").toLowerCase().includes(query);
   });
 }
 
@@ -182,7 +184,7 @@ function inspectTwoSided(index) {
   const detail = (packet, side) => packet ? `<section><h3>System ${side} / frame ${packet.number}</h3><dl>
     <dt>Original timestamp</dt><dd>${twoSidedTime(packet.timestamp)}</dd>
     <dt>Aligned timestamp</dt><dd>${twoSidedTime(packet.timestamp + (side === "B" ? twoSidedState.offsetMs / 1000 : 0))}</dd>
-    <dt>Endpoints</dt><dd>${escapeHtml(packet.src)}:${packet.srcPort ?? ""} &gt; ${escapeHtml(packet.dst)}:${packet.dstPort ?? ""}</dd>
+    <dt>Endpoints</dt><dd>${escapeHtml(displayHostName(packet.src))}:${packet.srcPort ?? ""} (${escapeHtml(packet.src)}) &gt; ${escapeHtml(displayHostName(packet.dst))}:${packet.dstPort ?? ""} (${escapeHtml(packet.dst)})</dd>
     <dt>Raw TCP sequence / acknowledgement</dt><dd>${packet.seq ?? "N/A"} / ${packet.ack ?? "N/A"}</dd>
     <dt>Flags / payload length</dt><dd>${escapeHtml((packet.flags || []).join(" "))} / ${packet.payloadLength ?? "N/A"}</dd>
   </dl></section>` : `<section><h3>System ${side}</h3><p>No unique counterpart.</p></section>`;

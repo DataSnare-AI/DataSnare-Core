@@ -6,8 +6,8 @@ const workbenchBaseColumns = [
   { label: "Mark", html: packet => frameIndicator(packet) },
   { label: "No.", value: packet => packet.number },
   { label: "Time", value: (packet, displayedIndex) => formatWorkbenchTime(packet, displayedIndex) },
-  { label: "Source", value: packet => packet.src },
-  { label: "Destination", value: packet => packet.dst },
+  { label: "Source", value: packet => displayHostName(packet.src) },
+  { label: "Destination", value: packet => displayHostName(packet.dst) },
   { label: "Protocol", value: packet => packet.protocol },
   { label: "Length", value: packet => packet.length },
   { label: "Size profile", html: packet => frameSizeBar(packet) },
@@ -297,7 +297,7 @@ function compareFieldValue(actual, filter) {
 
 function workbenchFilteredPackets() {
   const query = $("#workbenchSearch").value.trim().toLowerCase(); const protocol = $("#workbenchProtocolFilter").value;
-  return state.packets.filter(packet => (protocol === "all" || packet.protocol === protocol) && (!query || `${packet.number} ${packet.src} ${packet.dst} ${packet.protocol} ${packet.info} ${packet.processCorrelation?.pid || ""} ${packet.processCorrelation?.process || ""} ${packet.processCorrelation?.executable || ""} ${packet.processCorrelation?.user || ""}`.toLowerCase().includes(query)) && workbenchState.fieldFilters.every(filter => compareFieldValue(packetField(packet, filter.key), filter)));
+  return state.packets.filter(packet => (protocol === "all" || packet.protocol === protocol) && (!query || `${packet.number} ${packet.src} ${packet.dst} ${displayHostName(packet.src)} ${displayHostName(packet.dst)} ${packet.protocol} ${packet.info} ${packet.processCorrelation?.pid || ""} ${packet.processCorrelation?.process || ""} ${packet.processCorrelation?.executable || ""} ${packet.processCorrelation?.user || ""}`.toLowerCase().includes(query)) && workbenchState.fieldFilters.every(filter => compareFieldValue(packetField(packet, filter.key), filter)));
 }
 
 function refreshPacketWorkbench(preferredNumber = null) {
@@ -356,7 +356,7 @@ function renderWorkbenchList(preferredNumber = null, renderFilterControls = true
   const frameState = currentFrameState();
   const spacer = `<td colspan="${columns.length + workbenchState.columns.length}" aria-hidden="true"></td>`;
   const topSpacer = firstVisible ? `<tr class="workbench-virtual-spacer" style="height:${firstVisible * workbenchState.rowHeight}px">${spacer}</tr>` : "";
-  const rows = visible.map((packet, displayedIndex) => `<tr data-workbench-packet="${packet.number}" class="${packet.number === workbenchState.selectedNumber ? "selected" : ""} ${frameState.marks.includes(packet.number) ? "marked" : ""} ${frameState.referenceNumber === packet.number ? "time-reference" : ""} ${packet.flags?.includes("RST") || packet.tdsError || packet.dnsRcode ? "flagged" : ""}">${columns.map(column => `<td title="${column.label === "Time" ? escapeHtml(new Date(packet.timestamp * 1000).toISOString()) : ""}">${column.html ? column.html(packet) : escapeHtml(column.value(packet, firstVisible + displayedIndex))}</td>`).join("")}${workbenchState.columns.map(column => { const value = packetField(packet, column.key); return `<td title="${escapeHtml(value ?? "Not present")}">${escapeHtml(value ?? "—")}</td>`; }).join("")}</tr>`).join("");
+  const rows = visible.map((packet, displayedIndex) => `<tr data-workbench-packet="${packet.number}" class="${packet.number === workbenchState.selectedNumber ? "selected" : ""} ${frameState.marks.includes(packet.number) ? "marked" : ""} ${frameState.referenceNumber === packet.number ? "time-reference" : ""} ${packet.flags?.includes("RST") || packet.tdsError || packet.dnsRcode ? "flagged" : ""}">${columns.map(column => `<td title="${column.label === "Time" ? escapeHtml(new Date(packet.timestamp * 1000).toISOString()) : column.label === "Source" ? escapeHtml(packet.src) : column.label === "Destination" ? escapeHtml(packet.dst) : ""}">${column.html ? column.html(packet) : escapeHtml(column.value(packet, firstVisible + displayedIndex))}</td>`).join("")}${workbenchState.columns.map(column => { const value = packetField(packet, column.key); return `<td title="${escapeHtml(value ?? "Not present")}">${escapeHtml(value ?? "—")}</td>`; }).join("")}</tr>`).join("");
   const bottomHeight = Math.max(0, (totalRows - firstVisible - visible.length) * workbenchState.rowHeight);
   $("#workbenchRows").innerHTML = `${topSpacer}${rows || `<tr><td colspan="${columns.length + workbenchState.columns.length}">No matching packets</td></tr>`}${bottomHeight ? `<tr class="workbench-virtual-spacer" style="height:${bottomHeight}px">${spacer}</tr>` : ""}`;
   listPane.scrollTop = renderScrollTop;

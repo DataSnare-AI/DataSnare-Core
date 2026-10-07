@@ -71,6 +71,7 @@
         <div class="filters">
           <label class="search-field"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Filter IP, host, protocol…"></label>
           <select id="protocolFilter" aria-label="Filter by protocol"><option value="all">All protocols</option></select>
+          <button class="button button-quiet" id="singleHostMapButton" type="button" title="Import or apply an offline IP-to-hostname profile">IP map</button>
           <button class="button button-quiet" id="pdfReportButton" type="button" title="Create a print-ready report with chart images and expert findings">PDF report ↓</button>
         </div>
       </div>
@@ -375,6 +376,7 @@
         <label class="settings-toggle"><input type="checkbox" value="SMB" data-report-check-group><span><strong>SMB</strong><small>SMB2 response status, session setup, and credit limits</small></span></label>
         <label class="settings-toggle"><input type="checkbox" value="TDS / SQL" data-report-check-group><span><strong>TDS / SQL</strong><small>Decoded errors, login correlation, and query timing limits</small></span></label>
         <label class="settings-toggle"><input type="checkbox" value="QUIC" data-report-check-group><span><strong>QUIC</strong><small>Retry packets and encrypted transport limits</small></span></label>
+        <label class="settings-toggle"><input type="checkbox" value="Capture quality" data-report-check-group><span><strong>Capture quality</strong><small>Frames captured shorter than their recorded original length</small></span></label>
         <label class="settings-toggle"><input type="checkbox" value="Behavior" data-report-check-group><span><strong>Traffic behavior</strong><small>Conversation dominance and application chattiness</small></span></label>
       </div>
     </section>
@@ -524,7 +526,7 @@
   </dialog>
 
   <section class="two-sided" id="twoSidedWorkspace" hidden aria-labelledby="twoSidedTitle">
-    <div class="panel-heading"><h2 id="twoSidedTitle">Two-Sided</h2><button class="button button-quiet" id="twoSidedBack" type="button">Back to capture</button></div>
+    <div class="panel-heading"><h2 id="twoSidedTitle">Two-Sided</h2><div><button class="button button-quiet" id="twoSidedHostMapButton" type="button" title="Apply local IP-to-hostname profile to both traces">IP map</button><button class="button button-quiet" id="twoSidedBack" type="button">Back to capture</button></div></div>
     <form id="twoSidedForm" class="two-sided-controls">
       <label>System A capture<input id="twoSidedFileA" type="file" accept=".pcap,.pcapng,.cap" required></label>
       <label>System B capture<input id="twoSidedFileB" type="file" accept=".pcap,.pcapng,.cap" required></label>
@@ -548,6 +550,7 @@
       <span id="twoSidedPage"></span>
       <button class="button button-quiet" id="twoSidedNext" type="button" disabled>Next</button>
       <button class="button button-set" id="twoSidedAnalyticsButton" type="button">Analytics / Expert</button>
+      <button class="button button-quiet" id="twoSidedToolbarHostMapButton" type="button">IP map</button>
     </div>
     <div class="two-sided-scroll" id="twoSidedScroll">
       <div class="two-sided-heading"><strong id="twoSidedNameA">System A</strong><span>Correlation / corrected interval</span><strong id="twoSidedNameB">System B</strong></div>
@@ -564,6 +567,18 @@
     <h2 id="twoSidedNoteTitle">Frame note</h2>
     <label>Note<textarea id="twoSidedNoteText" rows="6" maxlength="4000"></textarea></label>
     <div class="two-sided-toolbar"><button id="twoSidedNoteCancel" class="button button-quiet" type="button">Cancel</button><button id="twoSidedNoteDelete" class="button button-quiet" type="button">Delete note</button><button id="twoSidedNoteSave" class="button button-primary" type="button">Save note</button></div>
+  </dialog>
+  <dialog id="hostMapDialog" class="host-map-dialog" aria-labelledby="hostMapTitle">
+    <div class="dialog-heading"><div><p class="eyebrow">OFFLINE ADDRESS LABELS</p><h2 id="hostMapTitle">IP-to-hostname maps</h2></div><button id="hostMapClose" class="icon-button" type="button" aria-label="Close">×</button></div>
+    <div class="host-map-content">
+      <label>Saved profile<select id="hostMapProfileSelect" aria-label="Saved hostname profile"></select></label>
+      <label>Profile name<input id="hostMapProfileName" type="text" maxlength="100" placeholder="TenantA-Location1"></label>
+      <p class="host-map-note">Profiles are stored in this browser and may be imported/exported as JSON. They change endpoint labels only; matching and underlying packet addresses remain IP-based. No external DNS is queried.</p>
+      <div class="host-map-actions"><button id="hostMapNew" class="button button-quiet" type="button">New profile</button><button id="hostMapSuggestDns" class="button button-quiet" type="button">Suggest captured DNS</button><span></span><button id="hostMapImportButton" class="button button-quiet" type="button">Import JSON</button><input id="hostMapImportInput" type="file" accept="application/json,.json" hidden><button id="hostMapExport" class="button button-quiet" type="button">Export JSON</button></div>
+      <textarea id="hostMapEntries" rows="12" spellcheck="false" placeholder="10.0.0.12 = APP-01.example.internal"></textarea>
+      <p id="hostMapStatus" role="status">Select or create a profile. One mapping per line: IP address = hostname.</p>
+    </div>
+    <div class="note-footer"><span></span><div><button id="hostMapDelete" class="button button-quiet" type="button">Delete profile</button><button id="hostMapApply" class="button button-primary" type="button">Save and apply</button></div></div>
   </dialog>
   <div class="toast" id="toast" role="status"></div>
   <dialog id="twoSidedAnalyticsDialog" class="two-analytics-dialog" aria-labelledby="twoSidedAnalyticsTitle">
@@ -601,6 +616,7 @@
     <button id="captureLaunchOpen" class="button button-primary" type="button">Open in New Window</button>
   </dialog>
   <script src="suite-theme.js"></script>
+  <script src="host-maps.js"></script>
   <script src="app.js"></script>
   <script src="tuning.js"></script>
   <script src="expert.js"></script>

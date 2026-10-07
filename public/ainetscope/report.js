@@ -8,7 +8,7 @@ function reportNumber(value, digits = 0) {
   return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: digits }) : "—";
 }
 
-function buildTriageChecks(packets, aggregation, services, profile, enabledGroups = null) {
+function buildTriageChecks(packets, aggregation, services, profile, enabledGroups = null, sequenceAnalysis = null) {
   const checks = [];
   const add = (group, name, severity, state, evidence, limitation = "") => checks.push({ group, name, severity, state, evidence, limitation });
   const has = protocol => packets.some(packet => packet.protocol === protocol);
@@ -34,17 +34,34 @@ function buildTriageChecks(packets, aggregation, services, profile, enabledGroup
     tcpPackets.length ? `${reportNumber(zeroWindows)} zero-window packets.` : "No TCP packets were decoded.",
     "A zero window indicates advertised receiver backpressure, not by itself the responsible process or host resource.");
 
-  const retransmissions = tcpFlows.reduce((sum, flow) => sum + flow.retransmissions, 0);
-  add("TCP", "Possible retransmissions", "medium", !tcpPackets.length ? "not-observed" : retransmissions ? "review" : "clear",
-    tcpPackets.length ? `${reportNumber(retransmissions)} repeated payload sequence values in ${reportNumber(tcpFlows.filter(flow => flow.retransmissions).length)} flows.` : "No TCP packets were decoded.",
-    "This lightweight signature is not Wireshark's full retransmission analysis; offload, capture duplication, and sequence reuse can affect it.");
+  const sequenceTotals = sequenceAnalysis?.totals;
+  const repeatedSegments = sequenceTotals?.repeatedSegments ?? tcpFlows.reduce((sum, flow) => sum + flow.retransmissions, 0);
+  const acknowledgedRepeats = sequenceTotals?.acknowledgedRepeatSegments ?? 0;
+  const sequenceSamplesAvailable = sequenceAnalysis && sequenceAnalysis.totalTcpPackets > 0;
+  const sequenceScope = sequenceAnalysis?.truncated ? [
+    sequenceAnalysis.totalTcpPackets > sequenceAnalysis.analyzedPackets
+      ? ` Packet analysis was capped at ${reportNumber(sequenceAnalysis.analyzedPackets)} of ${reportNumber(sequenceAnalysis.totalTcpPackets)} TCP packets.` : "",
+    sequenceAnalysis.rangeTrackingStoppedFlows
+      ? ` Detailed range tracking stopped at its per-direction interval limit in ${reportNumber(sequenceAnalysis.rangeTrackingStoppedFlows)} flow(s); overlap/unique-byte counts are partial.` : ""
+  ].filter(Boolean).join("") : "";
+  add("TCP", "Possible retransmissions / repeated payload", "medium", !tcpPackets.length ? "not-observed" : !sequenceSamplesAvailable ? "not-assessed" : repeatedSegments ? "review" : "clear",
+    tcpPackets.length ? (sequenceSamplesAvailable
+      ? `${reportNumber(repeatedSegments)} payload segments overlapped previously observed sequence space (${reportNumber(sequenceTotals.overlapBytes)} overlapping bytes); ${reportNumber(sequenceTotals.exactRepeatedSegments)} exact repeats, ${reportNumber(acknowledgedRepeats)} repeated segments after cumulative ACK. Sequence origins: ${reportNumber(sequenceTotals.handshakeAnchoredDirections)} direction(s) observed from SYN, ${reportNumber(sequenceTotals.midstreamDirections)} midstream-relative.${sequenceScope}`
+      : "TCP packets are present, but no usable sequence-number samples were available.") : "No TCP packets were decoded.",
+    "Overlap may be retransmission, capture duplication, or offload artifact. A repeat after cumulative ACK is stronger evidence, but still not a definitive diagnosis.");
 
   const duplicateAcks = tcpFlows.reduce((sum, flow) => sum + flow.duplicateAcks, 0);
   add("TCP", "Possible duplicate ACK pattern", "medium", !tcpPackets.length ? "not-observed" : duplicateAcks ? "review" : "clear",
     tcpPackets.length ? `${reportNumber(duplicateAcks)} repeated ACK values on empty TCP segments.` : "No TCP packets were decoded.",
     "AINetScope does not yet check ACK progression, SACK blocks, or Wireshark's duplicate-ACK sequence rules.");
 
-  add("TCP", "Out-of-order segments", "medium", "not-assessed", "Not calculated by the current packet analyzer.", "Requires per-direction sequence-space ordering and retransmission disambiguation.");
+  const forwardGaps = sequenceTotals?.forwardGapSegments || 0;
+  const lateNovel = sequenceTotals?.lateNovelSegments || 0;
+  add("TCP", "Sequence gaps / late novel payload", "medium", !tcpPackets.length ? "not-observed" : !sequenceSamplesAvailable ? "not-assessed" : forwardGaps || lateNovel ? "review" : "clear",
+    tcpPackets.length && sequenceSamplesAvailable
+      ? `${reportNumber(forwardGaps)} segments began beyond the observed sequence high-water (${reportNumber(sequenceTotals.forwardGapBytes)} gap bytes); ${reportNumber(lateNovel)} later segments added novel bytes below that high-water (${reportNumber(sequenceTotals.lateNovelBytes)} bytes). Sequence origins: ${reportNumber(sequenceTotals.handshakeAnchoredDirections)} direction(s) observed from SYN, ${reportNumber(sequenceTotals.midstreamDirections)} midstream-relative.${sequenceScope}`
+      : tcpPackets.length ? "Sequence-range analysis was unavailable." : "No TCP packets were decoded.",
+    "A forward gap may reflect omitted traffic, capture boundaries, or reordering. Later novel bytes below a previous high-water are consistent with out-of-order arrival, but cannot alone prove it.");
   add("TCP", "Window-full / persist probes", "medium", "not-assessed", "Not calculated by the current packet analyzer.", "Requires identifying persist probes and correlating them with advertised receive windows.");
   add("TCP", "ACK-to-data RTT / TCP loss percentage", "medium", "not-assessed", "Not calculated by the current packet analyzer.", "The response samples below are SYN/SYN-ACK handshake RTT and matched DNS latency, not a general TCP ACK RTT or packet-loss rate.");
 
@@ -162,6 +179,15 @@ function buildTriageChecks(packets, aggregation, services, profile, enabledGroup
     tdsPackets.length ? "TDS messages are decoded, but requests, responses, and Attention events are not transaction-correlated." : "No decoded TDS traffic.",
     "Requires TDS packet reassembly and transaction/request correlation; encrypted TDS is not inspectable.");
 
+  const lengthSamples = packets.filter(packet => Number.isSafeInteger(packet.capturedLength) && Number.isSafeInteger(packet.originalLength));
+  const truncatedFrames = lengthSamples.filter(packet => packet.originalLength > packet.capturedLength);
+  const omittedBytes = truncatedFrames.reduce((sum, packet) => sum + packet.originalLength - packet.capturedLength, 0);
+  add("Capture quality", "Snaplen-truncated frames", "medium", !packets.length ? "not-observed" : lengthSamples.length !== packets.length ? "not-assessed" : truncatedFrames.length ? "review" : "clear",
+    !packets.length ? "No packets in this analysis scope." : lengthSamples.length !== packets.length
+      ? `${reportNumber(lengthSamples.length)} of ${reportNumber(packets.length)} packets include captured/original length metadata; truncation cannot be fully assessed.`
+      : `${reportNumber(truncatedFrames.length)} of ${reportNumber(packets.length)} frames were shorter than their recorded original length (${reportNumber(omittedBytes)} omitted bytes).`,
+    "This detects per-frame capture-length truncation only. It does not measure packets dropped by the capture interface, driver, or network path.");
+
   const quicPackets = packets.filter(packet => packet.protocol === "QUIC" || packet.protocol === "HTTP/3");
   const quicRetries = quicPackets.filter(packet => packet.quicPacketType === "Retry");
   add("QUIC", "QUIC Retry packets", "low", !quicPackets.length ? "not-observed" : quicRetries.length ? "observed" : "clear",
@@ -220,9 +246,10 @@ function buildSingleCaptureReportHtml(report) {
   const includedCheckGroups = report.includedCheckGroups?.length ? report.includedCheckGroups.join(", ") : "none selected";
   const methodology = `<section class="methodology-page"><p class="eyebrow">HOW TO READ THIS REPORT</p><h2>Expert analysis factors and limits</h2><p class="subhead">AINetScope applies bounded, local checks to decoded packet metadata. Each result describes evidence in the selected capture scope, not a root-cause verdict.</p><div class="method-grid">
 <article class="method-item"><h3>Scope and coverage</h3><p>Counts and checks use the packets currently included by dashboard filters. A capture can omit traffic because of its capture point, filter, time boundaries, packet loss, or asymmetric routing.</p></article>
+<article class="method-item"><h3>Capture truncation</h3><p>Snaplen truncation is counted only when a capture record reports an original frame length larger than the bytes captured. This detects incomplete individual frames, not packets lost at the interface, driver, or network path.</p></article>
 <article class="method-item"><h3>Flows and traffic share</h3><p>Conversations group observed endpoint pairs and transport. A dominant flow or traffic spike is descriptive; it becomes a concern only when compared with expected workload or a baseline.</p></article>
 <article class="method-item"><h3>Latency samples</h3><p>TCP timing is SYN-to-SYN/ACK handshake time. DNS timing is a matched query/response pair. Percentiles use only successful observed samples; they are not application transaction time or general TCP data RTT.</p></article>
-<article class="method-item"><h3>TCP transport signals</h3><p>RST, SYN-without-observed-SYN/ACK, and advertised zero windows are counted from decoded packets. Possible retransmissions and duplicate ACK patterns are lightweight signatures, not sequence-complete Wireshark TCP Expert analysis.</p></article>
+<article class="method-item"><h3>TCP transport signals</h3><p>RST, SYN-without-observed-SYN/ACK, and advertised zero windows are counted from decoded packets. A bounded sequence pass compares payload byte ranges per direction and notes overlap, repeats after cumulative ACK, forward gaps, and later novel bytes below the observed high-water. Directions with a captured SYN are handshake-anchored; others use a midstream-relative origin. These remain possible retransmission/reordering signals: capture duplication, offload, missing context, and capture boundaries can produce similar evidence. Analysis is capped at 200,000 TCP packets, with at most 2,048 disjoint ranges tracked per direction; reports disclose when either bound makes range counts partial.</p></article>
 <article class="method-item"><h3>IP and ICMP signals</h3><p>IPv4 fragment bits, visible ICMP unreachable messages, and path-MTU feedback from ICMPv4/ICMPv6 are reported. TTL is shown as a decoded value but is not called anomalous without a route or host baseline. IPv6 extension-header fragmentation is not classified here.</p></article>
 <article class="method-item"><h3>DNS and web responses</h3><p>DNS error codes and unmatched transaction IDs are counted when messages decode. HTTP status checks cover visible HTTP/1.x only; HTTP/2 header compression and typical HTTP/3 encryption prevent equivalent status inspection here.</p></article>
 <article class="method-item"><h3>TLS and QUIC</h3><p>Visible TLS record versions and alerts are reported; TLS 1.3 encrypts most post-handshake records, and record-layer version is not necessarily the negotiated version. QUIC Retry is normal address validation, not inherently an error.</p></article>
@@ -240,7 +267,7 @@ function buildSingleCaptureReportHtml(report) {
 @media(max-width:720px){.report{margin:0;padding:24px 18px}.chart-grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.metric:nth-child(2){border-right:0}.metric:nth-child(-n+2){border-bottom:1px solid var(--line)}.toolbar{padding:0 12px}.masthead{flex-direction:column}.date{text-align:left}}
 @media(max-width:720px){.method-grid{grid-template-columns:1fr}.check-matrix{min-width:760px}.check-wrap{overflow-x:auto}}
 @media print{@page{size:A4;margin:12mm}body{background:#fff;font-size:10pt}.report{max-width:none;margin:0;padding:0;box-shadow:none}.toolbar{display:none}.masthead{break-after:avoid}.report-section{break-inside:auto}.chart-grid{grid-template-columns:1fr 1fr}.chart img,.chart-unavailable{height:175px}.metrics,.chart,.finding,.evidence-list li,.method-item{break-inside:avoid}h2,h3{break-after:avoid}table{font-size:7.5pt}th,td{padding:4px}.check-matrix{min-width:0}.check-status{font-size:7pt}.method-grid{grid-template-columns:1fr 1fr}.footer{break-before:avoid}}
-</style></head><body><div class="toolbar"><button class="secondary" onclick="window.close()">Close report</button><button onclick="window.print()">Print / Save as PDF</button></div><main class="report"><header class="masthead"><div><div class="brand">DataSnare · AINetScope</div><p class="kicker">Packet capture analysis report</p><h1>${reportEscape(report.name)}</h1><p class="subhead">Expert summary of network behavior in the analyzed trace.</p><p class="scope">${reportEscape(report.scope)} · Profile: ${reportEscape(report.profile)}</p></div><div class="date">Generated<br><strong>${reportEscape(report.generatedAt)}</strong></div></header>
+</style></head><body><div class="toolbar"><button class="secondary" onclick="window.close()">Close report</button><button onclick="window.print()">Print / Save as PDF</button></div><main class="report"><header class="masthead"><div><div class="brand">DataSnare · AINetScope</div><p class="kicker">Packet capture analysis report</p><h1>${reportEscape(report.name)}</h1><p class="subhead">Expert summary of network behavior in the analyzed trace.</p><p class="scope">${reportEscape(report.scope)} · Profile: ${reportEscape(report.profile)} · IP map: ${reportEscape(report.hostMapProfile || "No IP map")}</p></div><div class="date">Generated<br><strong>${reportEscape(report.generatedAt)}</strong></div></header>
 <section class="metrics">${report.metrics.map(metric => `<div class="metric"><span>${reportEscape(metric.label)}</span><strong>${reportEscape(metric.value)}</strong></div>`).join("")}</section>
 <section class="report-section"><p class="eyebrow">VISUAL ANALYSIS</p><h2>Charts and traffic shape</h2><div class="chart-grid">${charts}</div></section>
 <section class="report-section"><p class="eyebrow">EXPERT ANALYSIS</p><h2>Ranked observations</h2>${findingRows}</section>
@@ -316,6 +343,7 @@ function buildSingleCaptureReportData() {
     generatedAt: new Date().toLocaleString(),
     scope: packets.length === state.packets.length ? `${reportNumber(packets.length)} packets analyzed` : `${reportNumber(packets.length)} of ${reportNumber(state.packets.length)} packets analyzed (current dashboard filters)`,
     profile: profile.name,
+    hostMapProfile: settings.activeHostMapProfile || "No IP map",
     metrics: [
       { label: "Packets", value: reportNumber(summary.packets) },
       { label: "Captured traffic", value: formatBytes(summary.bytes) },
@@ -328,10 +356,10 @@ function buildSingleCaptureReportData() {
     ],
     charts,
     findings: buildFindings(packets, aggregation, services, profile),
-    triageChecks: buildTriageChecks(packets, aggregation, services, profile, settings.reportCheckGroups),
+    triageChecks: buildTriageChecks(packets, aggregation, services, profile, settings.reportCheckGroups, analyzeTcpSequence(packets)),
     includedCheckGroups: Object.keys(settings.reportCheckGroups).filter(group => settings.reportCheckGroups[group]),
     services: services.map(service => ({ ...service, latency: formatLatency(median(service.latencies)), details: [...service.details].slice(0, 3).join(", ") || `${service.packets} packets` })),
-    flows: aggregation.flows.slice(0, 10).map(flow => ({ ...flow, traffic: formatBytes(flow.bytes), latency: formatLatency(flow.latencyValue) })),
+    flows: aggregation.flows.slice(0, 10).map(flow => ({ ...flow, a: displayEndpointName(flow.a), b: displayEndpointName(flow.b), traffic: formatBytes(flow.bytes), latency: formatLatency(flow.latencyValue) })),
     problemStatement: captureNarrative.problemStatement || "",
     narrative: reportSummaryText(captureNarrative.narrative),
     relevantFrames

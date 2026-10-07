@@ -367,6 +367,14 @@ dialog::backdrop { background: rgba(23,33,29,.55); backdrop-filter: blur(2px); }
 .dialog-heading h2 { margin: 0; font-size: 20px; }
 .icon-button { width: 34px; height: 34px; border: 1px solid var(--line); background: transparent; font-size: 22px; }
 .settings-dialog { width: min(700px, calc(100vw - 32px)); }
+.host-map-dialog { width: min(720px, calc(100vw - 24px)); }
+.host-map-content { display: grid; gap: 12px; padding: 18px 22px; }
+.host-map-content > label { display: grid; gap: 6px; color: var(--ink); font-size: 11px; font-weight: 700; }
+.host-map-content select, .host-map-content input[type="text"] { width: 100%; min-height: 38px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink); }
+.host-map-content textarea { width: 100%; min-height: 220px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink); font: 400 10px/1.6 var(--mono); resize: vertical; }
+.host-map-note, #hostMapStatus { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.host-map-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.host-map-actions > span { flex: 1 1 auto; }
 .settings-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; padding: 0 22px; border-bottom: 1px solid var(--line); }
 .settings-tab { position: relative; min-height: 42px; border: 0; background: transparent; color: var(--muted); font: 700 11px var(--sans); cursor: pointer; }
 .settings-tab[aria-selected="true"] { color: var(--green); }
@@ -717,6 +725,8 @@ dialog::backdrop { background: rgba(23,33,29,.55); backdrop-filter: blur(2px); }
   .profile-toolbar, .profile-section { grid-template-columns: 1fr; }
   .profile-fields { grid-template-columns: 1fr 1fr; }
   .settings-fields { grid-template-columns: 1fr; }
+  .host-map-content { padding: 14px; }
+  .host-map-actions > span { display: none; }
   .settings-fields .settings-toggle, .settings-fields > p { grid-column: 1; }
   .settings-tabs { padding: 0 14px; }
   .settings-panel .settings-fields { max-height: 56vh; padding: 16px; }
