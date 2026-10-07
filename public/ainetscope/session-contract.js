@@ -4,7 +4,8 @@
   const MAX_BYTES = 100 * 1024 * 1024;
   const PACKET_FIELDS = ['number', 'timestamp', 'length', 'capturedLength', 'originalLength', 'truncated', 'linkType', 'protocol', 'transport',
     'src', 'dst', 'srcPort', 'dstPort', 'info', 'seq', 'ack', 'payloadLength', 'flags', 'tcpFlagsValue',
-    'tcpWindow', 'tcpOptions', 'latency', 'dnsRcode', 'dnsResponse', 'dnsAnswers', 'dnsName', 'httpKind', 'httpMethod', 'httpStatus',
+    'tcpWindow', 'tcpOptions', 'latency', 'dnsRcode', 'dnsResponse', 'dnsAnswers', 'dnsName', 'dnsOpcode', 'dnsTruncated',
+    'dnsQuestions', 'dnsQuestionSignature', 'httpKind', 'httpMethod', 'httpStatus',
     'tdsType', 'tdsError', 'tdsErrorCount', 'tdsLoginAck', 'smbCommand', 'smbStatus', 'smbResponse', 'icmpType', 'icmpCode', 'icmpPacketTooBig',
     'ipv4Fragmented', 'ipv4MoreFragments', 'ipv4FragmentOffset', 'ipTtl', 'tlsVersion', 'tlsRecordType',
     'tlsAlertLevel', 'tlsAlertDescription', 'quicVersion', 'quicPacketType', 'processCorrelation'];

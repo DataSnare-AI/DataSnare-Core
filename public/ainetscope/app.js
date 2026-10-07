@@ -222,6 +222,7 @@ function parseDNS(bytes, view, offset) {
   const typeNames = { 1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 15: "MX", 16: "TXT", 28: "AAAA", 33: "SRV", 65: "HTTPS" };
   const question = questions[0] || { name: "<unknown>", type: 0, class: 0 };
   const type = question.type;
+  const questionSignature = questions.map(item => `${item.name.toLowerCase().replace(/\.$/, "")}|${item.type}|${item.class}`).sort().join(";");
   const dnsInfo = `${qr ? "Response" : "Query"} ${typeNames[type] || `TYPE${type}`} ${question.name || "<unknown>"}${rcode ? ` · RCODE ${rcode}` : ""}`;
   const details = {
     Transaction: `0x${id.toString(16).padStart(4, "0")}`,
@@ -265,7 +266,9 @@ function parseDNS(bytes, view, offset) {
     }
     if (answers.length) details.Answers = answers.join("; ");
   }
-  return { protocol: "DNS", dnsId: id, dnsResponse: qr, dnsRcode: rcode, dnsName: question.name, dnsAnswers, info: dnsInfo, details };
+  return { protocol: "DNS", dnsId: id, dnsResponse: qr, dnsRcode: rcode, dnsName: question.name,
+    dnsOpcode: opcode, dnsTruncated: truncated, dnsQuestions: questions, dnsQuestionSignature: questionSignature,
+    dnsAnswers, info: dnsInfo, details };
 }
 
 function parseTLS(bytes, view, offset) {
@@ -1029,12 +1032,39 @@ function endpoint(packet, source) {
   return `${address}${port !== null ? `:${port}` : ""}`;
 }
 
+const DNS_TRANSACTION_LIMIT = 100000;
+
+function dnsTransactionParts(packet, isResponse) {
+  const client = isResponse ? endpoint(packet, false) : endpoint(packet, true);
+  const server = isResponse ? endpoint(packet, true) : endpoint(packet, false);
+  const opcode = Number.isInteger(packet.dnsOpcode) ? packet.dnsOpcode : 0;
+  const signature = typeof packet.dnsQuestionSignature === "string" ? packet.dnsQuestionSignature
+    : packet.dnsName && packet.dnsName !== "<unknown>"
+      ? `${String(packet.dnsName).toLowerCase().replace(/\.$/, "")}|0|1` : "";
+  const base = `${packet.dnsId}|${opcode}|${client}>${server}`;
+  return { base, key: signature ? `${base}|${signature}` : "", signature, client, server, opcode };
+}
+
 function aggregate(packets) {
   const flows = new Map();
   const syns = new Map();
-  const dnsRequests = new Map();
+  const dnsPending = new Map();
+  const dnsPendingByBase = new Map();
+  const dnsMatched = [];
+  const dnsStats = { queries: 0, responses: 0, matched: 0, retransmissions: 0, unmatchedQueries: 0,
+    unmatchedResponses: 0, unmatchedResponsesByMissingQuestion: 0, overflowQueries: 0, truncated: false };
   const latencySamples = [];
   const latencyEvents = [];
+  let omittedMatchedDnsTransactions = 0;
+  const removeDnsPending = key => {
+    const pending = dnsPending.get(key);
+    if (!pending) return null;
+    dnsPending.delete(key);
+    const baseEntries = dnsPendingByBase.get(pending.base);
+    baseEntries?.delete(key);
+    if (baseEntries?.size === 0) dnsPendingByBase.delete(pending.base);
+    return pending;
+  };
   for (const packet of packets) {
     const left = endpoint(packet, true); const right = endpoint(packet, false);
     const ordered = [left, right].sort();
@@ -1072,11 +1102,75 @@ function aggregate(packets) {
       if (request) { const ms = (packet.timestamp - request.timestamp) * 1000; if (ms >= 0 && ms < 60000) { request.flow.latency.push(ms); latencySamples.push(ms); latencyEvents.push({ timestamp: packet.timestamp, value: ms, type: "TCP", packet: packet.number, flow: request.flow.key }); packet.latency = ms; } }
     }
     if (packet.protocol === "DNS") {
-      const dnsKey = `${packet.dnsId}|${packet.dnsResponse ? right : left}|${packet.dnsResponse ? left : right}`;
-      if (!packet.dnsResponse) dnsRequests.set(dnsKey, { timestamp: packet.timestamp, flow });
-      else if (dnsRequests.has(dnsKey)) { const request = dnsRequests.get(dnsKey); const ms = (packet.timestamp - request.timestamp) * 1000; if (ms >= 0) { request.flow.latency.push(ms); latencySamples.push(ms); latencyEvents.push({ timestamp: packet.timestamp, value: ms, type: "DNS", packet: packet.number, flow: request.flow.key }); packet.latency = ms; } }
+      const isResponse = packet.dnsResponse === true;
+      const parts = dnsTransactionParts(packet, isResponse);
+      if (!isResponse) {
+        dnsStats.queries++;
+        if (parts.key && dnsPending.has(parts.key)) {
+          const pending = dnsPending.get(parts.key);
+          pending.retransmissions++;
+          dnsStats.retransmissions++;
+          packet.dnsRetransmission = true;
+          if (pending.retryFrames.length < 100) pending.retryFrames.push(packet.number);
+        } else if (dnsPending.size >= DNS_TRANSACTION_LIMIT) {
+          dnsStats.overflowQueries++;
+          dnsStats.truncated = true;
+        } else {
+          const pendingKey = parts.key || `${parts.base}|<no-question>|${packet.number}`;
+          const pending = { key: pendingKey, base: parts.base, signature: parts.signature,
+            timestamp: packet.timestamp, packet, flow, retransmissions: 0, retryFrames: [] };
+          dnsPending.set(pendingKey, pending);
+          if (!dnsPendingByBase.has(parts.base)) dnsPendingByBase.set(parts.base, new Set());
+          dnsPendingByBase.get(parts.base).add(pendingKey);
+        }
+      } else {
+        dnsStats.responses++;
+        let matchedKey = parts.key && dnsPending.has(parts.key) ? parts.key : "";
+        let missingQuestionMatch = false;
+        if (!matchedKey) {
+          const candidateKeys = dnsPendingByBase.get(parts.base);
+          if (candidateKeys?.size && !parts.signature) {
+            let oldest = null;
+            for (const key of candidateKeys) {
+              const pending = dnsPending.get(key);
+              if (pending && (!oldest || pending.timestamp < oldest.timestamp)) oldest = pending;
+            }
+            matchedKey = oldest?.key || "";
+            missingQuestionMatch = true;
+          }
+        }
+        if (!matchedKey) {
+          dnsStats.unmatchedResponses++;
+          continue;
+        }
+        const request = removeDnsPending(matchedKey);
+        dnsStats.matched++;
+        if (missingQuestionMatch) dnsStats.unmatchedResponsesByMissingQuestion++;
+        const latencyMs = (packet.timestamp - request.timestamp) * 1000;
+        const transaction = { id: packet.dnsId, opcode: parts.opcode, question: request.packet.dnsName || "",
+          questionSignature: request.signature, client: parts.client, server: parts.server,
+          queryFrame: request.packet.number, responseFrame: packet.number, queryTimestamp: request.timestamp,
+          responseTimestamp: packet.timestamp, latencyMs: latencyMs >= 0 ? latencyMs : null,
+          retransmissions: request.retransmissions, retryFrames: request.retryFrames, responseCode: packet.dnsRcode,
+          answerCount: packet.dnsAnswers?.length || 0, answers: packet.dnsAnswers || [], matchedWithoutQuestion: missingQuestionMatch };
+        if (dnsMatched.length < 10000) dnsMatched.push(transaction);
+        else omittedMatchedDnsTransactions++;
+        if (latencyMs >= 0) {
+          request.flow.latency.push(latencyMs);
+          latencySamples.push(latencyMs);
+          latencyEvents.push({ timestamp: packet.timestamp, value: latencyMs, type: "DNS", packet: packet.number,
+            requestPacket: request.packet.number, flow: request.flow.key });
+          packet.latency = latencyMs;
+        }
+      }
     }
   }
+  dnsStats.unmatchedQueries = dnsPending.size + dnsStats.overflowQueries;
+  dnsStats.pendingTransactions = [...dnsPending.values()].slice(0, 1000).map(pending => ({
+    id: pending.packet.dnsId, opcode: pending.packet.dnsOpcode || 0, question: pending.packet.dnsName || "",
+    client: pending.packet.src, server: pending.packet.dst, queryFrame: pending.packet.number,
+    timestamp: pending.timestamp, retransmissions: pending.retransmissions, retryFrames: pending.retryFrames
+  }));
   for (const flow of flows.values()) {
     flow.latencyValue = median(flow.latency);
     flow.duration = Math.max(0, flow.last - flow.first);
@@ -1085,7 +1179,8 @@ function aggregate(packets) {
     flow.quicVersions = [...flow.quicVersions];
     delete flow.seenSeq; delete flow.seenAcks; delete flow.lastDirectionTime;
   }
-  return { flows: [...flows.values()].sort((a, b) => b.bytes - a.bytes), latencySamples, latencyEvents };
+  return { flows: [...flows.values()].sort((a, b) => b.bytes - a.bytes), latencySamples, latencyEvents,
+    dnsAnalysis: { ...dnsStats, matchedTransactions: dnsMatched, omittedMatchedTransactions: omittedMatchedDnsTransactions } };
 }
 
 function createDemo() {
@@ -1635,5 +1730,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { parseFrame, parseDNS, parsePcap, parseTLS, parseQUIC, parseSMB, parseTDS, normalizeReportCheckGroups, REPORT_CHECK_GROUPS };
+  module.exports = { parseFrame, parseDNS, parsePcap, parseTLS, parseQUIC, parseSMB, parseTDS, aggregate, normalizeReportCheckGroups, REPORT_CHECK_GROUPS };
 }

@@ -8,6 +8,19 @@ function reportNumber(value, digits = 0) {
   return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: digits }) : "—";
 }
 
+function reportPercentile(values, fraction) {
+  const sorted = values.filter(Number.isFinite).sort((left, right) => left - right);
+  if (!sorted.length) return null;
+  const position = (sorted.length - 1) * fraction;
+  const lower = Math.floor(position);
+  return sorted[lower] + (sorted[Math.ceil(position)] - sorted[lower]) * (position - lower);
+}
+
+function reportLatency(value) {
+  if (!Number.isFinite(value)) return "—";
+  return value < 1 ? `${(value * 1000).toFixed(0)} µs` : `${value.toFixed(value < 10 ? 2 : 1)} ms`;
+}
+
 function buildTriageChecks(packets, aggregation, services, profile, enabledGroups = null, sequenceAnalysis = null) {
   const checks = [];
   const add = (group, name, severity, state, evidence, limitation = "") => checks.push({ group, name, severity, state, evidence, limitation });
@@ -66,10 +79,10 @@ function buildTriageChecks(packets, aggregation, services, profile, enabledGroup
   add("TCP", "ACK-to-data RTT / TCP loss percentage", "medium", "not-assessed", "Not calculated by the current packet analyzer.", "The response samples below are SYN/SYN-ACK handshake RTT and matched DNS latency, not a general TCP ACK RTT or packet-loss rate.");
 
   const tcpLatency = aggregation.latencyEvents.filter(event => event.type === "TCP").map(event => event.value);
-  const tcpP95 = tcpLatency.length ? percentile(tcpLatency, .95) : null;
+  const tcpP95 = tcpLatency.length ? reportPercentile(tcpLatency, .95) : null;
   const latencyLimit = Number(profile?.thresholds?.latencyP95Ms);
   add("TCP", "TCP handshake p95 latency", "medium", !tcpLatency.length ? "not-assessed" : Number.isFinite(latencyLimit) && tcpP95 > latencyLimit ? "review" : "clear",
-    tcpLatency.length ? `p95 ${formatLatency(tcpP95)} from ${reportNumber(tcpLatency.length)} observed handshakes${Number.isFinite(latencyLimit) ? `; profile review threshold ${formatLatency(latencyLimit)}` : ""}.` : "No complete TCP handshakes were available for timing.",
+    tcpLatency.length ? `p95 ${reportLatency(tcpP95)} from ${reportNumber(tcpLatency.length)} observed handshakes${Number.isFinite(latencyLimit) ? `; profile review threshold ${reportLatency(latencyLimit)}` : ""}.` : "No complete TCP handshakes were available for timing.",
     "A high handshake RTT is a path/setup indicator; it does not isolate which network hop or endpoint caused delay.");
 
   const fragmentCount = ipv4Packets.filter(packet => packet.ipv4Fragmented).length;
@@ -97,30 +110,53 @@ function buildTriageChecks(packets, aggregation, services, profile, enabledGroup
   add("UDP", "UDP loss / jitter", "medium", "not-assessed", "Not generally measurable from arbitrary UDP packets.", "Needs protocol sequence numbers, expected cadence, or application-specific request/response semantics.");
 
   const dnsPackets = packets.filter(packet => packet.protocol === "DNS");
+  const dnsAnalysis = aggregation.dnsAnalysis;
   const dnsErrors = dnsPackets.filter(packet => packet.dnsResponse && packet.dnsRcode > 0);
   add("DNS", "DNS response errors (non-zero RCODE)", "high", !dnsPackets.length ? "not-observed" : dnsErrors.length ? "issue" : "clear",
     dnsPackets.length ? `${reportNumber(dnsErrors.length)} error responses among ${reportNumber(dnsPackets.filter(packet => packet.dnsResponse).length)} decoded responses${dnsErrors.length ? `; RCODEs ${[...new Set(dnsErrors.map(packet => packet.dnsRcode))].join(", ")}` : ""}.` : "No decoded DNS messages.",
     "Only DNS packets that the local decoder recognizes are included.");
-  const dnsQueries = new Map();
-  for (const packet of dnsPackets) {
-    if (packet.dnsResponse) continue;
-    const key = `${packet.dnsId}|${packet.src}:${packet.srcPort}>${packet.dst}:${packet.dstPort}`;
-    dnsQueries.set(key, (dnsQueries.get(key) || 0) + 1);
-  }
-  let unansweredDns = 0;
-  for (const packet of dnsPackets.filter(item => item.dnsResponse)) {
-    const key = `${packet.dnsId}|${packet.dst}:${packet.dstPort}>${packet.src}:${packet.srcPort}`;
-    if (dnsQueries.get(key)) dnsQueries.set(key, dnsQueries.get(key) - 1);
-  }
-  for (const count of dnsQueries.values()) unansweredDns += count;
-  add("DNS", "Queries without a matched response", "medium", !dnsPackets.length ? "not-observed" : unansweredDns ? "review" : "clear",
-    dnsPackets.length ? `${reportNumber(unansweredDns)} unmatched queries by transaction ID and reversed endpoints.` : "No decoded DNS messages.",
-    "Capture start/end boundaries, loss, retransmitted queries, and encrypted DNS can make a response appear unmatched.");
+  const truncatedDnsResponses = dnsPackets.filter(packet => packet.dnsResponse && packet.dnsTruncated);
+  add("DNS", "Truncated DNS responses (TC bit)", "low", !dnsPackets.length ? "not-observed"
+    : truncatedDnsResponses.length ? "review" : dnsPackets.some(packet => packet.dnsResponse) ? "clear" : "not-assessed",
+    dnsPackets.length ? `${reportNumber(truncatedDnsResponses.length)} decoded DNS responses set TC (truncation detected by resolver).` : "No decoded DNS messages.",
+    "A truncated UDP response often prompts TCP retry, but this capture check does not verify that retry completed.");
+  const unansweredDns = dnsAnalysis?.unmatchedQueries ?? 0;
+  add("DNS", "Queries without a matched response", "medium", !dnsPackets.length ? "not-observed"
+    : dnsAnalysis?.truncated ? "not-assessed" : unansweredDns ? "review" : dnsAnalysis?.queries ? "clear" : "not-assessed",
+    dnsPackets.length ? `${reportNumber(unansweredDns)} unmatched queries among ${reportNumber(dnsAnalysis?.queries || 0)} decoded queries; ${reportNumber(dnsAnalysis?.matched || 0)} matched responses.${dnsAnalysis?.truncated ? " Transaction table reached its processing limit; counts are partial." : ""}` : "No decoded DNS messages.",
+    "Capture start/end boundaries, loss, retransmitted queries, encrypted DNS, or missing-question responses can leave transactions unmatched; this is not proof of resolver failure.");
+  const dnsRetries = dnsAnalysis?.retransmissions ?? 0;
+  add("DNS", "Possible retransmitted queries", "medium", !dnsPackets.length ? "not-observed"
+    : dnsAnalysis?.truncated ? "not-assessed" : dnsRetries ? "review" : dnsAnalysis?.queries ? "clear" : "not-assessed",
+    dnsPackets.length ? `${reportNumber(dnsRetries)} repeated queries with the same transaction ID, opcode, question signature, and client/server endpoints while a response was pending.` : "No decoded DNS messages.",
+    "Repeated identical transactions are consistent with retries but can be deliberate duplicate requests; encrypted DNS is not inspected.");
+  const unmatchedDnsResponses = dnsAnalysis?.unmatchedResponses ?? 0;
+  add("DNS", "Responses without a matched query", "low", !dnsPackets.length ? "not-observed"
+    : dnsAnalysis?.truncated ? "not-assessed" : unmatchedDnsResponses ? "review" : dnsAnalysis?.responses ? "clear" : "not-assessed",
+    dnsPackets.length ? `${reportNumber(unmatchedDnsResponses)} unmatched responses among ${reportNumber(dnsAnalysis?.responses || 0)} decoded responses; ${reportNumber(dnsAnalysis?.unmatchedResponsesByMissingQuestion || 0)} were matched only by ID/opcode/endpoints because the response omitted a question.` : "No decoded DNS messages.",
+    "Capture start/end boundaries, truncated captures, and response messages without question sections can prevent confident transaction matching.");
   const dnsLatency = aggregation.latencyEvents.filter(event => event.type === "DNS").map(event => event.value);
-  const dnsP95 = dnsLatency.length ? percentile(dnsLatency, .95) : null;
+  const dnsP95 = dnsLatency.length ? reportPercentile(dnsLatency, .95) : null;
   add("DNS", "DNS response latency", "medium", !dnsPackets.length ? "not-observed" : !dnsLatency.length ? "not-assessed" : Number.isFinite(latencyLimit) && dnsP95 > latencyLimit ? "review" : "clear",
-    dnsLatency.length ? `p95 ${formatLatency(dnsP95)} from ${reportNumber(dnsLatency.length)} matched responses.` : dnsPackets.length ? "DNS is present, but no query/response pairs could be timed." : "No decoded DNS messages.",
+    dnsLatency.length ? `p95 ${reportLatency(dnsP95)} from ${reportNumber(dnsLatency.length)} matched responses.` : dnsPackets.length ? "DNS is present, but no query/response pairs could be timed." : "No decoded DNS messages.",
     "The profile's p95 threshold is a general screening threshold, not a DNS-specific service objective.");
+  const dnsLatencyByTarget = new Map();
+  for (const transaction of dnsAnalysis?.matchedTransactions || []) {
+    if (!Number.isFinite(transaction.latencyMs)) continue;
+    const key = `${transaction.question || "<unknown question>"}|${transaction.server || "<unknown server>"}`;
+    if (!dnsLatencyByTarget.has(key)) dnsLatencyByTarget.set(key, { question: transaction.question || "<unknown question>", server: transaction.server || "<unknown server>", values: [], frames: [] });
+    const target = dnsLatencyByTarget.get(key);
+    target.values.push(transaction.latencyMs);
+    if (target.frames.length < 5) target.frames.push(`${transaction.queryFrame}→${transaction.responseFrame}`);
+  }
+  const dnsTargets = [...dnsLatencyByTarget.values()].map(target => ({ ...target, p95: reportPercentile(target.values, .95) }))
+    .sort((left, right) => right.p95 - left.p95);
+  const omittedDnsDetails = dnsAnalysis?.omittedMatchedTransactions || 0;
+  add("DNS", "DNS latency by question and server", "info", !dnsPackets.length ? "not-observed"
+    : !dnsTargets.length ? "not-assessed" : omittedDnsDetails ? "not-assessed" : "observed",
+    !dnsPackets.length ? "No decoded DNS messages." : !dnsTargets.length ? "No complete matched transactions with valid timing samples."
+      : `${dnsTargets.slice(0, 5).map(target => `${target.question} via ${target.server}: p95 ${reportLatency(target.p95)} (${reportNumber(target.values.length)} sample(s), frames ${target.frames.join(", ")})`).join("; ")}${omittedDnsDetails ? `; ${reportNumber(omittedDnsDetails)} additional matched transaction details omitted from this bounded breakdown` : ""}.`,
+    "Per-target details include matched, visible transactions only; capture boundaries, missing questions, encrypted DNS, and omitted detail samples limit coverage.");
 
   const httpPackets = packets.filter(packet => packet.protocol === "HTTP");
   const httpResponses = httpPackets.filter(packet => packet.httpKind === "response" && Number.isFinite(packet.httpStatus));
@@ -251,7 +287,7 @@ function buildSingleCaptureReportHtml(report) {
 <article class="method-item"><h3>Latency samples</h3><p>TCP timing is SYN-to-SYN/ACK handshake time. DNS timing is a matched query/response pair. Percentiles use only successful observed samples; they are not application transaction time or general TCP data RTT.</p></article>
 <article class="method-item"><h3>TCP transport signals</h3><p>RST, SYN-without-observed-SYN/ACK, and advertised zero windows are counted from decoded packets. A bounded sequence pass compares payload byte ranges per direction and notes overlap, repeats after cumulative ACK, forward gaps, and later novel bytes below the observed high-water. Directions with a captured SYN are handshake-anchored; others use a midstream-relative origin. These remain possible retransmission/reordering signals: capture duplication, offload, missing context, and capture boundaries can produce similar evidence. Analysis is capped at 200,000 TCP packets, with at most 2,048 disjoint ranges tracked per direction; reports disclose when either bound makes range counts partial.</p></article>
 <article class="method-item"><h3>IP and ICMP signals</h3><p>IPv4 fragment bits, visible ICMP unreachable messages, and path-MTU feedback from ICMPv4/ICMPv6 are reported. TTL is shown as a decoded value but is not called anomalous without a route or host baseline. IPv6 extension-header fragmentation is not classified here.</p></article>
-<article class="method-item"><h3>DNS and web responses</h3><p>DNS error codes and unmatched transaction IDs are counted when messages decode. HTTP status checks cover visible HTTP/1.x only; HTTP/2 header compression and typical HTTP/3 encryption prevent equivalent status inspection here.</p></article>
+<article class="method-item"><h3>DNS and web responses</h3><p>DNS transactions match by ID, opcode, normalized question signature, and reversed client/server endpoints. Repeated identical queries while a response is pending are possible retries. Responses without a question section can match only by ID/opcode/endpoints and are called out as lower confidence. Outstanding queries and unmatched responses may reflect capture boundaries, loss, or encrypted DNS; they do not prove resolver failure. Captured A/AAAA answers are observations for optional hostname suggestions, not current DNS truth. HTTP status checks cover visible HTTP/1.x only; HTTP/2 header compression and typical HTTP/3 encryption prevent equivalent status inspection here.</p></article>
 <article class="method-item"><h3>TLS and QUIC</h3><p>Visible TLS record versions and alerts are reported; TLS 1.3 encrypts most post-handshake records, and record-layer version is not necessarily the negotiated version. QUIC Retry is normal address validation, not inherently an error.</p></article>
 <article class="method-item"><h3>SMB and SQL Server</h3><p>SMB2 non-zero response statuses and visible TDS ERROR tokens are surfaced. Some SMB statuses are expected control flow; TDS login success/failure and query latency need request/response transaction correlation not yet implemented.</p></article>
 <article class="method-item"><h3>Profile thresholds</h3><p>Where a profile threshold is shown, it is a screening rule for that profile, not a universal service-level objective. The UDP one-second gap check is a generic cadence screen, not proof of jitter or packet loss.</p></article>
