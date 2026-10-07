@@ -219,6 +219,18 @@ function updateSetSummaryTrigger() {
   const button = $("#setSummaryButton"); if (!batchState.results.length) { button.hidden = true; return; }
   button.hidden = false; button.classList.toggle("has-summary", captureSetSummaryExists());
   button.textContent = captureSetSummaryExists() ? "Set Summary · Saved" : "Set Summary";
+  $("#setReportButton").hidden = false;
+}
+
+function openSetReport() {
+  if (!batchState.results.length) { showToast("Analyze a capture set before creating its report."); return; }
+  batchState.name = currentCaptureSetName();
+  const summary = captureSetSummary();
+  const opened = window.DataSnareCaptureSetReport?.openCaptureSetReport({ results: batchState.results,
+    totals: captureSetTotals(), findings: buildSetFindings(batchState.results), topology: combinedTopology(), profile: getActiveAnalysisProfile(),
+    reportOptions: settings.captureSetReportOptions,
+    narrative: { problemStatement: summary.problemStatement, text: reportSummaryText(summary.narrative) }, name: batchState.name });
+  if (!opened) showToast("Pop-up blocked. Allow pop-ups to open the Capture Set report.");
 }
 
 function renderSetSummaryFiles() {
@@ -270,7 +282,7 @@ function captureSetTotals(results = batchState.results) {
   const bytes = valid.reduce((sum, result) => sum + result.summary.bytes, 0);
   const protocols = valid.reduce((totals, result) => { Object.entries(result.protocols).forEach(([name, value]) => { totals[name] = (totals[name] || 0) + value; }); return totals; }, {});
   const p95Values = valid.map(result => result.summary.latencyP95).filter(Number.isFinite);
-  return { files: valid.length, failed: results.length - valid.length, packets: valid.reduce((sum, result) => sum + result.summary.packets, 0), bytes, start, end, window: Math.max(0, end - start), throughput: bytes * 8 / Math.max(end - start, .001), latencyP95: percentile(p95Values, .95), protocols };
+  return { files: valid.length, failed: results.filter(result => result.status === "Failed").length, packets: valid.reduce((sum, result) => sum + result.summary.packets, 0), bytes, start, end, window: Math.max(0, end - start), throughput: bytes * 8 / Math.max(end - start, .001), latencyP95: percentile(p95Values, .95), protocols };
 }
 
 function buildSetFindings(results) {
@@ -452,6 +464,7 @@ $("#setFindingList").addEventListener("click", event => { const link = event.tar
 $("#setJsonButton").addEventListener("click", () => downloadSet("json"));
 $("#setCsvButton").addEventListener("click", () => downloadSet("csv"));
 $("#setSummaryButton").addEventListener("click", openSetSummaryEditor);
+$("#setReportButton").addEventListener("click", openSetReport);
 $("#closeSetSummaryDialog").addEventListener("click", () => $("#setSummaryDialog").close());
 $("#cancelSetSummaryButton").addEventListener("click", () => $("#setSummaryDialog").close());
 $("#saveSetSummaryButton").addEventListener("click", saveSetSummary);

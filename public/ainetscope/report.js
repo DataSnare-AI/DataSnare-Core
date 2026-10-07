@@ -1,7 +1,11 @@
 "use strict";
 
+const reportCommon = typeof module !== "undefined" && module.exports
+  ? require("./report-common.js") : globalThis.DataSnareReportCommon;
+
 function reportEscape(value) {
-  return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+  if (value && typeof value === "object" && typeof value.summary === "string") value = value.summary;
+  return reportCommon.escapeReportHtml(value);
 }
 
 function reportNumber(value, digits = 0) {
@@ -29,7 +33,7 @@ function largeTopologyFitsPdf(snapshot, maxWidth = 700) {
 
 function buildTriageChecks(packets, aggregation, services, profile, enabledGroups = null, sequenceAnalysis = null) {
   const checks = [];
-  const add = (group, name, severity, state, evidence, limitation = "") => checks.push({ group, name, severity, state, evidence, limitation });
+  const add = (group, name, severity, state, evidence, limitation = "") => checks.push(reportCommon.normalizeReportCheck({ group, name, severity, state, evidence, limitation }));
   const has = protocol => packets.some(packet => packet.protocol === protocol);
   const tcpPackets = packets.filter(packet => packet.transport === "TCP");
   const udpPackets = packets.filter(packet => packet.transport === "UDP");
@@ -52,6 +56,28 @@ function buildTriageChecks(packets, aggregation, services, profile, enabledGroup
   add("TCP", "Receiver zero-window advertisements", "high", !tcpPackets.length ? "not-observed" : zeroWindows ? "issue" : "clear",
     tcpPackets.length ? `${reportNumber(zeroWindows)} zero-window packets.` : "No TCP packets were decoded.",
     "A zero window indicates advertised receiver backpressure, not by itself the responsible process or host resource.");
+  const windowSamples = packets.filter(packet => packet.transport === "TCP" && Number.isFinite(packet.tcpWindow)
+    && !(packet.flags || []).includes("SYN") && !(packet.flags || []).includes("RST"));
+  const zeroWindowEpisodes = (sequenceAnalysis?.flows || []).flatMap(flow => flow.zeroWindowEpisodes || []);
+  const closedZeroWindows = zeroWindowEpisodes.filter(episode => !episode.open && Number.isFinite(episode.durationMs));
+  const openZeroWindows = zeroWindowEpisodes.filter(episode => episode.open);
+  const zeroWindowDurations = closedZeroWindows.map(episode => episode.durationMs);
+    add("TCP", "Zero-window episode duration", "medium", !tcpPackets.length ? "not-observed"
+      : !windowSamples.length ? "not-assessed" : zeroWindowEpisodes.length ? "observed" : "clear",
+      !tcpPackets.length ? "No TCP packets were decoded." : !windowSamples.length ? "TCP packets are present, but window samples are unavailable."
+        : `${reportNumber(zeroWindowEpisodes.length)} zero-window episode(s) from ${reportNumber(sequenceAnalysis?.totals?.zeroWindowPackets || 0)} advertisements; ${reportNumber(closedZeroWindows.length)} closed, ${reportNumber(openZeroWindows.length)} still open at capture end${zeroWindowDurations.length ? `; closed duration median ${reportLatency(reportPercentile(zeroWindowDurations, .5))}, max ${reportLatency(zeroWindowDurations.reduce((maximum, value) => Math.max(maximum, value), 0))}` : ""}.${sequenceAnalysis?.truncated ? " Analysis reached a configured bound; episode totals may be partial." : ""}`,
+      "Duration ends at a later non-zero window update or observed RST; an open episode has no measured end. Capture start/end may truncate either side of an episode.");
+  const persistProbes = (sequenceAnalysis?.flows || []).flatMap(flow => flow.persistProbeCandidates || []);
+  const persistProbeContext = persistProbes.slice(0, 5).map(item => {
+    const ack = item.ackUnchanged === null ? "ACK unknown" : item.ackUnchanged ? "ACK unchanged" : "ACK advanced";
+    const scaling = item.windowScaleNegotiated === null ? "window scaling unknown" : item.windowScaleNegotiated ? "window scaling negotiated" : "window scaling not negotiated";
+    return `${item.previousPacket}→${item.packet} (${reportLatency(item.intervalMs)}; ${ack}; ${scaling})`;
+  });
+  add("TCP", "Possible persist-probe candidates", "low", !tcpPackets.length ? "not-observed"
+    : !windowSamples.length ? "not-assessed" : !zeroWindowEpisodes.length ? "clear" : persistProbes.length ? "review" : "clear",
+    !tcpPackets.length ? "No TCP packets were decoded." : !windowSamples.length ? "TCP window samples are unavailable."
+      : `${reportNumber(persistProbes.length)} repeated one-byte payload candidate(s) observed toward a peer during a zero-window episode${persistProbeContext.length ? `; frame pairs and context: ${persistProbeContext.join(", ")}` : ""}.`,
+    "This is a conservative signature, not proof of RFC persist behavior; a legitimate one-byte application payload can look similar. Repeats are scoped to the same observed zero-window episode. Timing, ACK stability, and captured scaling negotiation are context only; receiver application state is unavailable.");
 
   const sequenceTotals = sequenceAnalysis?.totals;
   const repeatedSegments = sequenceTotals?.repeatedSegments ?? tcpFlows.reduce((sum, flow) => sum + flow.retransmissions, 0);
@@ -82,7 +108,19 @@ function buildTriageChecks(packets, aggregation, services, profile, enabledGroup
       ? `${reportNumber(forwardGaps)} segments began beyond the observed sequence high-water (${reportNumber(sequenceTotals.forwardGapBytes)} gap bytes); ${reportNumber(lateNovel)} later segments added novel bytes below that high-water (${reportNumber(sequenceTotals.lateNovelBytes)} bytes). Sequence origins: ${reportNumber(sequenceTotals.handshakeAnchoredDirections)} direction(s) observed from SYN, ${reportNumber(sequenceTotals.midstreamDirections)} midstream-relative.${sequenceScope}`
       : tcpPackets.length ? "Sequence-range analysis was unavailable." : "No TCP packets were decoded.",
     "A forward gap may reflect omitted traffic, capture boundaries, or reordering. Later novel bytes below a previous high-water are consistent with out-of-order arrival, but cannot alone prove it.");
-  add("TCP", "Window-full / persist probes", "medium", "not-assessed", "Not calculated by the current packet analyzer.", "Requires identifying persist probes and correlating them with advertised receive windows.");
+  const windowOccupancySamples = sequenceAnalysis?.windowOccupancySamples || [];
+  const windowOccupancyValues = windowOccupancySamples.map(sample => sample.occupancyPct);
+  const maxWindowOccupancy = windowOccupancyValues.reduce((maximum, value) => Math.max(maximum, value), 0);
+  const totalWindowOccupancySamples = sequenceAnalysis?.totals?.windowOccupancySampleCount || 0;
+  const windowOccupancyContext = windowOccupancySamples.slice(0, 5).map(sample => {
+    const age = value => Number.isFinite(value) ? `${reportNumber(value, 1)} ms` : "unknown";
+    return `${sample.windowPacket}→${sample.packet} (window age ${age(sample.windowAgeMs)}, ACK age ${age(sample.ackAgeMs)}, ${sample.windowChange} window, observed packets ${sample.senderPacketsObserved}/${sample.peerPacketsObserved})`;
+  });
+  add("TCP", "Observed receive-window occupancy", "medium", !tcpPackets.length ? "not-observed" : !windowOccupancyValues.length ? "not-assessed" : "observed",
+    !tcpPackets.length ? "No TCP packets were decoded." : !windowOccupancyValues.length
+      ? "No occupancy samples met the complete-handshake, ACK-baseline, and contiguous-sequence requirements."
+      : `${reportNumber(totalWindowOccupancySamples)} eligible sample(s), ${reportNumber(windowOccupancyValues.length)} retained; retained-sample median ${reportNumber(reportPercentile(windowOccupancyValues, .5), 1)}%, max ${reportNumber(maxWindowOccupancy, 1)}% of the peer's effective advertised window. Sample context: ${windowOccupancyContext.join(", ")}.${sequenceAnalysis?.windowOccupancySamplesTruncated ? " Detailed samples reached the 50,000-sample storage bound; retained-sample statistics may not represent later eligible samples." : ""}`,
+    "Occupancy is estimated from observed sequence high-water minus cumulative ACK and the peer's latest advertised window. ACK/window age and direction packet counts provide context only; packet-count imbalance cannot establish capture asymmetry. Capture omissions, window shrink, and endpoint behavior can affect this estimate; it is not proof of application blocking or a network fault.");
   const tcpAckRttSamples = sequenceAnalysis?.rttSamples || [];
   const tcpAckRttValues = tcpAckRttSamples.map(sample => sample.value);
   const tcpAckRttP95 = tcpAckRttValues.length ? reportPercentile(tcpAckRttValues, .95) : null;
@@ -272,12 +310,12 @@ function renderReportLegend(entries = []) {
 }
 
 function renderTriageChecks(checks = []) {
-  const labels = { issue: "Issue signal", review: "Review", observed: "Observed", clear: "No issue detected", "not-observed": "Not observed", "not-assessed": "Not assessed" };
   let currentGroup = "";
-  return checks.map(check => {
+  return checks.map(rawCheck => {
+    const check = reportCommon.normalizeReportCheck(rawCheck);
     const group = check.group !== currentGroup ? `<tr class="check-group"><th colspan="4">${reportEscape(check.group)}</th></tr>` : "";
     currentGroup = check.group;
-    return `${group}<tr class="check-row"><td><strong>${reportEscape(check.name)}</strong><small>${reportEscape(check.severity)} priority</small></td><td><span class="check-status check-status--${reportEscape(check.state)}">${labels[check.state] || "Not assessed"}</span></td><td>${reportEscape(check.evidence)}</td><td>${reportEscape(check.limitation)}</td></tr>`;
+    return `${group}<tr class="check-row"><td><strong>${reportEscape(check.name)}</strong><small>${reportEscape(check.severity)} priority</small></td><td><span class="check-status check-status--${reportEscape(check.state)}">${reportEscape(check.statusLabel)}</span></td><td>${reportEscape(check.evidence)}</td><td>${reportEscape(check.limitation)}</td></tr>`;
   }).join("") || `<tr><td colspan="4">No checks were generated for this analysis scope.</td></tr>`;
 }
 
@@ -301,7 +339,7 @@ function buildSingleCaptureReportHtml(report) {
 <article class="method-item"><h3>Capture truncation</h3><p>Snaplen truncation is counted only when a capture record reports an original frame length larger than the bytes captured. This detects incomplete individual frames, not packets lost at the interface, driver, or network path.</p></article>
 <article class="method-item"><h3>Flows and traffic share</h3><p>Conversations group observed endpoint pairs and transport. A dominant flow or traffic spike is descriptive; it becomes a concern only when compared with expected workload or a baseline.</p></article>
 <article class="method-item"><h3>Latency samples</h3><p>TCP handshake timing is SYN-to-SYN/ACK. The separate ACK-to-data estimate is sampled only when a cumulative ACK newly covers exactly one previously unseen payload segment; retransmitted/overlapped segments and ACK advances spanning multiple segments are excluded (Karn-style ambiguity avoidance). Midstream data without an ACK baseline cannot produce samples. DNS timing uses matched query/response pairs. Percentiles are capture-time observations, not application transaction time or validated wire latency.</p></article>
-<article class="method-item"><h3>TCP transport signals</h3><p>RST, SYN-without-observed-SYN/ACK, and advertised zero windows are counted from decoded packets. A bounded sequence pass compares payload byte ranges per direction and notes overlap, repeats after cumulative ACK, forward gaps, and later novel bytes below the observed high-water. Directions with a captured SYN are handshake-anchored; others use a midstream-relative origin. These remain possible retransmission/reordering signals: capture duplication, offload, missing context, and capture boundaries can produce similar evidence. Analysis is capped at 200,000 TCP packets, with at most 2,048 disjoint ranges tracked per direction; reports disclose when either bound makes range counts partial.</p></article>
+<article class="method-item"><h3>TCP transport signals</h3><p>RST, SYN-without-observed-SYN/ACK, and advertised zero windows are counted from decoded packets. Zero-window episodes end at an observed non-zero update or RST; episodes still open at capture end have unknown duration. Repeated one-byte sends are considered only when repeated within the same observed peer zero-window episode. Candidate evidence includes repeat interval, ACK stability, and whether both window-scale offers were captured; this is not proof of RFC persist behavior. Receive-window occupancy is sampled only with complete SYN option records, an ACK baseline inside observed sequence high-water, and contiguous captured sequence coverage. The receiving endpoint's captured window-scale offer is applied to its advertised window. Sample context includes ACK/window ages, whether the latest raw window increased or decreased, and observed packet counts by direction; these do not establish capture asymmetry. Midstream, partial, or gapped contexts are not assessed. A bounded sequence pass compares payload byte ranges per direction and notes overlap, repeats after cumulative ACK, forward gaps, and later novel bytes below the observed high-water. Directions with a captured SYN are handshake-anchored; others use a midstream-relative origin. These remain possible retransmission/reordering signals: capture duplication, offload, missing context, and capture boundaries can produce similar evidence. Analysis is capped at 200,000 TCP packets, with at most 2,048 disjoint ranges, 50,000 RTT segments per direction, and 50,000 retained occupancy sample details; reports disclose when bounds make counts partial.</p></article>
 <article class="method-item"><h3>IP and ICMP signals</h3><p>IPv4 fragment bits, visible ICMP unreachable messages, and path-MTU feedback from ICMPv4/ICMPv6 are reported. TTL is shown as a decoded value but is not called anomalous without a route or host baseline. IPv6 extension-header fragmentation is not classified here.</p></article>
 <article class="method-item"><h3>DNS and web responses</h3><p>DNS transactions match by ID, opcode, normalized question signature, and reversed client/server endpoints. Repeated identical queries while a response is pending are possible retries. Responses without a question section can match only by ID/opcode/endpoints and are called out as lower confidence. Outstanding queries and unmatched responses may reflect capture boundaries, loss, or encrypted DNS; they do not prove resolver failure. Captured A/AAAA answers are observations for optional hostname suggestions, not current DNS truth. HTTP status checks cover visible HTTP/1.x only; HTTP/2 header compression and typical HTTP/3 encryption prevent equivalent status inspection here.</p></article>
 <article class="method-item"><h3>TLS and QUIC</h3><p>Visible TLS record versions and alerts are reported; TLS 1.3 encrypts most post-handshake records, and record-layer version is not necessarily the negotiated version. QUIC Retry is normal address validation, not inherently an error.</p></article>
@@ -321,12 +359,12 @@ function buildSingleCaptureReportHtml(report) {
 @media(max-width:720px){.report{margin:0;padding:24px 18px}.chart-grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.metric:nth-child(2){border-right:0}.metric:nth-child(-n+2){border-bottom:1px solid var(--line)}.toolbar{padding:0 12px}.masthead{flex-direction:column}.date{text-align:left}}
 @media(max-width:720px){.method-grid{grid-template-columns:1fr}.check-matrix{min-width:760px}.check-wrap{overflow-x:auto}}
 @media(max-width:720px){.large-topology-option{margin:0}.large-topology-frame{width:calc(100vw - 40px)}}
-@media print{@page{size:A4;margin:12mm}body{background:#fff;font-size:10pt}.report{max-width:none;margin:0;padding:0;box-shadow:none}.toolbar{display:none}.large-topology-frame{display:none}.masthead{break-after:avoid}.report-section{break-inside:auto}.chart-grid{grid-template-columns:1fr 1fr}.chart img,.chart-unavailable{height:175px}.metrics,.chart,.finding,.evidence-list li,.method-item{break-inside:avoid}h2,h3{break-after:avoid}table{font-size:7.5pt}th,td{padding:4px}.check-matrix{min-width:0}.check-status{font-size:7pt}.metric--latency strong{font-size:20px}.metric-range{font-size:7pt}.method-grid{grid-template-columns:1fr 1fr}.large-topology-section img{width:auto;max-width:100%;max-height:none;break-inside:avoid}.footer{break-before:avoid}}
+@media print{@page{size:A4;margin:12mm}body{background:#fff;font-size:10pt}.report{max-width:none;margin:0;padding:0;box-shadow:none}.toolbar{display:none}.large-topology-frame{display:none}.masthead{break-after:avoid}.report-section{break-inside:auto}.expert-analysis-page{break-before:page;page-break-before:always}.chart-grid{grid-template-columns:1fr 1fr}.chart img,.chart-unavailable{height:175px}.metrics,.chart,.finding,.evidence-list li,.method-item{break-inside:avoid}h2,h3{break-after:avoid}table{font-size:7.5pt}th,td{padding:4px}.check-matrix{min-width:0}.check-status{font-size:7pt}.metric--latency strong{font-size:20px}.metric-range{font-size:7pt}.method-grid{grid-template-columns:1fr 1fr}.large-topology-section img{width:auto;max-width:100%;max-height:none;break-inside:avoid}.footer{break-before:avoid}}
 </style></head><body><div class="toolbar"><button class="secondary" onclick="window.close()">Close report</button><label class="large-topology-option"><input id="includeLargeTopology" type="checkbox" ${report.largeTopologyDocument ? "" : "disabled"}>Include large topology map</label><span class="large-topology-status" id="largeTopologyStatus">${report.largeTopologyDocument ? "Optional · unchecked by default" : "No topology available"}</span><button onclick="window.print()">Print / Save as PDF</button></div><main class="report"><header class="masthead"><div><div class="brand">DataSnare · AINetScope</div><p class="kicker">Packet capture analysis report</p><h1>${reportEscape(report.name)}</h1><p class="subhead">Expert summary of network behavior in the analyzed trace.</p><p class="scope">${reportEscape(report.scope)} · Profile: ${reportEscape(report.profile)} · IP map: ${reportEscape(report.hostMapProfile || "No IP map")}</p></div><div class="date">Generated<br><strong>${reportEscape(report.generatedAt)}</strong></div></header>
 <section class="metrics">${report.metrics.map(metric => `<div class="metric${metric.secondary ? " metric--latency" : ""}"><div><span>${reportEscape(metric.label)}</span><strong>${reportEscape(metric.value)}</strong></div>${metric.secondary ? `<div class="metric-range">${metric.secondary.map(item => `<span><i>${reportEscape(item.label)}</i><b>${reportEscape(item.value)}</b></span>`).join("")}</div>` : ""}</div>`).join("")}</section>
 <section class="report-section"><p class="eyebrow">VISUAL ANALYSIS</p><h2>Charts and traffic shape</h2><div class="chart-grid">${charts}</div></section>
 <section class="large-topology-section" id="largeTopologySection" hidden><p class="eyebrow">OPTIONAL FULL TOPOLOGY</p><h2>Interactive topology snapshot</h2><p class="subhead" id="largeTopologyCaption"></p><img id="largeTopologyImage" alt="Full topology map for this capture"></section>
-<section class="report-section"><p class="eyebrow">EXPERT ANALYSIS</p><h2>Ranked observations</h2>${findingRows}</section>
+<section class="report-section expert-analysis-page"><p class="eyebrow">EXPERT ANALYSIS</p><h2>Ranked observations</h2>${findingRows}</section>
 ${narrative}
 <section class="report-section"><p class="eyebrow">APPLICATION BEHAVIOR</p><h2>Decoded services</h2><table><thead><tr><th>Service</th><th>Requests</th><th>Errors</th><th>Median latency</th><th>Observed detail</th></tr></thead><tbody>${services}</tbody></table></section>
 <section class="report-section"><p class="eyebrow">CONVERSATIONS</p><h2>Top network flows</h2><table><thead><tr><th>Endpoints</th><th>Protocol</th><th>Packets</th><th>Traffic</th><th>Latency</th><th>State</th></tr></thead><tbody>${flows}</tbody></table></section>
@@ -411,6 +449,8 @@ function buildSingleCaptureReportData() {
   const services = analyzeServices(packets);
   const summary = analysisSummary(packets, aggregation);
   const profile = getActiveAnalysisProfile();
+  const triageChecks = buildTriageChecks(packets, aggregation, services, profile,
+    settings.reportCheckGroups, analyzeTcpSequence(packets));
   const captureNarrative = typeof captureSummary === "function" ? captureSummary() : { problemStatement: "", narrative: "", relevantFrames: [] };
   const largeTopologyPayload = typeof buildSingleCaptureTopologyPayload === "function"
     ? buildSingleCaptureTopologyPayload(packets, aggregation.flows, { captureId: state.captureId, name: state.fileName }, activeHostnameProfile()) : null;
@@ -461,10 +501,12 @@ function buildSingleCaptureReportData() {
       note: typeof packetNote === "function" ? reportSummaryText(packetNote(packet.number)) : ""
     } : null;
   }).filter(Boolean);
-  return {
+  return reportCommon.createReportModel({
+    mode: "single-capture",
+    sources: [{ name: state.fileName || "Network capture" }],
     name: state.fileName || "Network capture",
     generatedAt: new Date().toLocaleString(),
-    scope: packets.length === state.packets.length ? `${reportNumber(packets.length)} packets analyzed` : `${reportNumber(packets.length)} of ${reportNumber(state.packets.length)} packets analyzed (current dashboard filters)`,
+    scope: { summary: packets.length === state.packets.length ? `${reportNumber(packets.length)} packets analyzed` : `${reportNumber(packets.length)} of ${reportNumber(state.packets.length)} packets analyzed (current dashboard filters)` },
     profile: profile.name,
     hostMapProfile: settings.activeHostMapProfile || "No IP map",
     metrics: [
@@ -482,7 +524,8 @@ function buildSingleCaptureReportData() {
     ],
     charts,
     findings: buildFindings(packets, aggregation, services, profile),
-    triageChecks: buildTriageChecks(packets, aggregation, services, profile, settings.reportCheckGroups, analyzeTcpSequence(packets)),
+    triageChecks,
+    caveats: [...new Set(triageChecks.map(check => check.limitation).filter(Boolean))],
     includedCheckGroups: Object.keys(settings.reportCheckGroups).filter(group => settings.reportCheckGroups[group]),
     largeTopologyDocument: largeTopologyPayload?.edges.length && typeof buildTopologyDocument === "function"
       ? buildTopologyDocument({ ...largeTopologyPayload, pdfFitCheck: true, pdfMaxWidth: 700 }) : "",
@@ -491,7 +534,7 @@ function buildSingleCaptureReportData() {
     problemStatement: captureNarrative.problemStatement || "",
     narrative: reportSummaryText(captureNarrative.narrative),
     relevantFrames
-  };
+  });
 }
 
 function openSingleCaptureReport() {
