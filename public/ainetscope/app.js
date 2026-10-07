@@ -10,7 +10,7 @@ function normalizeReportCheckGroups(value) {
   const groups = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   return Object.fromEntries(REPORT_CHECK_GROUPS.map(group => [group, groups[group] !== false]));
 }
-const DEFAULT_SETTINGS = Object.freeze({ maxCaptureMB: 250, maxSessionMB: 100, maxPackets: 1500000, rawPreviewBytes: 512, cacheEnabled: false, compactMode: true, debugLogEnabled: false, sansFont: "Manrope, sans-serif", monoFont: "DM Mono, monospace", referenceLinks: DEFAULT_REFERENCE_LINKS, reportCheckGroups: normalizeReportCheckGroups(), hostMapProfiles: [], activeHostMapProfile: "" });
+const DEFAULT_SETTINGS = Object.freeze({ maxCaptureMB: 250, maxSessionMB: 100, maxPackets: 1500000, rawPreviewBytes: 512, cacheEnabled: false, compactMode: true, debugLogEnabled: false, streamMiniMapRows: 500, sansFont: "Manrope, sans-serif", monoFont: "DM Mono, monospace", referenceLinks: DEFAULT_REFERENCE_LINKS, reportCheckGroups: normalizeReportCheckGroups(), hostMapProfiles: [], activeHostMapProfile: "" });
 const COMPACT_PACKET_THRESHOLD = 100000;
 const SINGLE_CAPTURE_COMPACT_THRESHOLD = 10000;
 const LARGE_CAPTURE_FAST_PATH_PACKETS = 50000;
@@ -53,6 +53,7 @@ function loadSettings() {
       cacheEnabled: saved.cacheEnabled === true,
       compactMode: saved.compactMode !== false,
       debugLogEnabled: saved.debugLogEnabled === true,
+      streamMiniMapRows: Math.max(100, Math.min(5000, Math.floor(Number(saved.streamMiniMapRows) || DEFAULT_SETTINGS.streamMiniMapRows))),
       sansFont: typeof saved.sansFont === "string" && saved.sansFont.trim() ? saved.sansFont.trim().slice(0, 160) : DEFAULT_SETTINGS.sansFont,
       monoFont: typeof saved.monoFont === "string" && saved.monoFont.trim() ? saved.monoFont.trim().slice(0, 160) : DEFAULT_SETTINGS.monoFont,
       referenceLinks: referenceLinks.length ? referenceLinks : DEFAULT_REFERENCE_LINKS,
@@ -1672,7 +1673,7 @@ if (typeof document !== "undefined") {
   const returnTo = new URLSearchParams(window.location.search).get("returnTo");
   if (returnTo === "/aianalysis") $("#coreReturnLink").hidden = false;
   $("#settingsButton").addEventListener("click", () => {
-    $("#maxCaptureMB").value = settings.maxCaptureMB; $("#maxSessionMB").value = settings.maxSessionMB; $("#maxPackets").value = settings.maxPackets; $("#twoSidedRowsPerPage").value = settings.twoSidedRowsPerPage || 150; $("#rawPreviewBytes").value = settings.rawPreviewBytes; $("#compactMode").checked = settings.compactMode; $("#cacheEnabled").checked = settings.cacheEnabled; $("#debugLogEnabled").checked = settings.debugLogEnabled; $("#sansFont").value = settings.sansFont; $("#monoFont").value = settings.monoFont; $("#referenceLinks").value = settings.referenceLinks.map(link => `${link.label} | ${link.url}`).join("\n");
+    $("#maxCaptureMB").value = settings.maxCaptureMB; $("#maxSessionMB").value = settings.maxSessionMB; $("#maxPackets").value = settings.maxPackets; $("#twoSidedRowsPerPage").value = settings.twoSidedRowsPerPage || 150; $("#rawPreviewBytes").value = settings.rawPreviewBytes; $("#compactMode").checked = settings.compactMode; $("#cacheEnabled").checked = settings.cacheEnabled; $("#debugLogEnabled").checked = settings.debugLogEnabled; $("#streamMiniMapRows").value = settings.streamMiniMapRows || DEFAULT_SETTINGS.streamMiniMapRows; $("#sansFont").value = settings.sansFont; $("#monoFont").value = settings.monoFont; $("#referenceLinks").value = settings.referenceLinks.map(link => `${link.label} | ${link.url}`).join("\n");
     document.querySelectorAll("[data-report-check-group]").forEach(input => { input.checked = settings.reportCheckGroups[input.value] !== false; });
     $("#settingsDialog").showModal();
   });
@@ -1700,7 +1701,7 @@ if (typeof document !== "undefined") {
     const wasCompactMode = settings.compactMode;
     const referenceLinks = $("#referenceLinks").value.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => { const separator = line.indexOf("|"); return separator > 0 ? { label: line.slice(0, separator).trim().slice(0, 80), url: line.slice(separator + 1).trim().slice(0, 500) } : null; }).filter(link => link?.label && /^(https?:|mailto:)/i.test(link.url));
     const reportCheckGroups = Object.fromEntries([...document.querySelectorAll("[data-report-check-group]")].map(input => [input.value, input.checked]));
-    settings = { ...settings, maxCaptureMB: Math.max(1, Math.min(4096, Math.floor(Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB))), maxSessionMB: Math.max(1, Math.min(512, Math.floor(Number($("#maxSessionMB").value) || DEFAULT_SETTINGS.maxSessionMB))), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), twoSidedRowsPerPage: Math.max(25, Math.min(1000, Math.floor(Number($("#twoSidedRowsPerPage").value) || 150))), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS], reportCheckGroups: normalizeReportCheckGroups(reportCheckGroups) };
+    settings = { ...settings, maxCaptureMB: Math.max(1, Math.min(4096, Math.floor(Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB))), maxSessionMB: Math.max(1, Math.min(512, Math.floor(Number($("#maxSessionMB").value) || DEFAULT_SETTINGS.maxSessionMB))), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), twoSidedRowsPerPage: Math.max(25, Math.min(1000, Math.floor(Number($("#twoSidedRowsPerPage").value) || 150))), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, streamMiniMapRows: Math.max(100, Math.min(5000, Math.floor(Number($("#streamMiniMapRows").value) || DEFAULT_SETTINGS.streamMiniMapRows))), sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS], reportCheckGroups: normalizeReportCheckGroups(reportCheckGroups) };
     document.documentElement.style.setProperty("--sans", settings.sansFont); document.documentElement.style.setProperty("--mono", settings.monoFont);
     toggleDebugLogPanel(settings.debugLogEnabled);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); $("#settingsDialog").close();

@@ -415,7 +415,7 @@ function renderStreamInspector(packet) {
   }
   const key = streamKey(packet);
   const streamNumber = state.flows.findIndex(flow => flow.key === key) + 1;
-  const view = DataSnareStreamInspector.analyzeStreamRows(packets, packet.number);
+  const view = DataSnareStreamInspector.analyzeStreamRows(packets, packet.number, settings.streamMiniMapRows);
   $("#streamInspectorTitle").textContent = `Stream Index #${streamNumber || "—"}`;
   $("#streamInspectorMeta").textContent = `${packet.transport} · ${packets.length.toLocaleString()} packets`;
   const rows = view.rows.map(item => `<button class="stream-packet-row ${item.selected ? "selected" : ""}" type="button" data-stream-packet="${item.packet.number}"><span>${item.packet.number}</span><span>${escapeHtml(item.label)}</span><span>${escapeHtml(item.direction)}</span><small>${escapeHtml(item.expert)}</small></button>`).join("");

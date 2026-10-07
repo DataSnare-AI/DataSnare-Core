@@ -1,7 +1,8 @@
 "use strict";
 
 (function (root) {
-  const MAX_STREAM_ROWS = 500;
+  const DEFAULT_STREAM_ROWS = 500;
+  const MAX_STREAM_ROWS = 5000;
 
   function streamKey(packet) {
     const transport = packet?.transport || (["TCP", "UDP"].includes(packet?.protocol) ? packet.protocol : "");
@@ -26,8 +27,8 @@
               : protocol === "HTTP/2" ? `HTTP/2 ${packet.http2FrameType || "Frame"}` : "";
   }
 
-  function analyzeStreamRows(packets, selectedNumber, maxRows = MAX_STREAM_ROWS) {
-    const limit = Math.max(1, Math.min(MAX_STREAM_ROWS, Math.floor(maxRows) || MAX_STREAM_ROWS));
+  function analyzeStreamRows(packets, selectedNumber, maxRows = DEFAULT_STREAM_ROWS) {
+    const limit = Math.max(100, Math.min(MAX_STREAM_ROWS, Math.floor(maxRows) || DEFAULT_STREAM_ROWS));
     const selectedIndex = packets.findIndex(packet => packet.number === selectedNumber);
     const start = packets.length <= limit ? 0 : Math.max(0, Math.min(selectedIndex - Math.floor(limit / 2), packets.length - limit));
     const end = Math.min(packets.length, start + limit);
@@ -85,7 +86,7 @@
     return { rows, total: packets.length, start, end, omitted: packets.length - rows.length };
   }
 
-  const api = Object.freeze({ MAX_STREAM_ROWS, streamKey, analyzeStreamRows });
+  const api = Object.freeze({ DEFAULT_STREAM_ROWS, MAX_STREAM_ROWS, streamKey, analyzeStreamRows });
   root.DataSnareStreamInspector = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
