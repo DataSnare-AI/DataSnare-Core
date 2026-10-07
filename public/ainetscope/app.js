@@ -1234,6 +1234,23 @@ function loadPackets(packets, name, captureId = "") {
   debugLog("loadPackets:complete", { name, packets: packets.length, compact: state.compactMode, flows: aggregate(state.filtered).flows.length });
 }
 
+async function reparseCurrentCaptureExpanded() {
+  if (!state.captureBuffer || !state.fileName || !state.packets.length) {
+    showToast("Reopen the original capture to apply full packet details; cached compact data cannot restore discarded layers.");
+    return;
+  }
+  const { fileName, captureId, captureBuffer } = state;
+  showToast(`Reanalyzing ${fileName} with full packet details…`);
+  try {
+    const result = await parseInWorker(captureBuffer.slice(0), true, { compactThreshold: Infinity });
+    result.packets.captureBuffer = result.buffer;
+    loadPackets(result.packets, fileName, captureId);
+    showToast(`Reanalyzed ${fileName} with full packet details.`);
+  } catch (error) {
+    showToast(`Could not reanalyze capture: ${error.message}. Reopen the original trace to try again.`);
+  }
+}
+
 function applyFilters() {
   const query = $("#searchInput").value.trim().toLowerCase(); const protocol = $("#protocolFilter").value;
   state.filtered = state.packets.filter(packet => (protocol === "all" || packet.protocol === protocol) && (!query || `${packet.src} ${packet.dst} ${packet.protocol} ${packet.info}`.toLowerCase().includes(query)));
@@ -1498,11 +1515,14 @@ if (typeof document !== "undefined") {
   $("#closeSettingsDialog").addEventListener("click", () => $("#settingsDialog").close());
   $("#cancelSettingsButton").addEventListener("click", () => $("#settingsDialog").close());
   $("#saveSettingsButton").addEventListener("click", () => {
+    const wasCompactMode = settings.compactMode;
     const referenceLinks = $("#referenceLinks").value.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => { const separator = line.indexOf("|"); return separator > 0 ? { label: line.slice(0, separator).trim().slice(0, 80), url: line.slice(separator + 1).trim().slice(0, 500) } : null; }).filter(link => link?.label && /^(https?:|mailto:)/i.test(link.url));
     settings = { maxCaptureMB: Math.max(1, Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS] };
     document.documentElement.style.setProperty("--sans", settings.sansFont); document.documentElement.style.setProperty("--mono", settings.monoFont);
     toggleDebugLogPanel(settings.debugLogEnabled);
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); $("#settingsDialog").close(); showToast("Capture capacity settings saved.");
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); $("#settingsDialog").close();
+    if (wasCompactMode && !settings.compactMode && state.compactMode) reparseCurrentCaptureExpanded();
+    else showToast("Capture capacity settings saved.");
   });
   const captureInput = $("#captureInput");
   const captureLabel = document.querySelector("label[for='captureInput']");
