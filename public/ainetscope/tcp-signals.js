@@ -50,6 +50,7 @@ function tcpSignalInsertRange(intervals, start, end) {
 }
 
 const TCP_SEQUENCE_PACKET_LIMIT = 200000;
+const TCP_RTT_SEGMENT_LIMIT = 50000;
 
 function analyzeTcpSequence(packets) {
   const flows = new Map();
@@ -64,14 +65,16 @@ function analyzeTcpSequence(packets) {
         payloadBytes: 0, uniquePayloadBytes: 0, overlapBytes: 0, repeatedSegments: 0,
         exactRepeatedSegments: 0, partialOverlapSegments: 0, acknowledgedRepeatSegments: 0,
         forwardGapSegments: 0, forwardGapBytes: 0, largestForwardGap: 0,
-        lateNovelSegments: 0, lateNovelBytes: 0, directions: new Map() });
+        lateNovelSegments: 0, lateNovelBytes: 0, ackRttSamples: [], ambiguousAckAdvances: 0,
+        retransmittedRttSegments: 0, directions: new Map() });
     }
     const flow = flows.get(key);
     flow.packets++;
     const source = tcpSignalEndpoint(packet, true);
     const destination = tcpSignalEndpoint(packet, false);
     if (!flow.directions.has(source)) flow.directions.set(source, {
-      anchor: packet.seq >>> 0, intervals: [], highWater: null, acknowledgedThrough: null, exactRanges: new Map(), anchoredBySyn: false
+      anchor: packet.seq >>> 0, intervals: [], highWater: null, acknowledgedThrough: null, exactRanges: new Map(), anchoredBySyn: false,
+      lastAcked: null, outstanding: [], rttTrackingStopped: false
     });
     const sender = flow.directions.get(source);
     const receiver = flow.directions.get(destination);
@@ -79,7 +82,10 @@ function analyzeTcpSequence(packets) {
     const syn = tcpSignalFlag(packet, 'SYN', 0x02);
     const fin = tcpSignalFlag(packet, 'FIN', 0x01);
     const ack = tcpSignalFlag(packet, 'ACK', 0x10);
-    if (syn) sender.anchoredBySyn = true;
+    if (syn) {
+      sender.anchoredBySyn = true;
+      if (sender.lastAcked === null) sender.lastAcked = sequence + 1;
+    }
     const payloadLength = Math.max(0, Number(packet.payloadLength) || 0);
     const payloadStart = sequence + (syn ? 1 : 0);
 
@@ -87,6 +93,19 @@ function analyzeTcpSequence(packets) {
       const acknowledged = tcpSignalUnwrap(packet.ack >>> 0, receiver.anchor);
       receiver.acknowledgedThrough = receiver.acknowledgedThrough === null
         ? acknowledged : Math.max(receiver.acknowledgedThrough, acknowledged);
+      if (receiver.lastAcked === null) receiver.lastAcked = acknowledged;
+      else if (acknowledged > receiver.lastAcked) {
+        const newlyAcknowledged = receiver.outstanding.filter(segment => segment.end > receiver.lastAcked && segment.end <= acknowledged);
+        if (newlyAcknowledged.length === 1 && !newlyAcknowledged[0].retransmitted && !receiver.rttTrackingStopped) {
+          const sample = newlyAcknowledged[0];
+          const value = (packet.timestamp - sample.timestamp) * 1000;
+          if (Number.isFinite(value) && value >= 0 && value < 60000) {
+            flow.ackRttSamples.push({ value, packet: packet.number, requestPacket: sample.packet, timestamp: packet.timestamp, direction: source });
+          }
+        } else if (newlyAcknowledged.length > 1) flow.ambiguousAckAdvances++;
+        receiver.outstanding = receiver.outstanding.filter(segment => segment.end > acknowledged);
+        receiver.lastAcked = acknowledged;
+      }
     }
 
     if (payloadLength > 0) {
@@ -106,6 +125,12 @@ function analyzeTcpSequence(packets) {
         if (exactRepeat) flow.exactRepeatedSegments++;
         else flow.partialOverlapSegments++;
         if (sender.acknowledgedThrough !== null && payloadEnd <= sender.acknowledgedThrough) flow.acknowledgedRepeatSegments++;
+        for (const sample of sender.outstanding) {
+          if (payloadStart < sample.end && payloadEnd > sample.start && !sample.retransmitted) {
+            sample.retransmitted = true;
+            flow.retransmittedRttSegments++;
+          }
+        }
       }
       if (novelBytes > 0 && previousHighWater !== null && payloadStart < previousHighWater) {
         flow.lateNovelSegments++;
@@ -119,6 +144,10 @@ function analyzeTcpSequence(packets) {
       }
       sender.highWater = previousHighWater === null ? payloadEnd : Math.max(previousHighWater, payloadEnd);
       if (overlapBytes !== null) sender.exactRanges.set(rangeKey, (sender.exactRanges.get(rangeKey) || 0) + 1);
+      if (overlapBytes === 0 && !sender.rttTrackingStopped) {
+        if (sender.outstanding.length < TCP_RTT_SEGMENT_LIMIT) sender.outstanding.push({ start: payloadStart, end: payloadEnd, timestamp: packet.timestamp, packet: packet.number, retransmitted: false });
+        else sender.rttTrackingStopped = true;
+      }
     }
     if (syn || fin) {
       const controlEnd = sequence + (syn ? 1 : 0) + (fin ? 1 : 0);
@@ -131,11 +160,16 @@ function analyzeTcpSequence(packets) {
     const { directions: _directions, ...summary } = flow;
     return { ...summary, handshakeAnchoredDirections: directions.filter(direction => direction.anchoredBySyn).length,
       midstreamDirections: directions.filter(direction => !direction.anchoredBySyn).length,
-      rangeTrackingStoppedDirections: directions.filter(direction => direction.rangeTrackingStopped).length };
+      rangeTrackingStoppedDirections: directions.filter(direction => direction.rangeTrackingStopped).length,
+      rttTrackingStoppedDirections: directions.filter(direction => direction.rttTrackingStopped).length };
   });
   const rangeTrackingStoppedFlows = summaries.filter(flow => flow.rangeTrackingStoppedDirections > 0).length;
+  const rttTrackingStoppedFlows = summaries.filter(flow => flow.rttTrackingStoppedDirections > 0).length;
+  const rttSamples = summaries.flatMap(flow => flow.ackRttSamples.map(sample => ({ ...sample, flow: flow.key })));
   return {
     flows: summaries,
+    rttSamples,
+    rttTrackingStoppedFlows,
     analyzedPackets: analyzedPackets.length,
     totalTcpPackets: tcpPackets.length,
     rangeTrackingStoppedFlows,
@@ -143,13 +177,14 @@ function analyzeTcpSequence(packets) {
     totals: summaries.reduce((total, flow) => {
       for (const key of ['packets', 'payloadSegments', 'payloadBytes', 'uniquePayloadBytes', 'overlapBytes',
         'repeatedSegments', 'exactRepeatedSegments', 'partialOverlapSegments', 'acknowledgedRepeatSegments',
-        'forwardGapSegments', 'forwardGapBytes', 'lateNovelSegments', 'lateNovelBytes', 'handshakeAnchoredDirections', 'midstreamDirections']) total[key] += flow[key];
+        'forwardGapSegments', 'forwardGapBytes', 'lateNovelSegments', 'lateNovelBytes', 'handshakeAnchoredDirections', 'midstreamDirections',
+        'ambiguousAckAdvances', 'retransmittedRttSegments']) total[key] += flow[key];
       total.largestForwardGap = Math.max(total.largestForwardGap, flow.largestForwardGap);
       return total;
     }, { packets: 0, payloadSegments: 0, payloadBytes: 0, uniquePayloadBytes: 0, overlapBytes: 0,
       repeatedSegments: 0, exactRepeatedSegments: 0, partialOverlapSegments: 0, acknowledgedRepeatSegments: 0,
       forwardGapSegments: 0, forwardGapBytes: 0, largestForwardGap: 0, lateNovelSegments: 0, lateNovelBytes: 0,
-      handshakeAnchoredDirections: 0, midstreamDirections: 0 })
+      handshakeAnchoredDirections: 0, midstreamDirections: 0, ambiguousAckAdvances: 0, retransmittedRttSegments: 0 })
   };
 }
 

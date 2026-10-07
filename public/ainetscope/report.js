@@ -21,6 +21,12 @@ function reportLatency(value) {
   return value < 1 ? `${(value * 1000).toFixed(0)} µs` : `${value.toFixed(value < 10 ? 2 : 1)} ms`;
 }
 
+function largeTopologyFitsPdf(snapshot, maxWidth = 700) {
+  return Boolean(snapshot && !snapshot.error && Number.isFinite(snapshot.width)
+    && Number.isFinite(snapshot.viewportWidth) && Number.isFinite(snapshot.scrollWidth)
+    && !snapshot.horizontalOverflow && snapshot.scrollWidth <= snapshot.viewportWidth + 1 && snapshot.width <= maxWidth);
+}
+
 function buildTriageChecks(packets, aggregation, services, profile, enabledGroups = null, sequenceAnalysis = null) {
   const checks = [];
   const add = (group, name, severity, state, evidence, limitation = "") => checks.push({ group, name, severity, state, evidence, limitation });
@@ -70,17 +76,27 @@ function buildTriageChecks(packets, aggregation, services, profile, enabledGroup
 
   const forwardGaps = sequenceTotals?.forwardGapSegments || 0;
   const lateNovel = sequenceTotals?.lateNovelSegments || 0;
+  const latencyLimit = Number(profile?.thresholds?.latencyP95Ms);
   add("TCP", "Sequence gaps / late novel payload", "medium", !tcpPackets.length ? "not-observed" : !sequenceSamplesAvailable ? "not-assessed" : forwardGaps || lateNovel ? "review" : "clear",
     tcpPackets.length && sequenceSamplesAvailable
       ? `${reportNumber(forwardGaps)} segments began beyond the observed sequence high-water (${reportNumber(sequenceTotals.forwardGapBytes)} gap bytes); ${reportNumber(lateNovel)} later segments added novel bytes below that high-water (${reportNumber(sequenceTotals.lateNovelBytes)} bytes). Sequence origins: ${reportNumber(sequenceTotals.handshakeAnchoredDirections)} direction(s) observed from SYN, ${reportNumber(sequenceTotals.midstreamDirections)} midstream-relative.${sequenceScope}`
       : tcpPackets.length ? "Sequence-range analysis was unavailable." : "No TCP packets were decoded.",
     "A forward gap may reflect omitted traffic, capture boundaries, or reordering. Later novel bytes below a previous high-water are consistent with out-of-order arrival, but cannot alone prove it.");
   add("TCP", "Window-full / persist probes", "medium", "not-assessed", "Not calculated by the current packet analyzer.", "Requires identifying persist probes and correlating them with advertised receive windows.");
-  add("TCP", "ACK-to-data RTT / TCP loss percentage", "medium", "not-assessed", "Not calculated by the current packet analyzer.", "The response samples below are SYN/SYN-ACK handshake RTT and matched DNS latency, not a general TCP ACK RTT or packet-loss rate.");
+  const tcpAckRttSamples = sequenceAnalysis?.rttSamples || [];
+  const tcpAckRttValues = tcpAckRttSamples.map(sample => sample.value);
+  const tcpAckRttP95 = tcpAckRttValues.length ? reportPercentile(tcpAckRttValues, .95) : null;
+  const tcpRttScope = sequenceAnalysis?.rttTrackingStoppedFlows
+    ? ` RTT tracking reached its per-direction segment cap in ${reportNumber(sequenceAnalysis.rttTrackingStoppedFlows)} flow(s); sample counts may be partial.` : "";
+  add("TCP", "ACK-to-data RTT samples", "medium", !tcpPackets.length ? "not-observed" : !tcpAckRttValues.length ? "not-assessed"
+    : Number.isFinite(latencyLimit) && tcpAckRttP95 > latencyLimit ? "review" : "clear",
+    !tcpPackets.length ? "No TCP packets were decoded." : !tcpAckRttValues.length
+      ? "No unambiguous data segment was newly covered by a cumulative ACK; midstream context, cumulative ACKs spanning multiple segments, and retransmitted data are excluded."
+      : `p95 ${reportLatency(tcpAckRttP95)} from ${reportNumber(tcpAckRttValues.length)} unambiguous ACK-to-data samples${Number.isFinite(latencyLimit) ? `; profile screening threshold ${reportLatency(latencyLimit)}` : ""}. ${reportNumber(sequenceTotals?.ambiguousAckAdvances || 0)} cumulative ACK advance(s) covering multiple segments excluded; ${reportNumber(sequenceTotals?.retransmittedRttSegments || 0)} overlapping/retransmitted segment(s) excluded.${tcpAckRttSamples.length ? ` Sample frames: ${tcpAckRttSamples.slice(0, 5).map(sample => `${sample.requestPacket}→${sample.packet}`).join(", ")}.` : ""}${tcpRttScope}`,
+    "Samples are conservative capture-time estimates for newly acknowledged data, not application response time. Delayed ACKs, capture placement, offload, missing packets, and retransmissions can affect them; no general TCP loss percentage is inferred.");
 
   const tcpLatency = aggregation.latencyEvents.filter(event => event.type === "TCP").map(event => event.value);
   const tcpP95 = tcpLatency.length ? reportPercentile(tcpLatency, .95) : null;
-  const latencyLimit = Number(profile?.thresholds?.latencyP95Ms);
   add("TCP", "TCP handshake p95 latency", "medium", !tcpLatency.length ? "not-assessed" : Number.isFinite(latencyLimit) && tcpP95 > latencyLimit ? "review" : "clear",
     tcpLatency.length ? `p95 ${reportLatency(tcpP95)} from ${reportNumber(tcpLatency.length)} observed handshakes${Number.isFinite(latencyLimit) ? `; profile review threshold ${reportLatency(latencyLimit)}` : ""}.` : "No complete TCP handshakes were available for timing.",
     "A high handshake RTT is a path/setup indicator; it does not isolate which network hop or endpoint caused delay.");
@@ -284,7 +300,7 @@ function buildSingleCaptureReportHtml(report) {
 <article class="method-item"><h3>Scope and coverage</h3><p>Counts and checks use the packets currently included by dashboard filters. A capture can omit traffic because of its capture point, filter, time boundaries, packet loss, or asymmetric routing.</p></article>
 <article class="method-item"><h3>Capture truncation</h3><p>Snaplen truncation is counted only when a capture record reports an original frame length larger than the bytes captured. This detects incomplete individual frames, not packets lost at the interface, driver, or network path.</p></article>
 <article class="method-item"><h3>Flows and traffic share</h3><p>Conversations group observed endpoint pairs and transport. A dominant flow or traffic spike is descriptive; it becomes a concern only when compared with expected workload or a baseline.</p></article>
-<article class="method-item"><h3>Latency samples</h3><p>TCP timing is SYN-to-SYN/ACK handshake time. DNS timing is a matched query/response pair. Percentiles use only successful observed samples; they are not application transaction time or general TCP data RTT.</p></article>
+<article class="method-item"><h3>Latency samples</h3><p>TCP handshake timing is SYN-to-SYN/ACK. The separate ACK-to-data estimate is sampled only when a cumulative ACK newly covers exactly one previously unseen payload segment; retransmitted/overlapped segments and ACK advances spanning multiple segments are excluded (Karn-style ambiguity avoidance). Midstream data without an ACK baseline cannot produce samples. DNS timing uses matched query/response pairs. Percentiles are capture-time observations, not application transaction time or validated wire latency.</p></article>
 <article class="method-item"><h3>TCP transport signals</h3><p>RST, SYN-without-observed-SYN/ACK, and advertised zero windows are counted from decoded packets. A bounded sequence pass compares payload byte ranges per direction and notes overlap, repeats after cumulative ACK, forward gaps, and later novel bytes below the observed high-water. Directions with a captured SYN are handshake-anchored; others use a midstream-relative origin. These remain possible retransmission/reordering signals: capture duplication, offload, missing context, and capture boundaries can produce similar evidence. Analysis is capped at 200,000 TCP packets, with at most 2,048 disjoint ranges tracked per direction; reports disclose when either bound makes range counts partial.</p></article>
 <article class="method-item"><h3>IP and ICMP signals</h3><p>IPv4 fragment bits, visible ICMP unreachable messages, and path-MTU feedback from ICMPv4/ICMPv6 are reported. TTL is shown as a decoded value but is not called anomalous without a route or host baseline. IPv6 extension-header fragmentation is not classified here.</p></article>
 <article class="method-item"><h3>DNS and web responses</h3><p>DNS transactions match by ID, opcode, normalized question signature, and reversed client/server endpoints. Repeated identical queries while a response is pending are possible retries. Responses without a question section can match only by ID/opcode/endpoints and are called out as lower confidence. Outstanding queries and unmatched responses may reflect capture boundaries, loss, or encrypted DNS; they do not prove resolver failure. Captured A/AAAA answers are observations for optional hostname suggestions, not current DNS truth. HTTP status checks cover visible HTTP/1.x only; HTTP/2 header compression and typical HTTP/3 encryption prevent equivalent status inspection here.</p></article>
@@ -299,20 +315,89 @@ function buildSingleCaptureReportHtml(report) {
 <style>
 :root{color-scheme:light;--ink:#182720;--muted:#52645b;--line:#cbd5ce;--green:#176b4d;--coral:#b94f35;--gold:#a57513;--blue:#23678a}*{box-sizing:border-box}body{margin:0;background:#edf1ed;color:var(--ink);font:14px/1.5 Arial,Helvetica,sans-serif}.report{max-width:1050px;margin:28px auto;padding:38px 44px;background:#fff;box-shadow:0 10px 34px #1d322522}.masthead{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;border-bottom:3px solid var(--green);padding-bottom:18px}.brand{font-size:11px;font-weight:bold;letter-spacing:.12em;color:var(--green);text-transform:uppercase}.date{font-size:11px;color:var(--muted);text-align:right}.kicker,.eyebrow{margin:22px 0 5px;color:var(--green);font-size:10px;font-weight:bold;letter-spacing:.12em;text-transform:uppercase}h1{margin:6px 0 4px;font-size:30px;line-height:1.15}h2{font-size:19px;margin:0 0 12px}h3{font-size:14px;margin:0 0 4px}.subhead{color:var(--muted);margin:0}.scope{font-size:11px;color:var(--muted);margin-top:12px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);margin:22px 0}.metric{padding:13px;border-right:1px solid var(--line);min-width:0}.metric:last-child{border:0}.metric span,.metric strong{display:block}.metric span{font-size:9px;text-transform:uppercase;color:var(--muted);font-weight:bold}.metric strong{font-size:20px;margin-top:6px;color:var(--green);overflow-wrap:anywhere}.report-section{margin-top:26px}.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.chart{margin:0;border:1px solid var(--line);padding:10px;break-inside:avoid}.chart figcaption{font-weight:bold;font-size:11px;margin-bottom:8px}.chart img{display:block;width:100%;height:205px;object-fit:contain}.chart-unavailable{height:205px;display:grid;place-items:center;color:var(--muted);background:#f3f6f3;font-size:11px}.finding{display:grid;grid-template-columns:70px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);break-inside:avoid}.finding-rank{align-self:start;text-align:center;padding:3px 5px;border:1px solid var(--line);font-weight:bold;font-size:10px;text-transform:uppercase}.finding--high .finding-rank{color:#a3271d;border-color:#e1aaa4;background:#fff1ef}.finding--medium .finding-rank{color:#815500;border-color:#dfc581;background:#fff8e7}.finding--info .finding-rank{color:var(--blue);border-color:#a9c9d8;background:#edf7fb}.finding p,.problem,.narrative{margin:4px 0;color:#394b42}.finding small{color:var(--muted);font-size:10px}.narrative{white-space:pre-wrap}.problem{padding:12px;border-left:3px solid var(--coral);background:#fff5f1;font-weight:bold}.evidence-list{padding-left:20px}.evidence-list li{margin:10px 0;break-inside:avoid}.evidence-list span,.evidence-list p{display:block;color:var(--muted);font-size:11px;margin:2px 0}table{width:100%;border-collapse:collapse;font-size:10px}th,td{text-align:left;vertical-align:top;padding:7px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{background:#eff4ef;color:#30463b}.empty{color:var(--muted);padding:12px 0}.footer{margin-top:28px;border-top:1px solid var(--line);padding-top:10px;color:var(--muted);font-size:9px}.toolbar{max-width:1050px;margin:16px auto;display:flex;justify-content:flex-end;gap:8px}.toolbar button{padding:9px 14px;border:1px solid var(--green);background:var(--green);color:white;font-weight:bold;cursor:pointer}.toolbar button.secondary{background:#fff;color:var(--ink);border-color:var(--line)}
 .chart-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 0;padding:0;list-style:none;color:var(--muted);font-size:9px}.chart-legend li{display:inline-flex;align-items:center;gap:5px}.legend-swatch{display:inline-block;flex:0 0 auto;width:8px;height:8px;background:var(--swatch-color)}.legend-swatch--dot{border-radius:50%}.legend-swatch--line{height:3px;width:12px}.legend-swatch--square{border-radius:1px}
-.check-matrix{table-layout:fixed}.check-matrix th:nth-child(1){width:19%}.check-matrix th:nth-child(2){width:13%}.check-matrix th:nth-child(3){width:32%}.check-matrix th:nth-child(4){width:36%}.check-group th{text-align:left;background:#e8eee9;color:var(--green);text-transform:uppercase;font-size:9px;letter-spacing:.08em}.check-row td{vertical-align:top;overflow-wrap:anywhere}.check-row td:first-child small{display:block;color:var(--muted);text-transform:uppercase;font-size:8px}.check-status{display:inline-block;font-weight:bold;font-size:8px;text-transform:uppercase}.check-status--issue{color:var(--coral)}.check-status--review{color:var(--gold)}.check-status--observed{color:var(--blue)}.check-status--clear{color:var(--green)}.check-status--not-observed,.check-status--not-assessed{color:var(--muted)}.methodology-page{break-before:page;page-break-before:always}.method-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}.method-item{padding:10px 0;border-bottom:1px solid var(--line);break-inside:avoid}.method-item h3{color:var(--green)}.method-item p{margin:4px 0 0;color:var(--muted);font-size:11px}.method-callout{margin:18px 0;padding:12px;border-left:3px solid var(--gold);background:#f5f2e9;font-size:11px}
+.check-matrix{table-layout:fixed}.check-matrix th:nth-child(1){width:19%}.check-matrix th:nth-child(2){width:13%}.check-matrix th:nth-child(3){width:32%}.check-matrix th:nth-child(4){width:36%}.check-group th{text-align:left;background:#e8eee9;color:var(--green);text-transform:uppercase;font-size:9px;letter-spacing:.08em}.check-row td{vertical-align:top;overflow-wrap:anywhere}.check-row td:first-child small{display:block;color:var(--muted);text-transform:uppercase;font-size:8px}.check-status{display:inline-block;font-weight:bold;font-size:8px;text-transform:uppercase}.check-status--issue{color:var(--coral)}.check-status--review{color:var(--gold)}.check-status--observed{color:var(--blue)}.check-status--clear{color:var(--green)}.check-status--not-observed,.check-status--not-assessed{color:var(--muted)}.metric--latency{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}.metric--latency strong{font-size:24px}.metric-range{display:grid;gap:5px;color:var(--muted);font:400 8px/1.2 var(--mono)}.metric-range span{display:grid;grid-template-columns:22px auto;gap:4px}.methodology-page{break-before:page;page-break-before:always}.method-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}.method-item{padding:10px 0;border-bottom:1px solid var(--line);break-inside:avoid}.method-item h3{color:var(--green)}.method-item p{margin:4px 0 0;color:var(--muted);font-size:11px}.method-callout{margin:18px 0;padding:12px;border-left:3px solid var(--gold);background:#f5f2e9;font-size:11px}
+.large-topology-option{display:flex;align-items:center;gap:7px;margin-left:12px;color:var(--muted);font-size:10px}.large-topology-option input{accent-color:var(--green)}.large-topology-status{font:400 9px var(--mono);color:var(--muted)}.large-topology-section{break-before:page;page-break-before:always}.large-topology-section[hidden]{display:none}.large-topology-section img{display:block;width:auto;max-width:100%;height:auto;margin-top:12px;border:1px solid var(--line)}.large-topology-tips{margin-top:12px;padding:10px;border-left:3px solid var(--gold);background:#f5f2e9;color:var(--muted);font-size:10px}.large-topology-frame{position:fixed;left:-10000px;top:0;width:700px;height:1000px;visibility:hidden;pointer-events:none;border:0}
+.large-topology-rejected{margin-top:24px;padding:14px;border:1px solid var(--line);border-left:4px solid var(--gold);break-inside:avoid}.large-topology-rejected[hidden]{display:none}.large-topology-rejected h2{margin:0 0 6px;font-size:15px}.large-topology-rejected p,.large-topology-rejected li{color:var(--muted);font-size:10px}.large-topology-rejected ul{margin:6px 0;padding-left:18px}
 @media(max-width:720px){.report{margin:0;padding:24px 18px}.chart-grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.metric:nth-child(2){border-right:0}.metric:nth-child(-n+2){border-bottom:1px solid var(--line)}.toolbar{padding:0 12px}.masthead{flex-direction:column}.date{text-align:left}}
 @media(max-width:720px){.method-grid{grid-template-columns:1fr}.check-matrix{min-width:760px}.check-wrap{overflow-x:auto}}
-@media print{@page{size:A4;margin:12mm}body{background:#fff;font-size:10pt}.report{max-width:none;margin:0;padding:0;box-shadow:none}.toolbar{display:none}.masthead{break-after:avoid}.report-section{break-inside:auto}.chart-grid{grid-template-columns:1fr 1fr}.chart img,.chart-unavailable{height:175px}.metrics,.chart,.finding,.evidence-list li,.method-item{break-inside:avoid}h2,h3{break-after:avoid}table{font-size:7.5pt}th,td{padding:4px}.check-matrix{min-width:0}.check-status{font-size:7pt}.method-grid{grid-template-columns:1fr 1fr}.footer{break-before:avoid}}
-</style></head><body><div class="toolbar"><button class="secondary" onclick="window.close()">Close report</button><button onclick="window.print()">Print / Save as PDF</button></div><main class="report"><header class="masthead"><div><div class="brand">DataSnare · AINetScope</div><p class="kicker">Packet capture analysis report</p><h1>${reportEscape(report.name)}</h1><p class="subhead">Expert summary of network behavior in the analyzed trace.</p><p class="scope">${reportEscape(report.scope)} · Profile: ${reportEscape(report.profile)} · IP map: ${reportEscape(report.hostMapProfile || "No IP map")}</p></div><div class="date">Generated<br><strong>${reportEscape(report.generatedAt)}</strong></div></header>
-<section class="metrics">${report.metrics.map(metric => `<div class="metric"><span>${reportEscape(metric.label)}</span><strong>${reportEscape(metric.value)}</strong></div>`).join("")}</section>
+@media(max-width:720px){.large-topology-option{margin:0}.large-topology-frame{width:calc(100vw - 40px)}}
+@media print{@page{size:A4;margin:12mm}body{background:#fff;font-size:10pt}.report{max-width:none;margin:0;padding:0;box-shadow:none}.toolbar{display:none}.large-topology-frame{display:none}.masthead{break-after:avoid}.report-section{break-inside:auto}.chart-grid{grid-template-columns:1fr 1fr}.chart img,.chart-unavailable{height:175px}.metrics,.chart,.finding,.evidence-list li,.method-item{break-inside:avoid}h2,h3{break-after:avoid}table{font-size:7.5pt}th,td{padding:4px}.check-matrix{min-width:0}.check-status{font-size:7pt}.metric--latency strong{font-size:20px}.metric-range{font-size:7pt}.method-grid{grid-template-columns:1fr 1fr}.large-topology-section img{width:auto;max-width:100%;max-height:none;break-inside:avoid}.footer{break-before:avoid}}
+</style></head><body><div class="toolbar"><button class="secondary" onclick="window.close()">Close report</button><label class="large-topology-option"><input id="includeLargeTopology" type="checkbox" ${report.largeTopologyDocument ? "" : "disabled"}>Include large topology map</label><span class="large-topology-status" id="largeTopologyStatus">${report.largeTopologyDocument ? "Optional · unchecked by default" : "No topology available"}</span><button onclick="window.print()">Print / Save as PDF</button></div><main class="report"><header class="masthead"><div><div class="brand">DataSnare · AINetScope</div><p class="kicker">Packet capture analysis report</p><h1>${reportEscape(report.name)}</h1><p class="subhead">Expert summary of network behavior in the analyzed trace.</p><p class="scope">${reportEscape(report.scope)} · Profile: ${reportEscape(report.profile)} · IP map: ${reportEscape(report.hostMapProfile || "No IP map")}</p></div><div class="date">Generated<br><strong>${reportEscape(report.generatedAt)}</strong></div></header>
+<section class="metrics">${report.metrics.map(metric => `<div class="metric${metric.secondary ? " metric--latency" : ""}"><div><span>${reportEscape(metric.label)}</span><strong>${reportEscape(metric.value)}</strong></div>${metric.secondary ? `<div class="metric-range">${metric.secondary.map(item => `<span><i>${reportEscape(item.label)}</i><b>${reportEscape(item.value)}</b></span>`).join("")}</div>` : ""}</div>`).join("")}</section>
 <section class="report-section"><p class="eyebrow">VISUAL ANALYSIS</p><h2>Charts and traffic shape</h2><div class="chart-grid">${charts}</div></section>
+<section class="large-topology-section" id="largeTopologySection" hidden><p class="eyebrow">OPTIONAL FULL TOPOLOGY</p><h2>Interactive topology snapshot</h2><p class="subhead" id="largeTopologyCaption"></p><img id="largeTopologyImage" alt="Full topology map for this capture"></section>
 <section class="report-section"><p class="eyebrow">EXPERT ANALYSIS</p><h2>Ranked observations</h2>${findingRows}</section>
 ${narrative}
 <section class="report-section"><p class="eyebrow">APPLICATION BEHAVIOR</p><h2>Decoded services</h2><table><thead><tr><th>Service</th><th>Requests</th><th>Errors</th><th>Median latency</th><th>Observed detail</th></tr></thead><tbody>${services}</tbody></table></section>
 <section class="report-section"><p class="eyebrow">CONVERSATIONS</p><h2>Top network flows</h2><table><thead><tr><th>Endpoints</th><th>Protocol</th><th>Packets</th><th>Traffic</th><th>Latency</th><th>State</th></tr></thead><tbody>${flows}</tbody></table></section>
 <section class="report-section"><p class="eyebrow">QUICK CHECKS</p><h2>Protocol and network triage</h2><p class="subhead">Included groups: ${reportEscape(includedCheckGroups)}. Results reflect decoded evidence in this capture scope; the limitations column states important interpretation boundaries.</p><div class="check-wrap"><table class="check-matrix"><thead><tr><th>Check</th><th>Result</th><th>Observed evidence</th><th>Interpretation / limits</th></tr></thead><tbody>${triageRows}</tbody></table></div></section>
+<section class="large-topology-rejected" id="largeTopologyRejected" hidden><h2>Full topology was not included</h2><p>The map extends beyond the printable width. It was not scaled down, to preserve label readability. The compact endpoint topology chart remains in the report.</p><strong>To make the full map fit:</strong><ul><li>Open the interactive Topology map and split an overfull lane. For example, divide “VLAN 23 Automation” into “VLAN 23 Automation” and “VLAN 23 Automation Continued”.</li><li>Move a subset of hosts into the new lane, or shorten long lane labels.</li><li>Return to the capture and create the PDF again, then check Include large topology map.</li></ul></section>
+<div id="largeTopologySource" data-profile-name="${reportEscape(report.hostMapProfile || "No IP map")}" data-srcdoc="${reportEscape(encodeURIComponent(report.largeTopologyDocument || ""))}" hidden></div><iframe class="large-topology-frame" id="largeTopologyFrame" title="Topology fit check" aria-hidden="true"></iframe>
 <footer class="footer">Analysis was performed locally in the browser from the selected capture view. Expert findings are heuristic observations and should be verified against packet evidence and the operating environment.</footer>
-${methodology}</main></body></html>`;
+${methodology}</main><script>${largeTopologyFitsPdf.toString()}
+(function () {
+  var checkbox = document.getElementById("includeLargeTopology");
+  var status = document.getElementById("largeTopologyStatus");
+  var source = document.getElementById("largeTopologySource");
+  var frame = document.getElementById("largeTopologyFrame");
+  var section = document.getElementById("largeTopologySection");
+  var rejected = document.getElementById("largeTopologyRejected");
+  var image = document.getElementById("largeTopologyImage");
+  var caption = document.getElementById("largeTopologyCaption");
+  var checkedSnapshot = false;
+  if (!checkbox || !source || !source.dataset.srcdoc) return;
+  checkbox.addEventListener("change", async function () {
+    if (!checkbox.checked) {
+      section.hidden = true;
+      rejected.hidden = true;
+      image.removeAttribute("src");
+      status.textContent = "Optional · unchecked";
+      checkedSnapshot = false;
+      return;
+    }
+    if (checkedSnapshot && image.src) { section.hidden = false; rejected.hidden = true; status.textContent = "Large map ready"; return; }
+    status.textContent = "Checking natural-size fit…";
+    try {
+      var loaded = new Promise(function (resolve, rejectLoad) {
+        var timeout = setTimeout(function () { rejectLoad(new Error("Topology fit check timed out.")); }, 10000);
+        frame.addEventListener("load", function () { clearTimeout(timeout); resolve(); }, { once: true });
+      });
+      frame.srcdoc = decodeURIComponent(source.dataset.srcdoc);
+      await loaded;
+      await new Promise(function (resolve) { setTimeout(resolve, 120); });
+      var snapshotFunction = frame.contentWindow.DataSnareTopologyPdfSnapshot;
+      if (typeof snapshotFunction !== "function") throw new Error("Topology PNG renderer is unavailable.");
+      var snapshot = snapshotFunction();
+      if (snapshot.error) throw new Error(snapshot.error);
+      var maxWidth = snapshot.maxWidth || 700;
+      var overflow = snapshot.horizontalOverflow || snapshot.scrollWidth > snapshot.viewportWidth + 1;
+      if (overflow || !largeTopologyFitsPdf(snapshot, maxWidth)) {
+        checkbox.checked = false;
+        checkedSnapshot = false;
+        section.hidden = true;
+        rejected.hidden = false;
+        status.textContent = "Too wide · not included";
+        return;
+      }
+      image.src = snapshot.dataUrl;
+      image.style.width = snapshot.width + "px";
+      image.dataset.naturalWidth = snapshot.width;
+      image.dataset.naturalHeight = snapshot.height;
+      caption.textContent = "Natural-size topology snapshot · " + snapshot.width + " × " + snapshot.height + " px · " + (source.dataset.profileName || "active IP map");
+      section.hidden = false;
+      rejected.hidden = true;
+      checkedSnapshot = true;
+      status.textContent = "Large map ready · " + snapshot.width + " px wide";
+    } catch (error) {
+      checkbox.checked = false;
+      section.hidden = true;
+      rejected.hidden = false;
+      status.textContent = "Could not check fit";
+      rejected.querySelector("p").textContent = "The full topology could not be rendered for this report, so it was not included. The compact endpoint topology chart remains available. " + error.message;
+    }
+  });
+})();
+</script></body></html>`;
 }
 
 function reportSummaryText(html) {
@@ -327,6 +412,8 @@ function buildSingleCaptureReportData() {
   const summary = analysisSummary(packets, aggregation);
   const profile = getActiveAnalysisProfile();
   const captureNarrative = typeof captureSummary === "function" ? captureSummary() : { problemStatement: "", narrative: "", relevantFrames: [] };
+  const largeTopologyPayload = typeof buildSingleCaptureTopologyPayload === "function"
+    ? buildSingleCaptureTopologyPayload(packets, aggregation.flows, { captureId: state.captureId, name: state.fileName }, activeHostnameProfile()) : null;
   const protocolBytes = packets.reduce((totals, packet) => { totals[packet.protocol] = (totals[packet.protocol] || 0) + packet.length; return totals; }, {});
   const protocolTotal = Object.values(protocolBytes).reduce((total, bytes) => total + bytes, 0);
   const protocolLegend = Object.entries(protocolBytes).map(([name, bytes], index) => ({
@@ -386,7 +473,10 @@ function buildSingleCaptureReportData() {
       { label: "Conversations", value: reportNumber(summary.flows) },
       { label: "Duration", value: `${reportNumber(summary.duration, 3)} s` },
       { label: "Throughput", value: formatRate(summary.throughput) },
-      { label: "Median response", value: formatLatency(summary.latencyP50) },
+      { label: "Median response", value: formatLatency(summary.latencyP50), secondary: [
+        { label: "Min", value: formatLatency(summary.latencyMin) },
+        { label: "Max", value: formatLatency(summary.latencyMax) }
+      ] },
       { label: "p95 response", value: formatLatency(summary.latencyP95) },
       { label: "Retransmissions", value: reportNumber(summary.retransmissions) }
     ],
@@ -394,6 +484,8 @@ function buildSingleCaptureReportData() {
     findings: buildFindings(packets, aggregation, services, profile),
     triageChecks: buildTriageChecks(packets, aggregation, services, profile, settings.reportCheckGroups, analyzeTcpSequence(packets)),
     includedCheckGroups: Object.keys(settings.reportCheckGroups).filter(group => settings.reportCheckGroups[group]),
+    largeTopologyDocument: largeTopologyPayload?.edges.length && typeof buildTopologyDocument === "function"
+      ? buildTopologyDocument({ ...largeTopologyPayload, pdfFitCheck: true, pdfMaxWidth: 700 }) : "",
     services: services.map(service => ({ ...service, latency: formatLatency(median(service.latencies)), details: [...service.details].slice(0, 3).join(", ") || `${service.packets} packets` })),
     flows: aggregation.flows.slice(0, 10).map(flow => ({ ...flow, a: displayEndpointName(flow.a), b: displayEndpointName(flow.b), traffic: formatBytes(flow.bytes), latency: formatLatency(flow.latencyValue) })),
     problemStatement: captureNarrative.problemStatement || "",
@@ -414,7 +506,7 @@ function openSingleCaptureReport() {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { buildSingleCaptureReportHtml, buildTriageChecks, reportEscape, reportNumber };
+  module.exports = { buildSingleCaptureReportHtml, buildTriageChecks, largeTopologyFitsPdf, reportEscape, reportNumber };
 }
 
 if (typeof document !== "undefined") {

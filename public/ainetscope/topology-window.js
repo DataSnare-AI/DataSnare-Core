@@ -8,9 +8,16 @@ function buildTopologyDocument(payload) {
   const title = escapeForHtml((payload.setName || "Capture set") + " \u2014 Topology map");
   return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
-    "<title>" + title + "</title><style>" + TOPOLOGY_STYLES + "</style></head><body>" +
+    "<title>" + title + "</title><style>" + TOPOLOGY_STYLES + (payload.pdfFitCheck ? TOPOLOGY_PDF_STYLES : "") + "</style></head><body>" +
     TOPOLOGY_BODY + "<script>" + script + "</" + "script></body></html>";
 }
+
+const TOPOLOGY_PDF_STYLES = `
+body.pdf-fit-check .topbar,body.pdf-fit-check .toolbar,body.pdf-fit-check .help-tip,body.pdf-fit-check .host-names-panel,body.pdf-fit-check .add-lane-form,body.pdf-fit-check .detail-panel { display:none !important; }
+body.pdf-fit-check .layout { display:block; width:100%; height:auto; }
+body.pdf-fit-check .lanes-wrapper { width:100%; height:auto; overflow:visible; padding:0; }
+body.pdf-fit-check .lane-content { overflow:visible; }
+`;
 
 const HOSTNAME_MAP_SCHEMA = "datasnare-ainetscope/hostname-map-v1";
 function normalizeHostnameMapProfile(profile) {
@@ -438,17 +445,22 @@ const TOPOLOGY_SCRIPT = `
     return lines.join("\\n") + "\\n";
   }
 
-  function exportPng() {
+  function renderPngSnapshot(forPdf) {
     drawEdges();
     var wrapper = document.getElementById("lanesWrapper");
     var wrapperRect = wrapper.getBoundingClientRect();
-    var maxRight = Math.max(wrapper.scrollWidth, wrapper.clientWidth);
+    var maxRight = forPdf ? wrapper.clientWidth : Math.max(wrapper.scrollWidth, wrapper.clientWidth);
     var maxBottom = Math.max(wrapper.scrollHeight, wrapper.clientHeight);
+    var horizontalOverflow = wrapper.scrollWidth > wrapper.clientWidth + 1;
+    var laneContents = wrapper.querySelectorAll(".lane-content");
+    for (var laneIndex = 0; laneIndex < laneContents.length; laneIndex++) {
+      if (laneContents[laneIndex].scrollWidth > laneContents[laneIndex].clientWidth + 1) horizontalOverflow = true;
+    }
     var exportNodes = wrapper.querySelectorAll(".lane, .lane-gutter, .node-chip, svg.edge-layer");
     for (var n = 0; n < exportNodes.length; n++) {
       var nodeRect = exportNodes[n].getBoundingClientRect();
-      maxRight = Math.max(maxRight, nodeRect.right - wrapperRect.left + wrapper.scrollLeft + 40);
-      maxBottom = Math.max(maxBottom, nodeRect.bottom - wrapperRect.top + wrapper.scrollTop + 40);
+      if (!forPdf) maxRight = Math.max(maxRight, nodeRect.right - wrapperRect.left + wrapper.scrollLeft + 40);
+      maxBottom = Math.max(maxBottom, nodeRect.bottom - wrapperRect.top + wrapper.scrollTop + (forPdf ? 0 : 40));
     }
 
     var width = Math.ceil(maxRight);
@@ -578,15 +590,26 @@ const TOPOLOGY_SCRIPT = `
     }
 
     try {
-      var fileName = fileBaseName() + "-topology.png";
       var dataUrl = canvas.toDataURL("image/png");
+      return { dataUrl: dataUrl, width: width, height: height, viewportWidth: wrapper.clientWidth,
+        scrollWidth: wrapper.scrollWidth, horizontalOverflow: horizontalOverflow, maxWidth: Number(DATA.pdfMaxWidth) || null };
+    } catch (error) {
+      return { error: "PNG export failed in this browser." };
+    }
+  }
+
+  function exportPng() {
+    var snapshot = renderPngSnapshot();
+    if (snapshot.error) { alert(snapshot.error + " Try Export Mermaid as a portable fallback."); return; }
+    var fileName = fileBaseName() + "-topology.png";
+    try {
       var link = document.createElement("a");
-      link.href = dataUrl;
+      link.href = snapshot.dataUrl;
       link.download = fileName;
       link.style.display = "none";
       document.body.appendChild(link);
       link.click();
-      showPngDownload(dataUrl, fileName);
+      showPngDownload(snapshot.dataUrl, fileName);
       setTimeout(function () { link.remove(); }, 2000);
     } catch (error) {
       alert("PNG export failed in this browser. Try Export Mermaid as a portable fallback.");
@@ -1156,7 +1179,9 @@ const TOPOLOGY_SCRIPT = `
   window.addEventListener("resize", scheduleEdgeRedraw);
   document.getElementById("lanesWrapper").addEventListener("scroll", scheduleEdgeRedraw);
 
+  if (DATA.pdfFitCheck) document.body.classList.add("pdf-fit-check");
   render();
+  if (DATA.pdfFitCheck) window.DataSnareTopologyPdfSnapshot = function () { return renderPngSnapshot(true); };
 })();
 `;
 

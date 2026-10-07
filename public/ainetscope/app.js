@@ -1327,7 +1327,10 @@ function render() {
   $("#kpiRate").textContent = `${(packets.length / Math.max(state.duration, .001)).toFixed(1)} pkt/s`;
   $("#kpiBytes").textContent = formatBytes(bytes); $("#kpiThroughput").textContent = formatRate(bytes * 8 / Math.max(state.duration, .001));
   $("#kpiFlows").textContent = aggregation.flows.length.toLocaleString(); $("#kpiEndpoints").textContent = `${endpoints} endpoints`;
-  $("#kpiLatency").textContent = formatLatency(median(aggregation.latencySamples)); $("#kpiLatencySamples").textContent = `${aggregation.latencySamples.length} RTT / DNS samples`;
+  $("#kpiLatency").textContent = formatLatency(median(aggregation.latencySamples));
+  $("#kpiLatencySamples").textContent = `${aggregation.latencySamples.length} RTT / DNS samples`;
+  $("#kpiLatencyMin").textContent = formatLatency(aggregation.latencySamples.reduce((minimum, value) => Math.min(minimum, value), Infinity));
+  $("#kpiLatencyMax").textContent = formatLatency(aggregation.latencySamples.reduce((maximum, value) => Math.max(maximum, value), -Infinity));
   $("#donutValue").textContent = Object.keys(protocols).length;
   $("#protocolLegend").innerHTML = Object.entries(protocols).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, value], index) => `<div class="protocol-item"><i style="background:${COLORS[index % COLORS.length]}"></i><b>${escapeHtml(name)}</b><span>${Math.round(value / Math.max(bytes, 1) * 100)}%</span></div>`).join("");
   drawTimeline(); drawDonut(protocols);
