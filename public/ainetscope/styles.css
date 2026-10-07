@@ -467,6 +467,7 @@ dialog::backdrop { background: rgba(23,33,29,.55); backdrop-filter: blur(2px); }
 .stream-inspector { height: calc(100% - 34px); overflow: auto; font: 400 10px/1.45 var(--mono); }
 .stream-endpoints { padding: 12px; border-bottom: 1px solid var(--line); color: var(--green); overflow-wrap: anywhere; }
 .stream-state-list { padding: 4px 0; }
+.stream-truncation-note { padding: 7px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font: 400 9px/1.4 var(--mono); }
 .stream-packet-row { width: 100%; display: grid; grid-template-columns: 42px 66px 54px; gap: 6px; padding: 8px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; font: inherit; cursor: pointer; }
 .stream-packet-row:hover, .stream-packet-row.selected { background: rgba(184,216,93,.18); }
 .stream-packet-row > span:first-child { color: var(--blue); }

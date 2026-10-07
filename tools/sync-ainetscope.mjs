@@ -33,6 +33,7 @@ const assets = [
   'capture-launch.js',
   'session-contract.js',
   'sessions.js',
+  'stream-inspector.js',
 ];
 
 await mkdir(destinationRoot, { recursive: true });

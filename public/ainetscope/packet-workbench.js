@@ -397,46 +397,12 @@ function selectWorkbenchPacket(number, scroll = true) {
 }
 
 function streamKey(packet) {
-  const transport = packet?.transport || (["TCP", "UDP"].includes(packet?.protocol) ? packet.protocol : "");
-  if (!transport || !["TCP", "UDP"].includes(transport) || !Number.isFinite(Number(packet.srcPort)) || !Number.isFinite(Number(packet.dstPort))) return "";
-  const endpoints = [`${packet.src}:${packet.srcPort}`, `${packet.dst}:${packet.dstPort}`].sort();
-  return `${transport}|${endpoints[0]}|${endpoints[1]}`;
+  return DataSnareStreamInspector.streamKey(packet);
 }
 
 function streamPacketsFor(packet) {
   const key = streamKey(packet);
-  return key ? state.packets.filter(item => streamKey(item) === key).sort((left, right) => left.timestamp - right.timestamp || left.number - right.number) : [];
-}
-
-function streamDirection(packet, streamPackets) {
-  const endpoints = [...new Set(streamPackets.flatMap(item => [`${item.src}:${item.srcPort}`, `${item.dst}:${item.dstPort}`]))].sort();
-  return `${packet.src}:${packet.srcPort}` === endpoints[0] ? "A → B" : "B → A";
-}
-
-function streamExpert(packet, streamPackets, index) {
-  const protocol = String(packet.protocol || packet.transport || "Packet");
-  const info = String(packet.info || "");
-  const flags = Array.isArray(packet.flags) ? packet.flags : [];
-  const applicationLabel = protocol === "HTTP" && packet.httpMethod ? `HTTP ${packet.httpMethod}` : protocol === "TDS" && packet.tdsType ? `TDS ${packet.tdsType}` : protocol === "DNS" ? `DNS ${packet.dnsResponse ? "Response" : "Query"}` : protocol.startsWith("SMB") && packet.smbCommand ? `SMB ${packet.smbCommand}` : protocol === "DCE/RPC" ? `DCE/RPC ${info.split(" ")[0] || "Packet"}` : protocol === "HTTP/2" ? `HTTP/2 ${packet.http2FrameType || "Frame"}` : "";
-  const transport = packet.transport || protocol;
-  if (transport !== "TCP") return applicationLabel || (flags.length ? flags.join(", ") : "UDP datagram");
-  const prior = streamPackets.slice(0, index);
-  const hasSyn = prior.some(item => item.flags?.includes("SYN") && !item.flags?.includes("ACK"));
-  const hasSynAck = prior.some(item => item.flags?.includes("SYN") && item.flags?.includes("ACK"));
-  const firstFin = flags.includes("FIN") && !prior.some(item => item.flags?.includes("FIN"));
-  const secondFin = flags.includes("FIN") && prior.some(item => item.flags?.includes("FIN"));
-  const retransmission = packet.payloadLength > 0 && packet.seq !== undefined && prior.some(item => item.src === packet.src && item.srcPort === packet.srcPort && item.seq === packet.seq && item.payloadLength > 0);
-  if (flags.includes("RST")) return `${applicationLabel ? `[${applicationLabel}] ` : ""}Reset connection - state is CLOSED`;
-  if (flags.includes("SYN") && !flags.includes("ACK")) return "Step 1/3 in 3-way connection - state is SYN-SENT";
-  if (flags.includes("SYN") && flags.includes("ACK")) return "Step 2/3 in 3-way connection - state is SYN-RECEIVED";
-  if (firstFin) return "Step 1/3 in 3-way disconnect - state is FIN-WAIT-1";
-  if (secondFin) return "Step 2/3 in 3-way disconnect - state is FIN-WAIT-2";
-  if (flags.includes("ACK") && hasSynAck && !prior.some(item => item.flags?.includes("ACK") && hasSynAck)) return "Step 3/3 in 3-way connection - state is ESTABLISHED";
-  if (flags.includes("ACK") && prior.some(item => item.flags?.includes("FIN"))) return "Step 3/3 in 3-way disconnect - state is TIME-WAIT";
-  if (retransmission) return `Retransmission - same sequence number as an earlier frame (${packet.seq})`;
-  if (flags.includes("PSH")) return `${applicationLabel ? `[${applicationLabel}] ` : ""}Application data pushed to the receiver`;
-  if (hasSyn && hasSynAck) return `${applicationLabel ? `[${applicationLabel}] ` : ""}State is ESTABLISHED`;
-  return `${applicationLabel ? `[${applicationLabel}] ` : ""}${flags.length ? flags.join(", ") : "TCP segment"}`;
+  return key ? state.packets.filter(item => streamKey(item) === key) : [];
 }
 
 function renderStreamInspector(packet) {
@@ -447,22 +413,15 @@ function renderStreamInspector(packet) {
     $("#streamInspector").innerHTML = `<div class="stream-empty">Select a TCP or UDP packet to inspect its conversation.</div>`;
     return;
   }
-  const streamNumber = [...new Set(state.packets.map(item => streamKey(item)).filter(Boolean))].indexOf(streamKey(packet)) + 1;
-  $("#streamInspectorTitle").textContent = `Stream Index #${streamNumber}`;
-  $("#streamInspectorMeta").textContent = `${packet.transport} · ${packets.length} packets`;
-  const rows = packets.map((streamPacket, index) => {
-    try {
-      const direction = streamDirection(streamPacket, packets);
-      const expert = streamExpert(streamPacket, packets, index);
-      const packetFlags = Array.isArray(streamPacket.flags) ? streamPacket.flags : [];
-      const packetLabel = packetFlags.length ? `[${packetFlags.join(", ")}]` : String(streamPacket.protocol || streamPacket.transport || "Packet");
-      return `<button class="stream-packet-row ${streamPacket.number === packet.number ? "selected" : ""}" type="button" data-stream-packet="${streamPacket.number}"><span>${streamPacket.number}</span><span>${escapeHtml(packetLabel)}</span><span>${escapeHtml(direction)}</span><small>${escapeHtml(String(expert || ""))}</small></button>`;
-    } catch (_) {
-      return `<button class="stream-packet-row ${streamPacket.number === packet.number ? "selected" : ""}" type="button" data-stream-packet="${streamPacket.number}"><span>${streamPacket.number}</span><span>[${escapeHtml(String(streamPacket.protocol || streamPacket.transport || "Packet"))}]</span><span>—</span><small>Packet fields unavailable in this model</small></button>`;
-    }
-  }).join("");
+  const key = streamKey(packet);
+  const streamNumber = state.flows.findIndex(flow => flow.key === key) + 1;
+  const view = DataSnareStreamInspector.analyzeStreamRows(packets, packet.number);
+  $("#streamInspectorTitle").textContent = `Stream Index #${streamNumber || "—"}`;
+  $("#streamInspectorMeta").textContent = `${packet.transport} · ${packets.length.toLocaleString()} packets`;
+  const rows = view.rows.map(item => `<button class="stream-packet-row ${item.selected ? "selected" : ""}" type="button" data-stream-packet="${item.packet.number}"><span>${item.packet.number}</span><span>${escapeHtml(item.label)}</span><span>${escapeHtml(item.direction)}</span><small>${escapeHtml(item.expert)}</small></button>`).join("");
+  const omitted = view.omitted ? `<div class="stream-truncation-note">Showing ${view.rows.length.toLocaleString()} of ${view.total.toLocaleString()} packets around the selected frame; the full capture remains available in the packet list.</div>` : "";
   const references = settings.referenceLinks || [];
-  $("#streamInspector").innerHTML = `<div class="stream-endpoints">${escapeHtml(packet.src)}:${packet.srcPort} ↔ ${escapeHtml(packet.dst)}:${packet.dstPort}</div><div class="stream-state-list">${rows}</div><nav class="stream-reference-links" aria-label="Protocol references">${references.map(reference => `<a href="${escapeHtml(reference.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(reference.label)} ↗</a>`).join("")}</nav>`;
+  $("#streamInspector").innerHTML = `<div class="stream-endpoints">${escapeHtml(packet.src)}:${packet.srcPort} ↔ ${escapeHtml(packet.dst)}:${packet.dstPort}</div>${omitted}<div class="stream-state-list">${rows}</div><nav class="stream-reference-links" aria-label="Protocol references">${references.map(reference => `<a href="${escapeHtml(reference.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(reference.label)} ↗</a>`).join("")}</nav>`;
 }
 
 function renderPacketBytes(bytes, highlightStart, highlightLength, rawLength = bytes.length) {
