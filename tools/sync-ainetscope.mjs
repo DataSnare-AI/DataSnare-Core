@@ -17,6 +17,7 @@ const assets = [
   'tcp-signals.js',
   'workbench-layout.js',
   'process-map.js',
+  'report.js',
   'set-analysis-worker.js',
   'styles.css',
   'suite-theme.js',

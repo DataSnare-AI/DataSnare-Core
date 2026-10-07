@@ -162,6 +162,7 @@ main { padding: 0 clamp(20px, 4vw, 64px) 64px; }
 .status-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: #aaa; }
 .status-dot.live { background: var(--green); box-shadow: 0 0 0 4px rgba(29,107,79,.12); }
 .filters { display: flex; gap: 8px; }
+.filters #pdfReportButton { flex: 0 0 auto; white-space: nowrap; }
 .search-field { width: min(34vw, 320px); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); padding: 0 11px; border-radius: 4px; }
 .search-field input { width: 100%; height: 38px; border: 0; outline: 0; background: transparent; font-size: 12px; }
 select { height: 40px; padding: 0 30px 0 11px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink); font-size: 12px; }
@@ -672,7 +673,11 @@ dialog::backdrop { background: rgba(23,33,29,.55); backdrop-filter: blur(2px); }
   .intro h1 { font-size: 45px; }
   .capture-bar { align-items: stretch; flex-direction: column; }
   .filters, .search-field { width: 100%; }
+  .filters { flex-wrap: wrap; }
   .search-field { flex: 1; }
+  .filters .search-field { flex: 1 1 100%; }
+  .filters select { flex: 1 1 45%; }
+  .filters #pdfReportButton { display: inline-flex; flex: 1 1 45%; }
   .kpi { min-height: 112px; padding: 16px; }
   .kpi strong { font-size: 24px; }
   .panel-heading { padding: 15px; }
