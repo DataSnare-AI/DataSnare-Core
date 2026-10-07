@@ -334,7 +334,7 @@ function buildSingleCaptureReportHtml(report) {
   const narrative = hasInvestigationNotes ? `<section class="report-section"><p class="eyebrow">INVESTIGATION NOTES</p><h2>${report.problemStatement ? "Problem statement and narrative" : "Analysis narrative"}</h2>${report.problemStatement ? `<p class="problem">${reportEscape(report.problemStatement)}</p>` : ""}${report.narrative ? `<p class="narrative">${reportEscape(report.narrative)}</p>` : ""}${report.relevantFrames.length ? `<h3>Relevant frames</h3><ol class="evidence-list">${report.relevantFrames.map(frame => `<li><strong>Frame ${reportEscape(frame.number)} · ${reportEscape(frame.protocol || "Packet")}</strong><span>${reportEscape(frame.time)} · ${reportEscape(frame.source)} → ${reportEscape(frame.destination)} · ${reportEscape(frame.length)} B</span><p>${reportEscape(frame.note || frame.info)}</p></li>`).join("")}</ol>` : ""}</section>` : "";
   const triageRows = renderTriageChecks(report.triageChecks);
   const includedCheckGroups = report.includedCheckGroups?.length ? report.includedCheckGroups.join(", ") : "none selected";
-  const sharedScopeMethodology = reportCommon.sharedReportCoverageHtml("Counts and checks use packets in the selected capture view (including active dashboard filters).");
+  const sharedScopeMethodology = reportCommon.sharedReportCoverageHtml("Counts and checks use packets in the selected capture view (including active dashboard filters).", report.filter);
   const sharedInterpretation = reportCommon.sharedReportInterpretationHtml();
   const methodology = `<section class="methodology-page"><p class="eyebrow">HOW TO READ THIS REPORT</p><h2>Expert analysis factors and limits</h2><p class="subhead">AINetScope applies bounded, local checks to decoded packet metadata. Each result describes evidence in the selected capture scope, not a root-cause verdict.</p><div class="method-grid">
 ${sharedScopeMethodology}
@@ -503,12 +503,14 @@ function buildSingleCaptureReportData() {
       note: typeof packetNote === "function" ? reportSummaryText(packetNote(packet.number)) : ""
     } : null;
   }).filter(Boolean);
+  const filterScope = currentPacketFilterScope().core;
   return reportCommon.createReportModel({
     mode: "single-capture",
     sources: [{ name: state.fileName || "Network capture" }],
     name: state.fileName || "Network capture",
     generatedAt: new Date().toLocaleString(),
     scope: { summary: packets.length === state.packets.length ? `${reportNumber(packets.length)} packets analyzed` : `${reportNumber(packets.length)} of ${reportNumber(state.packets.length)} packets analyzed (current dashboard filters)` },
+    filter: filterScope,
     profile: profile.name,
     hostMapProfile: settings.activeHostMapProfile || "No IP map",
     metrics: [

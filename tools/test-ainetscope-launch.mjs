@@ -24,6 +24,7 @@ try {
   await analyzer.getByRole('button', { name: 'Load demo' }).click();
   await analyzer.waitForFunction(() => !document.querySelector('#dashboard').hidden);
   assert.ok(Number(await analyzer.locator('#kpiPackets').textContent()) > 0, 'Full AINetScope demo should load packets');
+  assert.ok((await analyzer.locator('#workspace').getByLabel('Previous packet filters').boundingBox()).width >= 176, 'Filter history label must have enough width');
   await analyzer.locator('#searchInput').fill('(TCP || DNS) && !never-matches');
   await analyzer.locator('#searchInput').press('Enter');
   const coreFilteredFrames = await analyzer.evaluate(() => state.filtered.map(packet => packet.number));
@@ -88,7 +89,17 @@ try {
   await analyzer.locator('#searchInput').fill('ip.');
   await analyzer.locator('#searchInput').press('Escape');
   assert.equal(await analyzer.locator('#searchInput').getAttribute('aria-expanded'), 'false');
+  await analyzer.locator('#searchInput').fill('ip.src == ');
+  const observedIpOption = coreSuggestions.getByRole('option').first();
+  await observedIpOption.waitFor({ state: 'visible' });
+  const observedSource = await observedIpOption.locator('strong').innerText();
+  assert.match(await observedIpOption.innerText(), /Observed in sampled packets/);
+  assert.equal(await analyzer.evaluate(value => state.packets.some(packet => packet.src === value || packet.dst === value), observedSource), true);
+  await observedIpOption.click();
+  assert.equal(await analyzer.locator('#searchInput').inputValue(), `ip.src == ${observedSource} `);
+  assert.deepEqual(await analyzer.evaluate(() => state.filtered.map(packet => packet.number)), beforeCompletion);
   await analyzer.setViewportSize({ width: 390, height: 844 });
+  await analyzer.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await analyzer.locator('#searchInput').fill('ip.');
   await coreSuggestions.waitFor({ state: 'visible' });
   const suggestionBounds = await coreSuggestions.boundingBox();
@@ -98,10 +109,21 @@ try {
   await analyzer.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await analyzer.evaluate(() => showPacketWorkbench());
   await analyzer.getByLabel('Packets filter mode', { exact: true }).selectOption('display');
-  await analyzer.locator('#workbenchSearch').fill('(tcp and td');
-  await analyzer.locator('#workbenchSearchSuggestions').waitFor({ state: 'visible' });
-  await analyzer.locator('#workbenchSearch').press('Enter');
-  assert.equal(await analyzer.locator('#workbenchSearch').inputValue(), '(tcp and tds ');
+  const observedPort = await analyzer.evaluate(() => {
+    const input = document.querySelector('#workbenchSearch');
+    input.focus();
+    input.value = 'tcp.dstport == ';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const option = document.querySelector('#workbenchSearchSuggestions strong');
+    if (!option || document.querySelector('#workbenchSearchSuggestions').hidden) return null;
+    const value = option.textContent;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    return value;
+  });
+  assert.ok(observedPort, 'Packets should offer captured port values');
+  assert.equal(await analyzer.evaluate(value => state.packets.some(packet => packet.transport === 'TCP' && packet.dstPort === Number(value)), observedPort), true);
+  assert.equal(await analyzer.locator('#workbenchSearch').inputValue(), `tcp.dstport == ${observedPort} `);
   await analyzer.locator('#workbenchSearch').fill('');
   await analyzer.locator('#workbenchSearch').press('Enter');
   await analyzer.evaluate(() => showCoreMode());
@@ -112,6 +134,15 @@ try {
   await analyzer.locator('#searchInput').press('Enter');
   const displayFrames = await analyzer.evaluate(() => state.filtered.map(packet => packet.number));
   assert.ok(displayFrames.length > 0);
+  const reportFilterScope = await analyzer.evaluate(() => {
+    const jsonFilter = buildExportReport().capture.filter;
+    const html = buildSingleCaptureReportHtml(buildSingleCaptureReportData());
+    return { jsonFilter, pdfIncludesFilter: html.includes('Applied Display Filter') && html.includes(`${jsonFilter.matched} of ${jsonFilter.total} packets`)
+      && html.includes(jsonFilter.expression) };
+  });
+  assert.deepEqual(reportFilterScope.jsonFilter, { mode: 'display', expression: displayExpression, matched: displayFrames.length,
+    total: await analyzer.evaluate(() => state.packets.length), protocol: 'all' });
+  assert.equal(reportFilterScope.pdfIncludesFilter, true, 'PDF must disclose the applied expression and matched/total count');
   await analyzer.locator('#searchInput').fill('op.addr == 10.0.0.1');
   assert.equal(await analyzer.locator('#searchInput').getAttribute('aria-invalid'), 'true');
   assert.deepEqual(await analyzer.evaluate(() => state.filtered.map(packet => packet.number)), displayFrames);
@@ -122,6 +153,20 @@ try {
   await analyzer.locator('#workbenchSearch').fill(displayExpression);
   await analyzer.locator('#workbenchSearch').press('Enter');
   assert.deepEqual(await analyzer.evaluate(() => workbenchState.packets.map(packet => packet.number)), displayFrames);
+  const constrainedProtocol = await analyzer.evaluate(() => workbenchState.packets[0].protocol);
+  await analyzer.locator('#workbenchProtocolFilter').selectOption(constrainedProtocol);
+  const protocolFrames = await analyzer.evaluate(frames => state.packets.filter(packet => frames.includes(packet.number) && packet.protocol === $('#workbenchProtocolFilter').value).map(packet => packet.number), displayFrames);
+  assert.deepEqual(await analyzer.evaluate(() => workbenchState.packets.map(packet => packet.number)), protocolFrames, 'Protocol dropdown must remain an AND constraint');
+  const fieldConstraint = await analyzer.evaluate(frames => {
+    const packet = workbenchState.packets[0];
+    const value = new Date(packet.timestamp * 1000).toISOString();
+    workbenchState.fieldFilters = [{ key: 'Frame\u001fArrival time', label: 'Frame Arrival time', operator: '=', value }];
+    renderWorkbenchList();
+    return state.packets.filter(candidate => frames.includes(candidate.number) && candidate.protocol === $('#workbenchProtocolFilter').value
+      && new Date(candidate.timestamp * 1000).toISOString() === value).map(candidate => candidate.number);
+  }, displayFrames);
+  assert.deepEqual(await analyzer.evaluate(() => workbenchState.packets.map(packet => packet.number)), fieldConstraint, 'Workbench field filters must remain AND constraints');
+  await analyzer.evaluate(() => { workbenchState.fieldFilters = []; $('#workbenchProtocolFilter').value = 'all'; renderWorkbenchList(); });
   assert.equal(await analyzer.evaluate(() => workbenchPacketFilter.mode), 'display');
   assert.ok(await analyzer.evaluate(() => JSON.parse(localStorage.getItem('datasnare-packet-filter-history-v1:display')).length > 0));
   await analyzer.locator('#workbenchSearch').fill('');
@@ -142,6 +187,45 @@ try {
   assert.equal(await analyzer.locator('#timelineTooltip').isVisible(), true);
   await analyzer.getByLabel('Throughput time axis').selectOption('relative');
   console.log('PASS throughput timeline: hover UTC bucket timestamps and selectable time axis');
+  await analyzer.evaluate(() => {
+    showPacketWorkbench();
+    const original = { packets: state.packets, flows: state.flows, workbenchPackets: workbenchState.packets, selected: workbenchState.selectedNumber };
+    const forward = { transport: 'TCP', protocol: 'TCP', src: '10.0.0.1', dst: '10.0.0.2', srcPort: 50000, dstPort: 443 };
+    const reverse = { transport: 'TCP', protocol: 'TCP', src: '10.0.0.2', dst: '10.0.0.1', srcPort: 443, dstPort: 50000 };
+    state.packets = [
+      { ...forward, number: 1, timestamp: 1, length: 60, flags: ['SYN'], info: 'SYN' },
+      { ...reverse, number: 2, timestamp: 2, length: 60, flags: ['SYN', 'ACK'], info: 'SYN ACK' },
+      { ...forward, number: 3, timestamp: 3, length: 100, protocol: 'HTTP', flags: ['FIN', 'RST'], httpStatus: 503, info: 'HTTP 503' },
+      { ...reverse, number: 4, timestamp: 4, length: 80, protocol: 'TDS', flags: ['ACK'], tdsError: true, tdsErrorCount: 1, info: 'TDS error' }
+    ];
+    state.flows = [{ key: DataSnareStreamInspector.streamKey(state.packets[0]) }];
+    renderStreamInspector(state.packets[2]);
+    window.__streamMiniMapRestore = () => {
+      state.packets = original.packets; state.flows = original.flows; workbenchState.packets = original.workbenchPackets;
+      workbenchState.selectedNumber = original.selected; showCoreMode(); delete window.__streamMiniMapRestore;
+    };
+  });
+  const streamMiniMap = analyzer.locator('#streamInspector');
+  const directionA = streamMiniMap.locator('[data-stream-packet="1"] .stream-direction');
+  const directionB = streamMiniMap.locator('[data-stream-packet="2"] .stream-direction');
+  assert.equal(await directionA.textContent(), 'A → B');
+  assert.equal(await directionB.textContent(), 'B → A');
+  assert.notEqual(await directionA.evaluate(element => getComputedStyle(element).color), await directionB.evaluate(element => getComputedStyle(element).color));
+  assert.equal(await streamMiniMap.locator('[data-stream-packet="3"] .stream-markers').innerText(), 'RST\nHTTP 5xx\nFIN');
+  assert.equal(await streamMiniMap.locator('[data-stream-packet="3"]').getAttribute('aria-current'), 'true');
+  assert.match(await streamMiniMap.getByLabel('Stream mini-map legend').innerText(), /A → B.*B → A.*SYN.*FIN.*RST.*ERR/s);
+  const synRow = streamMiniMap.locator('[data-stream-packet="1"]');
+  await synRow.focus();
+  await synRow.press('Enter');
+  assert.equal(await streamMiniMap.locator('[data-stream-packet="1"]').getAttribute('aria-current'), 'true', 'Keyboard activation should move the selected-frame cue');
+  await analyzer.setViewportSize({ width: 390, height: 844 });
+  await analyzer.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const mobileMiniMap = await streamMiniMap.boundingBox();
+  assert.ok(mobileMiniMap && mobileMiniMap.width <= 390, 'Stream mini-map should fit the mobile viewport');
+  assert.ok((await analyzer.evaluate(() => document.documentElement.scrollWidth)) <= 391, 'Mini-map should not cause mobile page overflow');
+  await analyzer.evaluate(() => window.__streamMiniMapRestore());
+  await analyzer.setViewportSize({ width: 1440, height: 1000 });
+  console.log('PASS stream mini-map: independent direction colors, ordered SYN/FIN/RST and error markers, selected cue, legend, mobile fit');
   assert.deepEqual(analyzerErrors, [], 'Full analyzer should load without JavaScript runtime errors');
   assert.deepEqual(failedResources, [], 'The analyzer should not have failed HTTP asset requests');
   await analyzer.getByRole('link', { name: 'Back to AIAnalysis' }).click();

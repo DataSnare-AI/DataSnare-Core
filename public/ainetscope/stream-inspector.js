@@ -27,6 +27,25 @@
               : protocol === "HTTP/2" ? `HTTP/2 ${packet.http2FrameType || "Frame"}` : "";
   }
 
+  function eventMarkers(packet) {
+    const markers = [];
+    if (tcpFlag(packet, "RST", 0x04)) markers.push({ kind: "reset", label: "RST", title: "TCP reset" });
+    if (Number.isFinite(packet.httpStatus) && packet.httpStatus >= 500 && packet.httpStatus < 600)
+      markers.push({ kind: "error", label: "HTTP 5xx", title: `HTTP ${packet.httpStatus} server error` });
+    if (packet.protocol === "TDS" && (packet.tdsError === true || Number(packet.tdsErrorCount) > 0))
+      markers.push({ kind: "error", label: "TDS ERR", title: `${Number(packet.tdsErrorCount) || 1} decoded TDS error(s)` });
+    if (String(packet.protocol || "").startsWith("SMB") && packet.smbResponse === true && Number.isFinite(packet.smbStatus)
+      && packet.smbStatus !== 0 && packet.smbStatus !== 0xc0000016)
+      markers.push({ kind: "error", label: "SMB ERR", title: `SMB2 status 0x${packet.smbStatus.toString(16).padStart(8, "0")}` });
+    if (packet.protocol === "DNS" && packet.dnsResponse === true && Number.isFinite(packet.dnsRcode) && packet.dnsRcode !== 0)
+      markers.push({ kind: "error", label: "DNS ERR", title: `DNS response code ${packet.dnsRcode}` });
+    if (packet.tlsRecordType === 21 && packet.tlsAlertLevel === 2)
+      markers.push({ kind: "error", label: "TLS FATAL", title: `TLS fatal alert ${packet.tlsAlertDescription ?? ""}`.trim() });
+    if (tcpFlag(packet, "SYN", 0x02)) markers.push({ kind: "syn", label: "SYN", title: "TCP connection start" });
+    if (tcpFlag(packet, "FIN", 0x01)) markers.push({ kind: "fin", label: "FIN", title: "TCP connection close" });
+    return markers;
+  }
+
   function analyzeStreamRows(packets, selectedNumber, maxRows = DEFAULT_STREAM_ROWS) {
     const limit = Math.max(100, Math.min(MAX_STREAM_ROWS, Math.floor(maxRows) || DEFAULT_STREAM_ROWS));
     const selectedIndex = packets.findIndex(packet => packet.number === selectedNumber);
@@ -43,7 +62,8 @@
       const protocol = String(packet.protocol || packet.transport || "Packet");
       const label = flags.length ? `[${flags.join(", ")}]` : protocol;
       const source = `${packet.src}:${packet.srcPort}`;
-      const direction = source === endpointA ? "A → B" : "B → A";
+      const directionIsA = source === endpointA;
+      const direction = directionIsA ? "A → B" : "B → A";
       const app = applicationLabel(packet);
       const transport = packet.transport || protocol;
       let expert;
@@ -80,7 +100,8 @@
         if (ack && state.synAck) state.ackAfterSynAck = true;
       }
 
-      if (index >= start && index < end) rows.push({ packet, direction, label, expert, selected: packet.number === selectedNumber });
+      if (index >= start && index < end) rows.push({ packet, direction, directionKey: directionIsA ? "a-to-b" : "b-to-a",
+        label, expert, markers: eventMarkers(packet), selected: packet.number === selectedNumber });
     }
 
     return { rows, total: packets.length, start, end, omitted: packets.length - rows.length };

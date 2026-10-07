@@ -80,9 +80,10 @@ function normalizeCaptureSetReportOptions(options = {}) {
   return normalized;
 }
 
-function sharedReportCoverageHtml(scopeDescription) {
+function sharedReportCoverageHtml(scopeDescription, filter = null) {
   const escape = escapeReportHtml;
-  return `<article class="method-item" style="padding:10px 0;border-bottom:1px solid var(--line);break-inside:avoid"><h3 style="margin:0 0 4px;color:var(--green);font-size:13px">Scope and coverage</h3><p style="margin:4px 0;color:var(--muted);font-size:10px">${escape(scopeDescription)} Capture boundaries, filters, packet loss, and asymmetric visibility may omit traffic; absence in this report does not establish that an event did not occur.</p></article>`;
+  const filterDescription = filter ? `<p style="margin:4px 0;color:var(--muted);font-size:10px;overflow-wrap:anywhere"><strong>Applied ${filter.mode === "display" ? "Display Filter" : "Text filter"}:</strong> <code>${escape(filter.expression || "All packets")}</code> · ${escape(filter.matched)} of ${escape(filter.total)} packets · Protocol: ${escape(filter.protocol === "all" ? "All protocols" : filter.protocol)}</p>` : "";
+  return `<article class="method-item" style="padding:10px 0;border-bottom:1px solid var(--line);break-inside:avoid"><h3 style="margin:0 0 4px;color:var(--green);font-size:13px">Scope and coverage</h3><p style="margin:4px 0;color:var(--muted);font-size:10px">${escape(scopeDescription)} Capture boundaries, filters, packet loss, and asymmetric visibility may omit traffic; absence in this report does not establish that an event did not occur.</p>${filterDescription}</article>`;
 }
 
 function sharedReportInterpretationHtml() {

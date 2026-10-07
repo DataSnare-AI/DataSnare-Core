@@ -497,10 +497,14 @@ function renderStreamInspector(packet) {
   const view = DataSnareStreamInspector.analyzeStreamRows(packets, packet.number, settings.streamMiniMapRows);
   $("#streamInspectorTitle").textContent = `Stream Index #${streamNumber || "—"}`;
   $("#streamInspectorMeta").textContent = `${packet.transport} · ${packets.length.toLocaleString()} packets`;
-  const rows = view.rows.map(item => `<button class="stream-packet-row ${item.selected ? "selected" : ""}" type="button" data-stream-packet="${item.packet.number}"><span>${item.packet.number}</span><span>${escapeHtml(item.label)}</span><span>${escapeHtml(item.direction)}</span><small>${escapeHtml(item.expert)}</small></button>`).join("");
+  const rows = view.rows.map(item => {
+    const markers = item.markers.map(marker => `<span class="stream-event stream-event--${marker.kind}" title="${escapeHtml(marker.title)}">${escapeHtml(marker.label)}</span>`).join("");
+    return `<button class="stream-packet-row ${item.selected ? "selected" : ""}" type="button" data-stream-packet="${item.packet.number}" ${item.selected ? 'aria-current="true"' : ""}><span>${item.packet.number}</span><span class="stream-row-label"><span>${escapeHtml(item.label)}</span><span class="stream-markers">${markers}</span></span><span class="stream-direction stream-direction--${item.directionKey}" aria-label="Direction ${item.directionKey === "a-to-b" ? "A to B" : "B to A"}">${escapeHtml(item.direction)}</span><small>${escapeHtml(item.expert)}</small></button>`;
+  }).join("");
   const omitted = view.omitted ? `<div class="stream-truncation-note">Showing ${view.rows.length.toLocaleString()} of ${view.total.toLocaleString()} packets around the selected frame; the full capture remains available in the packet list.</div>` : "";
   const references = settings.referenceLinks || [];
-  $("#streamInspector").innerHTML = `<div class="stream-endpoints">${escapeHtml(packet.src)}:${packet.srcPort} ↔ ${escapeHtml(packet.dst)}:${packet.dstPort}</div>${omitted}<div class="stream-state-list">${rows}</div><nav class="stream-reference-links" aria-label="Protocol references">${references.map(reference => `<a href="${escapeHtml(reference.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(reference.label)} ↗</a>`).join("")}</nav>`;
+  const legend = `<div class="stream-legend" role="group" aria-label="Stream mini-map legend"><span><b class="stream-direction stream-direction--a-to-b">A → B</b> direction</span><span><b class="stream-direction stream-direction--b-to-a">B → A</b> direction</span><span><b class="stream-event stream-event--syn">SYN</b> start</span><span><b class="stream-event stream-event--fin">FIN</b> close</span><span><b class="stream-event stream-event--reset">RST</b> reset</span><span><b class="stream-event stream-event--error">ERR</b> decoded error</span></div>`;
+  $("#streamInspector").innerHTML = `<div class="stream-endpoints">${escapeHtml(packet.src)}:${packet.srcPort} ↔ ${escapeHtml(packet.dst)}:${packet.dstPort}</div>${legend}${omitted}<div class="stream-state-list">${rows}</div><nav class="stream-reference-links" aria-label="Protocol references">${references.map(reference => `<a href="${escapeHtml(reference.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(reference.label)} ↗</a>`).join("")}</nav>`;
 }
 
 function renderPacketBytes(bytes, highlightStart, highlightLength, rawLength = bytes.length) {
@@ -604,7 +608,7 @@ $("#workbenchModeButton").addEventListener("click", () => {
 });
 $("#workbenchCoreButton").addEventListener("click", showCoreMode);
 $("#workbenchOpenCoreButton").addEventListener("click", showCoreMode);
-const workbenchPacketFilter = DataSnarePacketFilter.bind($("#workbenchSearch"), () => renderWorkbenchList());
+const workbenchPacketFilter = DataSnarePacketFilter.bind($("#workbenchSearch"), () => renderWorkbenchList(), () => state.packets);
 $("#workbenchProtocolFilter").addEventListener("change", () => renderWorkbenchList());
 $("#timeDisplayMode").addEventListener("change", event => { currentFrameState().timeMode = event.target.value; persistFrameState(); renderWorkbenchList(workbenchState.selectedNumber); });
 $("#workbenchRows").addEventListener("click", event => { const note = event.target.closest("[data-note-frame]"); if (note) { openNoteEditor(Number(note.dataset.noteFrame)); return; } const mark = event.target.closest("[data-mark-toggle]"); if (mark) { toggleFrameMark(Number(mark.dataset.markToggle)); return; } const row = event.target.closest("tr[data-workbench-packet]"); if (row) selectWorkbenchPacket(Number(row.dataset.workbenchPacket), false); });

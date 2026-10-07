@@ -15,6 +15,10 @@
   }
   function registerField(name, definition) { fields.set(name.toLowerCase(), definition); }
   function registerProtocol(name, predicate) { protocols.set(name.toLowerCase(), predicate); }
+  function registerDecodedNumber(name, property, max, description, eligible) {
+    registerField(name, { type: "number", max, description,
+      get: packet => eligible(packet) && Number.isFinite(packet[property]) ? [packet[property]] : [] });
+  }
   function networkVersion(packet) {
     if (packet.ipVersion === 4 || packet.ipVersion === 6) return packet.ipVersion;
     if (packet.protocol === "ARP") return null;
@@ -27,25 +31,39 @@
   for (const [prefix, version] of [["ip", 4], ["ipv6", 6]]) {
     registerProtocol(prefix, packet => networkVersion(packet) === version);
     for (const [suffix, properties] of [["src", ["src"]], ["dst", ["dst"]], ["dest", ["dst"]], ["addr", ["src", "dst"]]]) {
-      registerField(`${prefix}.${suffix}`, { type: "ip", version,
+      const endpoint = suffix === "src" ? "source" : suffix === "addr" ? "source or destination" : "destination";
+      registerField(`${prefix}.${suffix}`, { type: "ip", version, suggestValues: true,
+        description: `IPv${version} ${endpoint} address`,
         get: packet => networkVersion(packet) === version ? properties.map(property => packet[property]) : [] });
     }
   }
   for (const transport of ["tcp", "udp"]) {
     registerProtocol(transport, packet => packet.transport?.toLowerCase() === transport);
     for (const [suffix, properties] of [["srcport", ["srcPort"]], ["dstport", ["dstPort"]], ["port", ["srcPort", "dstPort"]]]) {
-      registerField(`${transport}.${suffix}`, { type: "number", max: 65535,
+      const endpoint = suffix === "srcport" ? "source" : suffix === "port" ? "source or destination" : "destination";
+      registerField(`${transport}.${suffix}`, { type: "number", max: 65535, suggestValues: true,
+        description: `${transport.toUpperCase()} ${endpoint} port`,
         get: packet => packet.transport?.toLowerCase() === transport ? properties.map(property => packet[property]) : [] });
     }
   }
-  registerField("frame.number", { type: "number", max: Number.MAX_SAFE_INTEGER, get: packet => [packet.number] });
-  registerField("frame.len", { type: "number", max: Number.MAX_SAFE_INTEGER, get: packet => [packet.length] });
+  registerField("frame.number", { type: "number", max: Number.MAX_SAFE_INTEGER, description: "Capture frame number", get: packet => [packet.number] });
+  registerField("frame.len", { type: "number", max: Number.MAX_SAFE_INTEGER, description: "Captured frame length in bytes", get: packet => [packet.length] });
   for (const [name, displayed] of [["tds", "TDS"], ["dns", "DNS"], ["http", "HTTP"], ["http2", "HTTP/2"],
     ["quic", "QUIC"], ["smb2", "SMB2"], ["arp", "ARP"], ["icmp", "ICMP"], ["icmpv6", "ICMPv6"], ["dcerpc", "DCE/RPC"]]) {
     registerProtocol(name, packet => packet.protocol === displayed);
   }
   registerProtocol("smb", packet => String(packet.protocol).startsWith("SMB"));
   registerProtocol("tls", packet => packet.protocol === "TLS" || Number.isFinite(packet.tlsRecordType));
+  registerDecodedNumber("http.status", "httpStatus", 999, "Decoded HTTP response status", packet => packet.protocol === "HTTP");
+  registerDecodedNumber("tds.error_count", "tdsErrorCount", Number.MAX_SAFE_INTEGER, "Decoded TDS error-token count", packet => packet.protocol === "TDS");
+  registerDecodedNumber("smb.status", "smbStatus", 0xffffffff, "Decoded SMB2 response status", packet => packet.protocol === "SMB2" && packet.smbResponse === true);
+  registerDecodedNumber("icmp.type", "icmpType", 255, "Decoded ICMPv4 type", packet => packet.protocol === "ICMP");
+  registerDecodedNumber("icmp.code", "icmpCode", 255, "Decoded ICMPv4 code", packet => packet.protocol === "ICMP");
+  registerDecodedNumber("icmpv6.type", "icmpType", 255, "Decoded ICMPv6 type", packet => packet.protocol === "ICMPv6");
+  registerDecodedNumber("icmpv6.code", "icmpCode", 255, "Decoded ICMPv6 code", packet => packet.protocol === "ICMPv6");
+  registerDecodedNumber("tls.record_type", "tlsRecordType", 255, "Decoded TLS record type", packet => protocols.get("tls")(packet));
+  registerDecodedNumber("tls.alert_level", "tlsAlertLevel", 255, "Decoded TLS alert level", packet => protocols.get("tls")(packet) && packet.tlsRecordType === 21);
+  registerDecodedNumber("tls.alert_description", "tlsAlertDescription", 255, "Decoded TLS alert description", packet => protocols.get("tls")(packet) && packet.tlsRecordType === 21);
 
   function displayAtom(tokens, position) {
     const name = String(tokens[position.cursor++]).toLowerCase();
@@ -155,7 +173,7 @@
 
   function syntaxReference() {
     return {
-      fields: [...fields].map(([name, definition]) => ({ name, type: definition.type,
+      fields: [...fields].map(([name, definition]) => ({ name, description: definition.description || `${definition.type} field`, type: definition.type,
         operators: definition.type === "ip" ? ["==", "!="] : ["==", "!=", "<", "<=", ">", ">="] })),
       protocols: [...protocols.keys()],
       examples: [
@@ -168,7 +186,7 @@
     };
   }
 
-  function completions(expression, caret = String(expression).length) {
+  function completions(expression, caret = String(expression).length, packets = []) {
     const source = String(expression || "");
     if (source.length > 2048) return [];
     const before = source.slice(0, caret);
@@ -204,7 +222,24 @@
       } else if (["and", "or", "&&", "||"].includes(token)) state = "operand";
       else return [];
     }
-    if (state === "value") return [];
+    const end = caret + (source.slice(caret).match(/^[^\s()!&|"=<>]+/)?.[0].length || 0);
+    if (state === "value") {
+      if (!definition?.suggestValues || source.slice(0, caret).includes('"') || fragment.startsWith('"') || !Array.isArray(packets)) return [];
+      const counts = new Map();
+      const sampleCount = Math.min(packets.length, 5000);
+      const sampleStep = sampleCount > 1 ? (packets.length - 1) / (sampleCount - 1) : 1;
+      for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+        const packet = packets[Math.floor(sampleIndex * sampleStep)];
+        for (const raw of new Set(definition.get(packet) || [])) {
+          const value = definition.type === "ip" ? canonicalIp(raw) : Number.isSafeInteger(raw) && raw >= 0 && raw <= definition.max ? String(raw) : null;
+          if (value == null || !value.toLowerCase().startsWith(fragment.toLowerCase())) continue;
+          if (!counts.has(value) && counts.size >= 256) continue;
+          counts.set(value, (counts.get(value) || 0) + 1);
+        }
+      }
+      return [...counts].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+        .slice(0, 12).map(([value, count]) => ({ value, description: `Observed in sampled packets (${count})`, start, end }));
+    }
     if (state === "operand" && protocols.has(fragment.toLowerCase())) return [];
     let options;
     if (state === "operand") {
@@ -215,12 +250,12 @@
       options = (definition.type === "ip" ? ["==", "!="] : ["==", "!=", "<", "<=", ">", ">="])
         .map(value => ({ value, description: value === "==" ? "Exact equality" : value === "!=" ? "Not equal" : "Numeric comparison" }));
     } else options = [{ value: "and", description: "Both predicates" }, { value: "or", description: "Either predicate" }];
-    const end = caret + (source.slice(caret).match(/^[^\s()!&|"=<>]+/)?.[0].length || 0);
-    return options.filter(option => option.value.startsWith(fragment.toLowerCase())).slice(0, 12)
-      .map(option => ({ ...option, start, end }));
+    const matching = options.filter(option => option.value.startsWith(fragment.toLowerCase()));
+    if (state === "operand") matching.sort((left, right) => left.value.length - right.value.length);
+    return matching.slice(0, 12).map(option => ({ ...option, start, end }));
   }
 
-  function bind(input, apply) {
+  function bind(input, apply, getPackets = () => []) {
     let active = compile("");
     let activeMode = "text";
     let appliedSource = "";
@@ -265,7 +300,7 @@
     }
     function showSuggestions() {
       if (mode.value !== "display" || document.activeElement !== input) { dismissSuggestions(); return; }
-      suggestions = completions(input.value, input.selectionStart ?? input.value.length);
+      suggestions = completions(input.value, input.selectionStart ?? input.value.length, getPackets());
       if (!suggestions.length) { dismissSuggestions(); return; }
       popup.replaceChildren();
       suggestions.forEach((suggestion, index) => {
@@ -366,13 +401,13 @@
       caption.textContent = "Registered fields and operators";
       table.appendChild(caption);
       const header = document.createElement("tr");
-      for (const title of ["Field", "Type", "Operators"]) {
+      for (const title of ["Field", "Description", "Type", "Operators"]) {
         const cell = document.createElement("th"); cell.textContent = title; header.appendChild(cell);
       }
       table.appendChild(header);
       for (const field of reference.fields) {
         const row = document.createElement("tr");
-        for (const text of [field.name, field.type, field.operators.join(" ")]) {
+        for (const text of [field.name, field.description, field.type, field.operators.join(" ")]) {
           const cell = document.createElement("td"); cell.textContent = text; row.appendChild(cell);
         }
         table.appendChild(row);

@@ -1452,6 +1452,16 @@ function applyFilters() {
   render();
 }
 
+function currentPacketFilterScope() {
+  return {
+    core: { mode: corePacketFilter?.mode || "text", expression: corePacketFilter?.expression || "",
+      matched: state.filtered.length, total: state.packets.length, protocol: $("#protocolFilter").value || "all" },
+    workbench: { mode: workbenchPacketFilter?.mode || "text", expression: workbenchPacketFilter?.expression || "",
+      matched: workbenchState.packets.length, total: state.packets.length, protocol: $("#workbenchProtocolFilter").value || "all",
+      fieldFilters: workbenchState.fieldFilters.map(filter => ({ ...filter })) }
+  };
+}
+
 function showToast(message) {
   const toast = $("#toast"); toast.textContent = message; toast.classList.add("visible"); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove("visible"), 3600);
 }
@@ -1665,6 +1675,7 @@ function buildExportReport() {
       duration: state.duration,
       packetCount: state.packets.length,
       filteredPacketCount: state.filtered.length,
+      filter: currentPacketFilterScope().core,
       compactModel: state.compactMode
     },
     summary: {
@@ -1762,7 +1773,7 @@ if (typeof document !== "undefined") {
   captureInput.addEventListener("click", () => debugLog("capture input clicked"));
   captureInput.addEventListener("change", event => { const file = event.target.files[0]; debugLog("capture input changed", { files: event.target.files.length, name: file?.name || "" }); event.target.value = ""; confirmCaptureFile(file); });
   $("#demoButton").addEventListener("click", () => { if (typeof showCoreMode === "function") showCoreMode(); loadPackets(createDemo(), "demo-office-traffic.pcapng", "builtin-demo"); showToast("Demo trace loaded."); });
-  corePacketFilter = DataSnarePacketFilter.bind($("#searchInput"), applyFilters);
+  corePacketFilter = DataSnarePacketFilter.bind($("#searchInput"), applyFilters, () => state.packets);
   $("#protocolFilter").addEventListener("change", applyFilters);
   $("#timelineCanvas").addEventListener("mousemove", showTimelineTooltip);
   $("#timelineCanvas").addEventListener("mouseleave", () => { $("#timelineTooltip").hidden = true; });

@@ -84,6 +84,7 @@ function exportWorkspaceSession() {
           listTop: $('#workbenchListPane').scrollTop, listLeft: $('#workbenchListPane').scrollLeft, search: corePacketFilter.expression, protocol: $('#protocolFilter').value,
           workbenchSearch: workbenchPacketFilter.expression, workbenchProtocol: $('#workbenchProtocolFilter').value,
           searchMode: corePacketFilter.mode, workbenchSearchMode: workbenchPacketFilter.mode,
+          filterScope: currentPacketFilterScope(),
           fieldFilters: workbenchState.fieldFilters, columns: workbenchState.columns, activeFlowKey: state.activeFlowKey,
           listHeight: workbenchLayout.listHeight, detailRatio: workbenchLayout.detailRatio,
           streamWidth: $('#workbenchGrid').style.getPropertyValue('--stream-width') } };
