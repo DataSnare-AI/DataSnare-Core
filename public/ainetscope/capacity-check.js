@@ -25,8 +25,12 @@ if (packets.length !== packetCount || packets.compact !== true) throw new Error(
 if (!Number.isFinite(packets[0].captureOffset) || packets[0].capturedLength !== 14) throw new Error("Capture offsets are invalid.");
 if ("raw" in packets[0] || "rawBytes" in packets[0] || "layers" in packets[0] || "details" in packets[0]) throw new Error("Compact packet retained expanded fields.");
 
+const expandedPackets = context.parseCapture(buffer, { maxPackets: 1500000, compactThreshold: Infinity });
+if (expandedPackets.length !== packetCount || expandedPackets.compact === true) throw new Error("Explicitly disabled compact mode still compacted the capture.");
+if (!Array.isArray(expandedPackets[0].layers) || !expandedPackets[0].details) throw new Error("Expanded packet details were not retained.");
+
 let limitError = "";
 try { context.parseCapture(buffer, { maxPackets: 1000 }); } catch (error) { limitError = error.message; }
 if (!limitError.includes("Packet limit exceeded")) throw new Error(`Unexpected packet limit result: ${limitError}`);
 
-console.log(JSON.stringify({ packets: packets.length, compact: packets.compact, firstOffset: packets[0].captureOffset, firstLength: packets[0].capturedLength, limitError, elapsedMs: Date.now() - started }));
+console.log(JSON.stringify({ packets: packets.length, compact: packets.compact, expandedCompact: expandedPackets.compact, expandedLayers: expandedPackets[0].layers.length, firstOffset: packets[0].captureOffset, firstLength: packets[0].capturedLength, limitError, elapsedMs: Date.now() - started }));

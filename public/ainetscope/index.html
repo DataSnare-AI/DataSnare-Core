@@ -347,6 +347,7 @@
     <div class="dialog-heading"><div><p class="eyebrow">LOCAL CAPACITY</p><h2>Capture settings</h2></div><button id="closeSettingsDialog" class="icon-button" type="button" aria-label="Close">×</button></div>
     <div class="settings-fields">
       <label><span>Maximum capture size</span><input id="maxCaptureMB" type="number" min="1" max="4096" step="1"><small>MiB per file · default 250</small></label>
+      <label><span>Maximum session file size</span><input id="maxSessionMB" type="number" min="1" max="512" step="25"><small>MiB for Save/Restore Session · default 100 · larger values need more browser memory</small></label>
       <label><span>Maximum packet count</span><input id="maxPackets" type="number" min="1" max="10000000" step="10000"><small>packets per file · default 1,500,000</small></label>
       <label><span>Two-Sided rows per page</span><input id="twoSidedRowsPerPage" type="number" min="25" max="1000" step="1" value="150" aria-label="Two-Sided rows per page"><small>25–1,000 rows · default 150</small></label>
       <label><span>Cached raw preview</span><input id="rawPreviewBytes" type="number" min="0" max="65535" step="64"><small>bytes per packet · default 512</small></label>

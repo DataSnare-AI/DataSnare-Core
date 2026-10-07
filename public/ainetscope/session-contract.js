@@ -85,15 +85,18 @@
     }
     return result;
   }
-  function encode(mode, data, profile) {
+  function sessionByteLimit(value) {
+    return Number.isSafeInteger(value) && value > 0 ? value : MAX_BYTES;
+  }
+  function encode(mode, data, profile, maxBytes = MAX_BYTES) {
     const document = validate({ schema: SCHEMA, version: 1, savedAt: new Date().toISOString(), mode,
       coverage: 'metadata_only_no_raw_capture_bytes', profile, data });
     const json = JSON.stringify(document);
-    if (new TextEncoder().encode(json).length > MAX_BYTES) throw new Error('Session exceeds 100 MiB. Reduce the capture size or save a capture-set summary session.');
+    if (new TextEncoder().encode(json).length > sessionByteLimit(maxBytes)) throw new Error(`Session exceeds ${(sessionByteLimit(maxBytes) / (1024 * 1024)).toLocaleString()} MiB. Reduce the capture size or increase the session limit in Settings.`);
     return json;
   }
-  function decode(text) {
-    if (new TextEncoder().encode(text).length > MAX_BYTES) throw new Error('Session files are limited to 100 MiB.');
+  function decode(text, maxBytes = MAX_BYTES) {
+    if (new TextEncoder().encode(text).length > sessionByteLimit(maxBytes)) throw new Error(`Session files are limited to ${(sessionByteLimit(maxBytes) / (1024 * 1024)).toLocaleString()} MiB by the current Settings limit.`);
     try { return validate(JSON.parse(text)); }
     catch (error) { throw new Error(`Could not restore session: ${error.message}`); }
   }

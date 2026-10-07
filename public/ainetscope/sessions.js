@@ -88,7 +88,7 @@ function exportWorkspaceSession() {
           streamWidth: $('#workbenchGrid').style.getPropertyValue('--stream-width') } };
     }
     data.skin = document.documentElement.dataset.skin || 'modern';
-    const json = sessionContract.encode(mode, data, getActiveAnalysisProfile());
+    const json = sessionContract.encode(mode, data, getActiveAnalysisProfile(), settings.maxSessionMB * 1024 * 1024);
     const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url;
     link.download = `${name.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 80)}.ainetscope-session.json`;
@@ -215,8 +215,9 @@ async function restoreWorkspaceSession(file) {
     showToast('Stop analysis and wait for rendering before restoring a session.'); return;
   }
   try {
-    if (file.size > sessionContract.MAX_BYTES) throw new Error('Session files are limited to 100 MiB.');
-    const session = sessionContract.decode(await file.text());
+    const maxBytes = settings.maxSessionMB * 1024 * 1024;
+    if (file.size > maxBytes) throw new Error(`Session files are limited to ${settings.maxSessionMB} MiB by the current Settings limit.`);
+    const session = sessionContract.decode(await file.text(), maxBytes);
     if (!confirm(`Restore ${session.mode} session? This replaces the current ${session.mode} workspace. Save current work first.`)) return;
     setSessionProfile(session.profile);
     applyAINetScopeTheme(session.data.skin || 'modern', true);

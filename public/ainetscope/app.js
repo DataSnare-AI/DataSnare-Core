@@ -5,7 +5,7 @@ const COLORS = ["#1d6b4f", "#e86d4c", "#e2ac45", "#4182a4", "#89a63e", "#946c9b"
 const TCP_FLAGS = { 0x01: "FIN", 0x02: "SYN", 0x04: "RST", 0x08: "PSH", 0x10: "ACK", 0x20: "URG", 0x40: "ECE", 0x80: "CWR" };
 const SETTINGS_KEY = "datasnare-ainetscope-settings-v1";
 const DEFAULT_REFERENCE_LINKS = Object.freeze([{ label: "TCP reference", url: "https://www.rfc-editor.org/rfc/rfc9293" }, { label: "TCP state diagram", url: "https://commons.wikimedia.org/wiki/File:Tcp_state_diagram_fixed_new.svg" }, { label: "UDP reference", url: "https://www.rfc-editor.org/rfc/rfc768" }, { label: "DNS reference", url: "https://www.rfc-editor.org/rfc/rfc1035" }, { label: "HTTP reference", url: "https://www.rfc-editor.org/rfc/rfc9110" }, { label: "HTTP/2 reference", url: "https://www.rfc-editor.org/rfc/rfc9113" }, { label: "HTTP/3 reference", url: "https://www.rfc-editor.org/rfc/rfc9114" }, { label: "TLS reference", url: "https://www.rfc-editor.org/rfc/rfc8446" }, { label: "QUIC reference", url: "https://www.rfc-editor.org/rfc/rfc9000" }, { label: "SMB reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-smb" }, { label: "SMB2 reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-smb2" }, { label: "TDS reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-tds" }, { label: "DCE/RPC reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-rpce" }, { label: "OSI model", url: "https://www.iso.org/standard/14256.html" }, { label: "CIDR subnet map", url: "https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing" }]);
-const DEFAULT_SETTINGS = Object.freeze({ maxCaptureMB: 250, maxPackets: 1500000, rawPreviewBytes: 512, cacheEnabled: false, compactMode: true, debugLogEnabled: false, sansFont: "Manrope, sans-serif", monoFont: "DM Mono, monospace", referenceLinks: DEFAULT_REFERENCE_LINKS });
+const DEFAULT_SETTINGS = Object.freeze({ maxCaptureMB: 250, maxSessionMB: 100, maxPackets: 1500000, rawPreviewBytes: 512, cacheEnabled: false, compactMode: true, debugLogEnabled: false, sansFont: "Manrope, sans-serif", monoFont: "DM Mono, monospace", referenceLinks: DEFAULT_REFERENCE_LINKS });
 const COMPACT_PACKET_THRESHOLD = 100000;
 const SINGLE_CAPTURE_COMPACT_THRESHOLD = 10000;
 const LARGE_CAPTURE_FAST_PATH_PACKETS = 50000;
@@ -21,6 +21,7 @@ function loadSettings() {
     const referenceLinks = [...savedReferences, ...DEFAULT_REFERENCE_LINKS.filter(defaultLink => !savedReferences.some(savedLink => savedLink.url === defaultLink.url))].slice(0, 50);
     return {
       maxCaptureMB: Math.max(1, Number(saved.maxCaptureMB) || DEFAULT_SETTINGS.maxCaptureMB),
+      maxSessionMB: Math.max(1, Math.min(512, Math.floor(Number(saved.maxSessionMB) || DEFAULT_SETTINGS.maxSessionMB))),
       maxPackets: Math.max(1, Math.floor(Number(saved.maxPackets) || DEFAULT_SETTINGS.maxPackets)),
       twoSidedRowsPerPage: Math.max(25, Math.min(1000, Math.floor(Number(saved.twoSidedRowsPerPage) || 150))),
       rawPreviewBytes: Number.isFinite(preview) ? Math.max(0, Math.min(65535, Math.floor(preview))) : DEFAULT_SETTINGS.rawPreviewBytes,
@@ -897,7 +898,7 @@ function parseCapture(buffer, options = {}) {
   const maxPackets = options.maxPackets || DEFAULT_SETTINGS.maxPackets;
   const packetCount = countCapturePackets(buffer, maxPackets);
   if (packetCount > maxPackets) throw new Error(`Packet limit exceeded (${maxPackets.toLocaleString()}). Increase it in Settings.`);
-  const compactThreshold = Number.isFinite(options.compactThreshold) ? options.compactThreshold : COMPACT_PACKET_THRESHOLD;
+  const compactThreshold = typeof options.compactThreshold === "number" && !Number.isNaN(options.compactThreshold) ? options.compactThreshold : COMPACT_PACKET_THRESHOLD;
   const parseOptions = { ...options, maxPackets, compact: packetCount > compactThreshold };
   const packets = signature === "0a 0d 0d 0a" ? parsePcapng(buffer, parseOptions) : parsePcap(buffer, parseOptions);
   correlateHttpConversations(packets);
@@ -1509,7 +1510,7 @@ if (typeof document !== "undefined") {
   const returnTo = new URLSearchParams(window.location.search).get("returnTo");
   if (returnTo === "/aianalysis") $("#coreReturnLink").hidden = false;
   $("#settingsButton").addEventListener("click", () => {
-    $("#maxCaptureMB").value = settings.maxCaptureMB; $("#maxPackets").value = settings.maxPackets; $("#rawPreviewBytes").value = settings.rawPreviewBytes; $("#compactMode").checked = settings.compactMode; $("#cacheEnabled").checked = settings.cacheEnabled; $("#debugLogEnabled").checked = settings.debugLogEnabled; $("#sansFont").value = settings.sansFont; $("#monoFont").value = settings.monoFont; $("#referenceLinks").value = settings.referenceLinks.map(link => `${link.label} | ${link.url}`).join("\n");
+    $("#maxCaptureMB").value = settings.maxCaptureMB; $("#maxSessionMB").value = settings.maxSessionMB; $("#maxPackets").value = settings.maxPackets; $("#rawPreviewBytes").value = settings.rawPreviewBytes; $("#compactMode").checked = settings.compactMode; $("#cacheEnabled").checked = settings.cacheEnabled; $("#debugLogEnabled").checked = settings.debugLogEnabled; $("#sansFont").value = settings.sansFont; $("#monoFont").value = settings.monoFont; $("#referenceLinks").value = settings.referenceLinks.map(link => `${link.label} | ${link.url}`).join("\n");
     $("#settingsDialog").showModal();
   });
   $("#closeSettingsDialog").addEventListener("click", () => $("#settingsDialog").close());
@@ -1517,7 +1518,7 @@ if (typeof document !== "undefined") {
   $("#saveSettingsButton").addEventListener("click", () => {
     const wasCompactMode = settings.compactMode;
     const referenceLinks = $("#referenceLinks").value.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => { const separator = line.indexOf("|"); return separator > 0 ? { label: line.slice(0, separator).trim().slice(0, 80), url: line.slice(separator + 1).trim().slice(0, 500) } : null; }).filter(link => link?.label && /^(https?:|mailto:)/i.test(link.url));
-    settings = { maxCaptureMB: Math.max(1, Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS] };
+    settings = { maxCaptureMB: Math.max(1, Math.min(4096, Math.floor(Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB))), maxSessionMB: Math.max(1, Math.min(512, Math.floor(Number($("#maxSessionMB").value) || DEFAULT_SETTINGS.maxSessionMB))), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS] };
     document.documentElement.style.setProperty("--sans", settings.sansFont); document.documentElement.style.setProperty("--mono", settings.monoFont);
     toggleDebugLogPanel(settings.debugLogEnabled);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); $("#settingsDialog").close();
