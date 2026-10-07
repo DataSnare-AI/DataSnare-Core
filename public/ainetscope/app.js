@@ -4,8 +4,13 @@ const $ = (selector) => document.querySelector(selector);
 const COLORS = ["#1d6b4f", "#e86d4c", "#e2ac45", "#4182a4", "#89a63e", "#946c9b", "#7a817a"];
 const TCP_FLAGS = { 0x01: "FIN", 0x02: "SYN", 0x04: "RST", 0x08: "PSH", 0x10: "ACK", 0x20: "URG", 0x40: "ECE", 0x80: "CWR" };
 const SETTINGS_KEY = "datasnare-ainetscope-settings-v1";
+const REPORT_CHECK_GROUPS = Object.freeze(["TCP", "IP", "ICMP", "UDP", "DNS", "HTTP", "TLS", "SMB", "TDS / SQL", "QUIC", "Behavior"]);
 const DEFAULT_REFERENCE_LINKS = Object.freeze([{ label: "TCP reference", url: "https://www.rfc-editor.org/rfc/rfc9293" }, { label: "TCP state diagram", url: "https://commons.wikimedia.org/wiki/File:Tcp_state_diagram_fixed_new.svg" }, { label: "UDP reference", url: "https://www.rfc-editor.org/rfc/rfc768" }, { label: "DNS reference", url: "https://www.rfc-editor.org/rfc/rfc1035" }, { label: "HTTP reference", url: "https://www.rfc-editor.org/rfc/rfc9110" }, { label: "HTTP/2 reference", url: "https://www.rfc-editor.org/rfc/rfc9113" }, { label: "HTTP/3 reference", url: "https://www.rfc-editor.org/rfc/rfc9114" }, { label: "TLS reference", url: "https://www.rfc-editor.org/rfc/rfc8446" }, { label: "QUIC reference", url: "https://www.rfc-editor.org/rfc/rfc9000" }, { label: "SMB reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-smb" }, { label: "SMB2 reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-smb2" }, { label: "TDS reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-tds" }, { label: "DCE/RPC reference", url: "https://learn.microsoft.com/openspecs/windows_protocols/ms-rpce" }, { label: "OSI model", url: "https://www.iso.org/standard/14256.html" }, { label: "CIDR subnet map", url: "https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing" }]);
-const DEFAULT_SETTINGS = Object.freeze({ maxCaptureMB: 250, maxSessionMB: 100, maxPackets: 1500000, rawPreviewBytes: 512, cacheEnabled: false, compactMode: true, debugLogEnabled: false, sansFont: "Manrope, sans-serif", monoFont: "DM Mono, monospace", referenceLinks: DEFAULT_REFERENCE_LINKS });
+function normalizeReportCheckGroups(value) {
+  const groups = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(REPORT_CHECK_GROUPS.map(group => [group, groups[group] !== false]));
+}
+const DEFAULT_SETTINGS = Object.freeze({ maxCaptureMB: 250, maxSessionMB: 100, maxPackets: 1500000, rawPreviewBytes: 512, cacheEnabled: false, compactMode: true, debugLogEnabled: false, sansFont: "Manrope, sans-serif", monoFont: "DM Mono, monospace", referenceLinks: DEFAULT_REFERENCE_LINKS, reportCheckGroups: normalizeReportCheckGroups() });
 const COMPACT_PACKET_THRESHOLD = 100000;
 const SINGLE_CAPTURE_COMPACT_THRESHOLD = 10000;
 const LARGE_CAPTURE_FAST_PATH_PACKETS = 50000;
@@ -34,7 +39,8 @@ function loadSettings() {
       debugLogEnabled: saved.debugLogEnabled === true,
       sansFont: typeof saved.sansFont === "string" && saved.sansFont.trim() ? saved.sansFont.trim().slice(0, 160) : DEFAULT_SETTINGS.sansFont,
       monoFont: typeof saved.monoFont === "string" && saved.monoFont.trim() ? saved.monoFont.trim().slice(0, 160) : DEFAULT_SETTINGS.monoFont,
-      referenceLinks: referenceLinks.length ? referenceLinks : DEFAULT_REFERENCE_LINKS
+      referenceLinks: referenceLinks.length ? referenceLinks : DEFAULT_REFERENCE_LINKS,
+      reportCheckGroups: normalizeReportCheckGroups(saved.reportCheckGroups)
     };
   } catch (_) { return { ...DEFAULT_SETTINGS, referenceLinks: [...DEFAULT_REFERENCE_LINKS] }; }
 }
@@ -1540,15 +1546,35 @@ if (typeof document !== "undefined") {
   const returnTo = new URLSearchParams(window.location.search).get("returnTo");
   if (returnTo === "/aianalysis") $("#coreReturnLink").hidden = false;
   $("#settingsButton").addEventListener("click", () => {
-    $("#maxCaptureMB").value = settings.maxCaptureMB; $("#maxSessionMB").value = settings.maxSessionMB; $("#maxPackets").value = settings.maxPackets; $("#rawPreviewBytes").value = settings.rawPreviewBytes; $("#compactMode").checked = settings.compactMode; $("#cacheEnabled").checked = settings.cacheEnabled; $("#debugLogEnabled").checked = settings.debugLogEnabled; $("#sansFont").value = settings.sansFont; $("#monoFont").value = settings.monoFont; $("#referenceLinks").value = settings.referenceLinks.map(link => `${link.label} | ${link.url}`).join("\n");
+    $("#maxCaptureMB").value = settings.maxCaptureMB; $("#maxSessionMB").value = settings.maxSessionMB; $("#maxPackets").value = settings.maxPackets; $("#twoSidedRowsPerPage").value = settings.twoSidedRowsPerPage || 150; $("#rawPreviewBytes").value = settings.rawPreviewBytes; $("#compactMode").checked = settings.compactMode; $("#cacheEnabled").checked = settings.cacheEnabled; $("#debugLogEnabled").checked = settings.debugLogEnabled; $("#sansFont").value = settings.sansFont; $("#monoFont").value = settings.monoFont; $("#referenceLinks").value = settings.referenceLinks.map(link => `${link.label} | ${link.url}`).join("\n");
+    document.querySelectorAll("[data-report-check-group]").forEach(input => { input.checked = settings.reportCheckGroups[input.value] !== false; });
     $("#settingsDialog").showModal();
+  });
+  const settingsTabs = [...document.querySelectorAll("[data-settings-tab]")];
+  settingsTabs.forEach(button => {
+    button.addEventListener("click", () => {
+      const selected = button.dataset.settingsTab;
+      settingsTabs.forEach(tab => tab.setAttribute("aria-selected", String(tab === button)));
+      document.querySelectorAll("[data-settings-panel]").forEach(panel => { panel.hidden = panel.dataset.settingsPanel !== selected; });
+    });
+    button.addEventListener("keydown", event => {
+      const index = settingsTabs.indexOf(button);
+      const nextIndex = event.key === "ArrowRight" ? (index + 1) % settingsTabs.length
+        : event.key === "ArrowLeft" ? (index - 1 + settingsTabs.length) % settingsTabs.length
+          : event.key === "Home" ? 0 : event.key === "End" ? settingsTabs.length - 1 : index;
+      if (nextIndex === index) return;
+      event.preventDefault();
+      settingsTabs[nextIndex].click();
+      settingsTabs[nextIndex].focus();
+    });
   });
   $("#closeSettingsDialog").addEventListener("click", () => $("#settingsDialog").close());
   $("#cancelSettingsButton").addEventListener("click", () => $("#settingsDialog").close());
   $("#saveSettingsButton").addEventListener("click", () => {
     const wasCompactMode = settings.compactMode;
     const referenceLinks = $("#referenceLinks").value.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => { const separator = line.indexOf("|"); return separator > 0 ? { label: line.slice(0, separator).trim().slice(0, 80), url: line.slice(separator + 1).trim().slice(0, 500) } : null; }).filter(link => link?.label && /^(https?:|mailto:)/i.test(link.url));
-    settings = { maxCaptureMB: Math.max(1, Math.min(4096, Math.floor(Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB))), maxSessionMB: Math.max(1, Math.min(512, Math.floor(Number($("#maxSessionMB").value) || DEFAULT_SETTINGS.maxSessionMB))), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS] };
+    const reportCheckGroups = Object.fromEntries([...document.querySelectorAll("[data-report-check-group]")].map(input => [input.value, input.checked]));
+    settings = { maxCaptureMB: Math.max(1, Math.min(4096, Math.floor(Number($("#maxCaptureMB").value) || DEFAULT_SETTINGS.maxCaptureMB))), maxSessionMB: Math.max(1, Math.min(512, Math.floor(Number($("#maxSessionMB").value) || DEFAULT_SETTINGS.maxSessionMB))), maxPackets: Math.max(1, Math.floor(Number($("#maxPackets").value) || DEFAULT_SETTINGS.maxPackets)), twoSidedRowsPerPage: Math.max(25, Math.min(1000, Math.floor(Number($("#twoSidedRowsPerPage").value) || 150))), rawPreviewBytes: Math.max(0, Math.min(65535, Math.floor(Number($("#rawPreviewBytes").value) || 0))), compactMode: $("#compactMode").checked, cacheEnabled: $("#cacheEnabled").checked, debugLogEnabled: $("#debugLogEnabled").checked, sansFont: $("#sansFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.sansFont, monoFont: $("#monoFont").value.trim().slice(0, 160) || DEFAULT_SETTINGS.monoFont, referenceLinks: referenceLinks.length ? referenceLinks : [...DEFAULT_REFERENCE_LINKS], reportCheckGroups: normalizeReportCheckGroups(reportCheckGroups) };
     document.documentElement.style.setProperty("--sans", settings.sansFont); document.documentElement.style.setProperty("--mono", settings.monoFont);
     toggleDebugLogPanel(settings.debugLogEnabled);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); $("#settingsDialog").close();
@@ -1581,5 +1607,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { parseFrame, parseTLS, parseQUIC, parseSMB, parseTDS };
+  module.exports = { parseFrame, parseTLS, parseQUIC, parseSMB, parseTDS, normalizeReportCheckGroups, REPORT_CHECK_GROUPS };
 }

@@ -8,7 +8,7 @@ function reportNumber(value, digits = 0) {
   return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: digits }) : "—";
 }
 
-function buildTriageChecks(packets, aggregation, services, profile) {
+function buildTriageChecks(packets, aggregation, services, profile, enabledGroups = null) {
   const checks = [];
   const add = (group, name, severity, state, evidence, limitation = "") => checks.push({ group, name, severity, state, evidence, limitation });
   const has = protocol => packets.some(packet => packet.protocol === protocol);
@@ -180,7 +180,7 @@ function buildTriageChecks(packets, aggregation, services, profile) {
     services.some(service => service.requests) ? "Request counts are available for some decoded services; request/response payload efficiency is not analyzed." : "No decoded service requests.",
     "Requires application-specific transaction sizes, expected behavior, and usually decrypted/reassembled streams.");
 
-  return checks;
+  return checks.filter(check => !enabledGroups || enabledGroups[check.group] !== false);
 }
 
 function renderReportLegend(entries = []) {
@@ -217,6 +217,7 @@ function buildSingleCaptureReportHtml(report) {
   const hasInvestigationNotes = Boolean(report.problemStatement || report.narrative || report.relevantFrames.length);
   const narrative = hasInvestigationNotes ? `<section class="report-section"><p class="eyebrow">INVESTIGATION NOTES</p><h2>${report.problemStatement ? "Problem statement and narrative" : "Analysis narrative"}</h2>${report.problemStatement ? `<p class="problem">${reportEscape(report.problemStatement)}</p>` : ""}${report.narrative ? `<p class="narrative">${reportEscape(report.narrative)}</p>` : ""}${report.relevantFrames.length ? `<h3>Relevant frames</h3><ol class="evidence-list">${report.relevantFrames.map(frame => `<li><strong>Frame ${reportEscape(frame.number)} · ${reportEscape(frame.protocol || "Packet")}</strong><span>${reportEscape(frame.time)} · ${reportEscape(frame.source)} → ${reportEscape(frame.destination)} · ${reportEscape(frame.length)} B</span><p>${reportEscape(frame.note || frame.info)}</p></li>`).join("")}</ol>` : ""}</section>` : "";
   const triageRows = renderTriageChecks(report.triageChecks);
+  const includedCheckGroups = report.includedCheckGroups?.length ? report.includedCheckGroups.join(", ") : "none selected";
   const methodology = `<section class="methodology-page"><p class="eyebrow">HOW TO READ THIS REPORT</p><h2>Expert analysis factors and limits</h2><p class="subhead">AINetScope applies bounded, local checks to decoded packet metadata. Each result describes evidence in the selected capture scope, not a root-cause verdict.</p><div class="method-grid">
 <article class="method-item"><h3>Scope and coverage</h3><p>Counts and checks use the packets currently included by dashboard filters. A capture can omit traffic because of its capture point, filter, time boundaries, packet loss, or asymmetric routing.</p></article>
 <article class="method-item"><h3>Flows and traffic share</h3><p>Conversations group observed endpoint pairs and transport. A dominant flow or traffic spike is descriptive; it becomes a concern only when compared with expected workload or a baseline.</p></article>
@@ -246,7 +247,7 @@ function buildSingleCaptureReportHtml(report) {
 ${narrative}
 <section class="report-section"><p class="eyebrow">APPLICATION BEHAVIOR</p><h2>Decoded services</h2><table><thead><tr><th>Service</th><th>Requests</th><th>Errors</th><th>Median latency</th><th>Observed detail</th></tr></thead><tbody>${services}</tbody></table></section>
 <section class="report-section"><p class="eyebrow">CONVERSATIONS</p><h2>Top network flows</h2><table><thead><tr><th>Endpoints</th><th>Protocol</th><th>Packets</th><th>Traffic</th><th>Latency</th><th>State</th></tr></thead><tbody>${flows}</tbody></table></section>
-<section class="report-section"><p class="eyebrow">QUICK CHECKS</p><h2>Protocol and network triage</h2><p class="subhead">Results reflect decoded evidence in this capture scope. The limitations column states important interpretation boundaries.</p><div class="check-wrap"><table class="check-matrix"><thead><tr><th>Check</th><th>Result</th><th>Observed evidence</th><th>Interpretation / limits</th></tr></thead><tbody>${triageRows}</tbody></table></div></section>
+<section class="report-section"><p class="eyebrow">QUICK CHECKS</p><h2>Protocol and network triage</h2><p class="subhead">Included groups: ${reportEscape(includedCheckGroups)}. Results reflect decoded evidence in this capture scope; the limitations column states important interpretation boundaries.</p><div class="check-wrap"><table class="check-matrix"><thead><tr><th>Check</th><th>Result</th><th>Observed evidence</th><th>Interpretation / limits</th></tr></thead><tbody>${triageRows}</tbody></table></div></section>
 <footer class="footer">Analysis was performed locally in the browser from the selected capture view. Expert findings are heuristic observations and should be verified against packet evidence and the operating environment.</footer>
 ${methodology}</main></body></html>`;
 }
@@ -327,7 +328,8 @@ function buildSingleCaptureReportData() {
     ],
     charts,
     findings: buildFindings(packets, aggregation, services, profile),
-    triageChecks: buildTriageChecks(packets, aggregation, services, profile),
+    triageChecks: buildTriageChecks(packets, aggregation, services, profile, settings.reportCheckGroups),
+    includedCheckGroups: Object.keys(settings.reportCheckGroups).filter(group => settings.reportCheckGroups[group]),
     services: services.map(service => ({ ...service, latency: formatLatency(median(service.latencies)), details: [...service.details].slice(0, 3).join(", ") || `${service.packets} packets` })),
     flows: aggregation.flows.slice(0, 10).map(flow => ({ ...flow, traffic: formatBytes(flow.bytes), latency: formatLatency(flow.latencyValue) })),
     problemStatement: captureNarrative.problemStatement || "",

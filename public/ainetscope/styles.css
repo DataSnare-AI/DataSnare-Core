@@ -366,7 +366,14 @@ dialog::backdrop { background: rgba(23,33,29,.55); backdrop-filter: blur(2px); }
 .dialog-heading-actions { display: flex; align-items: center; gap: 16px; }
 .dialog-heading h2 { margin: 0; font-size: 20px; }
 .icon-button { width: 34px; height: 34px; border: 1px solid var(--line); background: transparent; font-size: 22px; }
-.settings-dialog { width: min(560px, calc(100vw - 32px)); }
+.settings-dialog { width: min(700px, calc(100vw - 32px)); }
+.settings-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; padding: 0 22px; border-bottom: 1px solid var(--line); }
+.settings-tab { position: relative; min-height: 42px; border: 0; background: transparent; color: var(--muted); font: 700 11px var(--sans); cursor: pointer; }
+.settings-tab[aria-selected="true"] { color: var(--green); }
+.settings-tab[aria-selected="true"]::after { position: absolute; right: 10px; bottom: -1px; left: 10px; height: 3px; background: var(--green); content: ""; }
+.settings-tab:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; }
+.settings-panel[hidden] { display: none; }
+.settings-panel .settings-fields { max-height: min(55vh, 560px); overflow: auto; }
 .settings-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 22px; }
 .settings-fields > label { display: grid; gap: 7px; color: var(--ink); font-size: 11px; font-weight: 700; }
 .settings-fields .settings-wide { grid-column: 1 / -1; }
@@ -378,6 +385,10 @@ dialog::backdrop { background: rgba(23,33,29,.55); backdrop-filter: blur(2px); }
 .settings-toggle strong, .settings-toggle small { display: block; }
 .settings-toggle small { margin-top: 4px; line-height: 1.5; }
 .settings-fields > p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.report-settings-fields { gap: 10px; }
+.report-settings-fields .settings-toggle { min-height: 66px; }
+.report-settings-fields .settings-toggle strong { font-size: 10px; }
+.report-settings-fields .settings-toggle small { font-size: 8px; }
 .packet-details { padding: 20px 22px 26px; overflow: auto; }
 .detail-section { margin-bottom: 20px; }
 .detail-section h3 { margin: 0 0 9px; color: var(--green); font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: .1em; }
@@ -707,6 +718,8 @@ dialog::backdrop { background: rgba(23,33,29,.55); backdrop-filter: blur(2px); }
   .profile-fields { grid-template-columns: 1fr 1fr; }
   .settings-fields { grid-template-columns: 1fr; }
   .settings-fields .settings-toggle, .settings-fields > p { grid-column: 1; }
+  .settings-tabs { padding: 0 14px; }
+  .settings-panel .settings-fields { max-height: 56vh; padding: 16px; }
   .profile-footer { align-items: stretch; flex-direction: column; }
   .profile-footer > div { flex-wrap: wrap; }
   .profile-footer .button-quiet { display: inline-flex; }
