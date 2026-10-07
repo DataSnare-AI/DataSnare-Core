@@ -7,7 +7,7 @@
     'tcpWindow', 'tcpOptions', 'latency', 'dnsRcode', 'dnsResponse', 'dnsAnswers', 'dnsName', 'dnsOpcode', 'dnsTruncated',
     'dnsQuestions', 'dnsQuestionSignature', 'httpKind', 'httpMethod', 'httpStatus',
     'tdsType', 'tdsError', 'tdsErrorCount', 'tdsLoginAck', 'smbCommand', 'smbStatus', 'smbResponse', 'icmpType', 'icmpCode', 'icmpPacketTooBig',
-    'ipv4Fragmented', 'ipv4MoreFragments', 'ipv4FragmentOffset', 'ipTtl', 'tlsVersion', 'tlsRecordType',
+    'ipv4Fragmented', 'ipv4MoreFragments', 'ipv4FragmentOffset', 'ipTtl', 'ipVersion', 'tlsVersion', 'tlsRecordType',
     'tlsAlertLevel', 'tlsAlertDescription', 'quicVersion', 'quicPacketType', 'processCorrelation'];
   const RESULT_FIELDS = ['index', 'name', 'path', 'status', 'start', 'end', 'summary', 'protocols', 'hostTraffic',
     'edges', 'protocolNames', 'services', 'serviceStats', 'findings', 'rankedObservations', 'highFindings', 'mediumFindings', 'error'];

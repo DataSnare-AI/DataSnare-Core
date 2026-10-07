@@ -367,8 +367,10 @@ function compareFieldValue(actual, filter) {
 }
 
 function workbenchFilteredPackets() {
-  const query = $("#workbenchSearch").value.trim().toLowerCase(); const protocol = $("#workbenchProtocolFilter").value;
-  return state.packets.filter(packet => (protocol === "all" || packet.protocol === protocol) && (!query || `${packet.number} ${packet.src} ${packet.dst} ${displayHostName(packet.src)} ${displayHostName(packet.dst)} ${packet.protocol} ${packet.info} ${packet.processCorrelation?.pid || ""} ${packet.processCorrelation?.process || ""} ${packet.processCorrelation?.executable || ""} ${packet.processCorrelation?.user || ""}`.toLowerCase().includes(query)) && workbenchState.fieldFilters.every(filter => compareFieldValue(packetField(packet, filter.key), filter)));
+  const protocol = $("#workbenchProtocolFilter").value;
+  return state.packets.filter(packet => (protocol === "all" || packet.protocol === protocol)
+    && workbenchPacketFilter.matches(packet, displayHostName)
+    && workbenchState.fieldFilters.every(filter => compareFieldValue(packetField(packet, filter.key), filter)));
 }
 
 function refreshPacketWorkbench(preferredNumber = null) {
@@ -602,7 +604,7 @@ $("#workbenchModeButton").addEventListener("click", () => {
 });
 $("#workbenchCoreButton").addEventListener("click", showCoreMode);
 $("#workbenchOpenCoreButton").addEventListener("click", showCoreMode);
-$("#workbenchSearch").addEventListener("input", () => renderWorkbenchList());
+const workbenchPacketFilter = DataSnarePacketFilter.bind($("#workbenchSearch"), () => renderWorkbenchList());
 $("#workbenchProtocolFilter").addEventListener("change", () => renderWorkbenchList());
 $("#timeDisplayMode").addEventListener("change", event => { currentFrameState().timeMode = event.target.value; persistFrameState(); renderWorkbenchList(workbenchState.selectedNumber); });
 $("#workbenchRows").addEventListener("click", event => { const note = event.target.closest("[data-note-frame]"); if (note) { openNoteEditor(Number(note.dataset.noteFrame)); return; } const mark = event.target.closest("[data-mark-toggle]"); if (mark) { toggleFrameMark(Number(mark.dataset.markToggle)); return; } const row = event.target.closest("tr[data-workbench-packet]"); if (row) selectWorkbenchPacket(Number(row.dataset.workbenchPacket), false); });

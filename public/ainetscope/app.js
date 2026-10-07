@@ -732,6 +732,7 @@ function parseFrame(frame, number, timestamp, linkType, options = {}) {
     const headerChecksum = view.getUint16(offset + 10);
     nextHeader = protocol; packet.src = ipv4(bytes, offset + 12); packet.dst = ipv4(bytes, offset + 16);
     packet.ipTtl = ttl;
+    packet.ipVersion = 4;
     packet.ipv4MoreFragments = Boolean(flagsFragment & 0x2000);
     packet.ipv4FragmentOffset = flagsFragment & 0x1fff;
     packet.ipv4Fragmented = packet.ipv4MoreFragments || packet.ipv4FragmentOffset > 0;
@@ -757,6 +758,7 @@ function parseFrame(frame, number, timestamp, linkType, options = {}) {
     });
   } else if (etherType === 0x86dd && offset + 40 <= bytes.length) {
     const networkStart = offset;
+    packet.ipVersion = 6;
     nextHeader = bytes[offset + 6]; packet.src = ipv6(view, offset + 8); packet.dst = ipv6(view, offset + 24);
     if (detailed) packet.details.IP = `IPv6 · Hop limit ${bytes[offset + 7]}`; offset += 40;
     while ([0, 43, 60].includes(nextHeader) && offset + 8 <= bytes.length) { const previous = nextHeader; nextHeader = bytes[offset]; offset += (bytes[offset + 1] + 1) * 8; if (detailed) packet.details.Extension = previous; }
@@ -1261,12 +1263,30 @@ function buildTimeline(packets, buckets = 36) {
   if (!packets.length) return [];
   const start = packets[0].timestamp; const end = packets.at(-1).timestamp; const span = Math.max(end - start, .001);
   const local = packets[0].src;
-  const values = Array.from({ length: buckets }, () => ({ inbound: 0, outbound: 0 }));
+  const values = Array.from({ length: buckets }, (_, index) => ({ inbound: 0, outbound: 0, packets: 0,
+    start: Math.min(end, start + span * index / buckets), end: Math.min(end, start + span * (index + 1) / buckets) }));
   for (const packet of packets) {
     const index = Math.min(buckets - 1, Math.floor(((packet.timestamp - start) / span) * buckets));
     values[index][packet.src === local ? "outbound" : "inbound"] += packet.length;
+    values[index].packets++;
   }
   return values;
+}
+
+let timelineHoverBuckets = [];
+
+function showTimelineTooltip(event) {
+  const canvas = $("#timelineCanvas");
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const tooltip = $("#timelineTooltip");
+  if (!timelineHoverBuckets.length || x < 42 || x > rect.width - 20) { tooltip.hidden = true; return; }
+  const bucket = timelineHoverBuckets.reduce((nearest, item) => Math.abs(item.x - x) < Math.abs(nearest.x - x) ? item : nearest);
+  tooltip.innerHTML = `<strong>Traffic bucket</strong><dl><dt>Capture time</dt><dd>${(bucket.start - state.baseTime).toFixed(3)}–${(bucket.end - state.baseTime).toFixed(3)} s</dd><dt>Start (UTC)</dt><dd>${escapeHtml(new Date(bucket.start * 1000).toISOString())}</dd><dt>End (UTC)</dt><dd>${escapeHtml(new Date(bucket.end * 1000).toISOString())}</dd><dt>Inbound</dt><dd>${formatBytes(bucket.inbound)}</dd><dt>Outbound</dt><dd>${formatBytes(bucket.outbound)}</dd><dt>Packets</dt><dd>${bucket.packets.toLocaleString()}</dd></dl>`;
+  tooltip.hidden = false;
+  const wrapperRect = canvas.parentElement.getBoundingClientRect();
+  tooltip.style.left = `${Math.max(8, Math.min(wrapperRect.width - tooltip.offsetWidth - 8, event.clientX - wrapperRect.left + 14))}px`;
+  tooltip.style.top = `${Math.max(8, Math.min(wrapperRect.height - tooltip.offsetHeight - 8, event.clientY - wrapperRect.top - tooltip.offsetHeight / 2))}px`;
 }
 
 function setupCanvas(canvas) {
@@ -1280,12 +1300,20 @@ function setupCanvas(canvas) {
 function drawTimeline() {
   const canvas = $("#timelineCanvas"); const { context, width, height } = setupCanvas(canvas);
   const data = buildTimeline(state.filtered); const pad = { x: 42, top: 28, bottom: 30 }; const chartWidth = width - pad.x - 20; const chartHeight = height - pad.top - pad.bottom;
+  $("#timelineTooltip").hidden = true;
+  timelineHoverBuckets = data.map((item, index) => ({ ...item, x: pad.x + chartWidth * index / Math.max(1, data.length - 1) }));
   const max = Math.max(1, ...data.flatMap(item => [item.inbound, item.outbound]));
   context.font = "9px DM Mono"; context.fillStyle = "#7a817a"; context.strokeStyle = "#dedbd2"; context.lineWidth = 1;
   for (let row = 0; row <= 4; row++) { const y = pad.top + chartHeight * row / 4; context.beginPath(); context.moveTo(pad.x, y); context.lineTo(width - 20, y); context.stroke(); context.fillText(formatBytes(max * (1 - row / 4)), 3, y + 3); }
   const draw = (field, color) => { context.beginPath(); data.forEach((item, index) => { const x = pad.x + chartWidth * index / Math.max(1, data.length - 1); const y = pad.top + chartHeight * (1 - item[field] / max); index ? context.lineTo(x, y) : context.moveTo(x, y); }); context.strokeStyle = color; context.lineWidth = 2; context.stroke(); };
   draw("inbound", COLORS[0]); draw("outbound", COLORS[1]);
-  context.fillText("0s", pad.x, height - 9); context.fillText(`${state.duration.toFixed(2)}s`, width - 58, height - 9);
+  if (data.length) {
+    const utc = $("#timelineTimeAxis").value === "utc";
+    const label = timestamp => utc ? new Date(timestamp * 1000).toISOString().replace("T", " ").replace("Z", " UTC") : `${(timestamp - state.baseTime).toFixed(2)}s`;
+    context.textAlign = "left"; context.fillText(label(data[0].start), pad.x, height - 9);
+    context.textAlign = "right"; context.fillText(label(data.at(-1).end), width - 20, height - 9);
+    context.textAlign = "left";
+  }
 }
 
 function drawDonut(protocols) {
@@ -1416,9 +1444,11 @@ async function reparseCurrentCaptureExpanded() {
   }
 }
 
+let corePacketFilter = null;
 function applyFilters() {
-  const query = $("#searchInput").value.trim().toLowerCase(); const protocol = $("#protocolFilter").value;
-  state.filtered = state.packets.filter(packet => (protocol === "all" || packet.protocol === protocol) && (!query || `${packet.src} ${packet.dst} ${displayHostName(packet.src)} ${displayHostName(packet.dst)} ${packet.protocol} ${packet.info}`.toLowerCase().includes(query)));
+  const protocol = $("#protocolFilter").value;
+  state.filtered = state.packets.filter(packet => (protocol === "all" || packet.protocol === protocol)
+    && (!corePacketFilter || corePacketFilter.matches(packet, displayHostName)));
   render();
 }
 
@@ -1732,7 +1762,11 @@ if (typeof document !== "undefined") {
   captureInput.addEventListener("click", () => debugLog("capture input clicked"));
   captureInput.addEventListener("change", event => { const file = event.target.files[0]; debugLog("capture input changed", { files: event.target.files.length, name: file?.name || "" }); event.target.value = ""; confirmCaptureFile(file); });
   $("#demoButton").addEventListener("click", () => { if (typeof showCoreMode === "function") showCoreMode(); loadPackets(createDemo(), "demo-office-traffic.pcapng", "builtin-demo"); showToast("Demo trace loaded."); });
-  $("#searchInput").addEventListener("input", applyFilters); $("#protocolFilter").addEventListener("change", applyFilters);
+  corePacketFilter = DataSnarePacketFilter.bind($("#searchInput"), applyFilters);
+  $("#protocolFilter").addEventListener("change", applyFilters);
+  $("#timelineCanvas").addEventListener("mousemove", showTimelineTooltip);
+  $("#timelineCanvas").addEventListener("mouseleave", () => { $("#timelineTooltip").hidden = true; });
+  $("#timelineTimeAxis").addEventListener("change", drawTimeline);
   $("#packetRows").addEventListener("click", event => { const row = event.target.closest("tr[data-packet]"); if (row) inspectPacket(Number(row.dataset.packet)); });
   $("#closeDialog").addEventListener("click", () => $("#packetDialog").close()); $("#openPacketWorkbenchButton").addEventListener("click", event => { const number = Number(event.currentTarget.dataset.packetNumber); $("#packetDialog").close(); if (number) showPacketWorkbench(number); }); $("#exportButton").addEventListener("click", exportCsv);
   const dropZone = $("#dropZone");
@@ -1752,5 +1786,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { parseFrame, parseDNS, parsePcap, parseTLS, parseQUIC, parseSMB, parseTDS, aggregate, normalizeReportCheckGroups, REPORT_CHECK_GROUPS };
+  module.exports = { parseFrame, parseDNS, parsePcap, parseTLS, parseQUIC, parseSMB, parseTDS, aggregate, buildTimeline, normalizeReportCheckGroups, REPORT_CHECK_GROUPS };
 }

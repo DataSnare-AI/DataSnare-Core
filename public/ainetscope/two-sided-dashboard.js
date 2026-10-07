@@ -70,16 +70,18 @@ function buildTwoSidedFindingsExport() {
   }
   const generatedAt = new Date().toISOString();
   const caveats = reduced ? [...TWO_SIDED_ANALYTICS_CAVEATS, 'Matched-only session: unmatched and ambiguous traffic was omitted. Visibility/loss and flow-control metrics cannot be established from this reduced dataset.'] : TWO_SIDED_ANALYTICS_CAVEATS;
+  const matchedCompleteHandshakes = records.filter(record => record.status === 'matched'
+    && tcpSignalClass(record.packetA || {}) === 'syn'
+    && record.packetA?.tcpOptions?.complete && record.packetB?.tcpOptions?.complete).length;
   const exportedMetrics = { ...metrics, middlebox: { handshakesA: metrics.middlebox.handshakesA.slice(0, 100), handshakesB: metrics.middlebox.handshakesB.slice(0, 100),
       handshakesTotalA: metrics.middlebox.handshakesA.length, handshakesTotalB: metrics.middlebox.handshakesB.length,
-      differencesTotal: metrics.middlebox.optionDifferences.length,
+      differencesTotal: metrics.middlebox.optionDifferences.length, matchedCompleteHandshakes,
       optionDifferences: metrics.middlebox.optionDifferences.slice(0, 100).map(item => ({ changes: item.changes, evidence: evidenceFor(item.record) })) } };
   const reportModel = twoSidedReportCommon.createReportModel({ mode: 'two-sided', generatedAt, sources, scope,
     metrics: exportedMetrics, findings, caveats,
     checks: findings.map(finding => ({ group: finding.category, name: finding.title,
       severity: finding.severity === 'warning' ? 'medium' : 'low',
-      state: reduced && ['network.loss-diagnostics', 'network.flow-control'].includes(finding.category)
-        ? 'not-assessed' : finding.severity === 'warning' ? 'review' : 'observed', evidence: finding.detail,
+      state: twoSidedReportCommon.twoSidedReportCheckState(finding.category, exportedMetrics, reduced, finding.severity), evidence: finding.detail,
       limitation: caveats[0] || '' })) });
   return { schema: TWO_SIDED_FINDINGS_SCHEMA, generatedAt,
     tool: { name: 'AINetScope Two-Sided', version: '1.0.0' }, sources, scope, caveats,
@@ -96,6 +98,11 @@ function showTwoSidedAnalytics() {
   const metrics = report.metrics;
   const groups = [...metrics.directions, { direction: 'Unknown direction / B minus A', ...metrics.unknown }];
   const timing = groups.map(group => `<tr><th>${twoSidedReportCommon.escapeReportHtml(group.direction)}</th>${['count', 'mean', 'p95', 'p99', 'jitter', 'negative'].map(key => `<td>${analyticsValue(group[key])}</td>`).join('')}</tr>`).join('');
+  const statusFor = category => report.reportModel.checks.find(check => check.group === category);
+  const statusBadge = (category, fallbackState = 'not-assessed') => {
+    const check = statusFor(category) || { group: category, name: category, state: fallbackState };
+    return twoSidedReportCommon.renderReportStatusBadge(check, 'two-analytics-status');
+  };
   const options = (rows, side) => rows.slice(0, 30).map(item => `<tr><td>${side}</td><td>${item.frame}</td><td>${analyticsValue(item.options?.mss)}</td><td>${analyticsValue(item.options?.windowScale)}</td><td>${item.options?.complete ? item.options.sackPermitted ? 'Yes' : 'No' : 'Unavailable'}</td><td>${item.options?.complete ? item.options.timestamps ? 'Yes' : 'No' : 'Unavailable'}</td></tr>`).join('');
   const flow = side => {
     const values = metrics[`flow${side}`];
@@ -104,16 +111,20 @@ function showTwoSidedAnalytics() {
   };
   $('#twoSidedAnalyticsBody').innerHTML = `<p class="two-analytics-scope">${metrics.total.toLocaleString()} filtered observations / ${metrics.matched.toLocaleString()} matched pairs / B offset ${report.scope.bOffsetMs} ms / all pages. Snapshot ${twoSidedReportCommon.escapeReportHtml(report.generatedAt)}.</p>
     ${report.scope.sessionCoverage === 'matched_pairs_only' ? '<p class="two-analytics-scope">Reduced session: only matched pairs were retained. Visibility/loss and flow-control metrics are unavailable; omitted handshakes cannot establish absent options. Relink originals for full analysis.</p>' : ''}
-    <section class="two-analytics-section"><h3>Path Performance</h3><div class="two-analytics-table"><table><thead><tr><th>Direction</th><th>Samples</th><th>Mean ms</th><th>p95 ms</th><th>p99 ms</th><th>Jitter ms</th><th>Negative</th></tr></thead><tbody>${timing}</tbody></table></div><p>${twoSidedReportCommon.escapeReportHtml(report.caveats[0])} Jitter is population standard deviation. Negative samples remain included; small-sample percentiles are descriptive.</p></section>
-    <section class="two-analytics-section"><h3>Loss Diagnostics</h3>${metricList([['A-only observations', metrics.loss.onlyA], ['B-only observations', metrics.loss.onlyB], ['A-only in aligned overlap', metrics.loss.withinA], ['B-only in aligned overlap', metrics.loss.withinB], ['Sender seen / receiver missing: A to B', analyticsValue(metrics.loss.senderOnlyAtoB)], ['Sender seen / receiver missing: B to A', analyticsValue(metrics.loss.senderOnlyBtoA)], ['Ambiguous observations', metrics.ambiguous], ['Aligned overlap', analyticsValue(metrics.loss.overlapMs, 'ms')], ['Confirmed drop location', 'Unavailable']])}<p>${twoSidedReportCommon.escapeReportHtml(report.caveats[1])} Sender-only counts identify possible path-or-capture visibility gaps between observation points, not confirmed drops. Matched-only filters hide visibility gaps.</p></section>
-    <section class="two-analytics-section"><h3>Middlebox Impact</h3><p>${metrics.middlebox.differencesTotal} option differences across uniquely matched, complete SYN observations. At most 30 handshake rows per side shown.</p><div class="two-analytics-table"><table><thead><tr><th>Side</th><th>Frame</th><th>MSS</th><th>WScale shift</th><th>SACK</th><th>TCP timestamps</th></tr></thead><tbody>${options(metrics.middlebox.handshakesA, 'A')}${options(metrics.middlebox.handshakesB, 'B') || '<tr><td colspan="6">No B handshake options available</td></tr>'}</tbody></table></div><p>${twoSidedReportCommon.escapeReportHtml(report.caveats[2])}</p></section>
-    <section class="two-analytics-section"><h3>Flow Control</h3>${flow('A')}${flow('B')}<p>${twoSidedReportCommon.escapeReportHtml(report.caveats[3])} ${twoSidedReportCommon.escapeReportHtml(report.caveats[4])}</p></section>
-    <section class="two-analytics-section"><h3>Supporting Findings</h3>${report.findings.map((finding, index) => `<button type="button" class="two-analytics-finding" data-analytics-finding="${index}" ${finding.evidence.frameA === null && finding.evidence.frameB === null ? 'disabled' : ''}><b>${twoSidedReportCommon.escapeReportHtml(finding.title)}</b><span>${twoSidedReportCommon.escapeReportHtml(finding.detail)}</span></button>`).join('')}</section>`;
+    <section class="two-analytics-section"><h3>Path Performance ${statusBadge('network.path-performance', metrics.matched ? 'observed' : 'not-assessed')}</h3><div class="two-analytics-table"><table><thead><tr><th>Direction</th><th>Samples</th><th>Mean ms</th><th>p95 ms</th><th>p99 ms</th><th>Jitter ms</th><th>Negative</th></tr></thead><tbody>${timing}</tbody></table></div><p>${twoSidedReportCommon.escapeReportHtml(report.caveats[0])} Jitter is population standard deviation. Negative samples remain included; small-sample percentiles are descriptive.</p></section>
+    <section class="two-analytics-section"><h3>Loss Diagnostics ${statusBadge('network.loss-diagnostics')}</h3>${metricList([['A-only observations', metrics.loss.onlyA], ['B-only observations', metrics.loss.onlyB], ['A-only in aligned overlap', metrics.loss.withinA], ['B-only in aligned overlap', metrics.loss.withinB], ['Sender seen / receiver missing: A to B', analyticsValue(metrics.loss.senderOnlyAtoB)], ['Sender seen / receiver missing: B to A', analyticsValue(metrics.loss.senderOnlyBtoA)], ['Ambiguous observations', metrics.ambiguous], ['Aligned overlap', analyticsValue(metrics.loss.overlapMs, 'ms')], ['Confirmed drop location', 'Unavailable']])}<p>${twoSidedReportCommon.escapeReportHtml(report.caveats[1])} Sender-only counts identify possible path-or-capture visibility gaps between observation points, not confirmed drops. Matched-only filters hide visibility gaps.</p></section>
+    <section class="two-analytics-section"><h3>Middlebox Impact ${statusBadge('network.middlebox')}</h3><p>${metrics.middlebox.differencesTotal} option differences across uniquely matched, complete SYN observations. At most 30 handshake rows per side shown.</p><div class="two-analytics-table"><table><thead><tr><th>Side</th><th>Frame</th><th>MSS</th><th>WScale shift</th><th>SACK</th><th>TCP timestamps</th></tr></thead><tbody>${options(metrics.middlebox.handshakesA, 'A')}${options(metrics.middlebox.handshakesB, 'B') || '<tr><td colspan="6">No B handshake options available</td></tr>'}</tbody></table></div><p>${twoSidedReportCommon.escapeReportHtml(report.caveats[2])}</p></section>
+    <section class="two-analytics-section"><h3>Flow Control ${statusBadge('network.flow-control')}</h3>${flow('A')}${flow('B')}<p>${twoSidedReportCommon.escapeReportHtml(report.caveats[3])} ${twoSidedReportCommon.escapeReportHtml(report.caveats[4])}</p></section>
+    <section class="two-analytics-section"><h3>Supporting Findings</h3>${report.findings.map((finding, index) => `<button type="button" class="two-analytics-finding" data-analytics-finding="${index}" ${finding.evidence.frameA === null && finding.evidence.frameB === null ? 'disabled' : ''}>${twoSidedReportCommon.renderReportStatusBadge(report.reportModel.checks[index], 'two-analytics-status')}<b>${twoSidedReportCommon.escapeReportHtml(finding.title)}</b><span>${twoSidedReportCommon.escapeReportHtml(finding.detail)}</span></button>`).join('')}</section>`;
   $('#twoSidedAnalyticsDialog').showModal();
 }
 
 $('#twoSidedAnalyticsButton').addEventListener('click', showTwoSidedAnalytics);
 $('#twoSidedAnalyticsClose').addEventListener('click', () => $('#twoSidedAnalyticsDialog').close());
+$('#twoSidedAnalyticsPrint').addEventListener('click', () => {
+  if (!twoSidedAnalyticsSnapshot) return;
+  if (!DataSnareTwoSidedReport.openTwoSidedReport(twoSidedAnalyticsSnapshot)) showToast('Pop-up blocked. Allow pop-ups to open the Two-Sided PDF report.');
+});
 $('#twoSidedAnalyticsExport').addEventListener('click', () => {
   if (!twoSidedAnalyticsSnapshot) return;
   const url = URL.createObjectURL(new Blob([JSON.stringify(twoSidedAnalyticsSnapshot, null, 2)], { type: 'application/json' }));

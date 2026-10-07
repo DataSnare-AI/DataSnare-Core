@@ -91,6 +91,11 @@ body::before {
 .two-analytics-scope, .two-analytics-section p { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .two-analytics-section { padding: 18px 0; border-top: 1px solid var(--line); }
 .two-analytics-section h3 { font-size: 18px; margin: 0 0 12px; }
+.two-analytics-status { display: inline-block; margin-left: 8px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font: 500 8px var(--mono); text-transform: uppercase; vertical-align: middle; }
+.two-analytics-status--issue { color: var(--coral); border-color: var(--coral); }
+.two-analytics-status--review { color: var(--gold); border-color: var(--gold); }
+.two-analytics-status--observed { color: var(--blue); border-color: var(--blue); }
+.two-analytics-status--clear { color: var(--green); border-color: var(--green); }
 .two-analytics-section h4 { font-size: 14px; margin: 12px 0; }
 .two-analytics-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 14px; }
 .two-analytics-metrics dt { font-size: 11px; color: var(--muted); }
@@ -98,6 +103,7 @@ body::before {
 .two-analytics-table { max-width: 100%; overflow: auto; }
 .two-analytics-table table { min-width: 650px; font: 11px var(--mono); }
 .two-analytics-finding { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); padding: 12px 0; cursor: pointer; }
+.two-analytics-finding .two-analytics-status { margin: 0 0 6px; }
 .two-analytics-finding b, .two-analytics-finding span { display: block; font-size: 12px; overflow-wrap: anywhere; }
 .two-analytics-finding span { margin-top: 5px; color: var(--muted); }
 .two-analytics-finding:disabled { cursor: default; }
@@ -359,6 +365,31 @@ td:first-child { font-family: var(--mono); }
 .insight p { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .packets-panel { margin-top: 18px; }
 .packet-table-wrap { max-height: 480px; }
+input[data-filter-validity="valid"] { background: #d6f5a6 !important; color: #17211d !important; }
+input[data-filter-validity="invalid"] { background: #f8d6d6 !important; color: #661c1c !important; }
+.packet-filter-history { width: 130px; min-width: 0; height: 38px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.packet-filter-status { max-width: 220px; color: var(--coral); font-size: 10px; overflow-wrap: anywhere; }
+.packet-filter-status:empty { display: none; }
+.packet-filter-help-button { flex: 0 0 auto; width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--ink); cursor: pointer; font-weight: 700; }
+.packet-filter-suggestions { position: fixed; z-index: 100; max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid var(--ink); border-radius: 4px; background: var(--panel); box-shadow: 0 5px 18px #17211d30; color: var(--ink); }
+.packet-filter-suggestions[hidden] { display: none; }
+.packet-filter-suggestions [role="option"] { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px; cursor: pointer; font: 11px var(--mono); }
+.packet-filter-suggestions [role="option"][aria-selected="true"], .packet-filter-suggestions [role="option"]:hover { background: #d6f5a6; color: #17211d; }
+.packet-filter-suggestions small { font: 10px var(--sans); }
+.packet-filter-help-dialog { width: min(720px, calc(100vw - 32px)); padding: 22px; overflow: auto; }
+.packet-filter-help-dialog h2 { margin: 0 0 12px; font-size: 20px; }
+.packet-filter-help-dialog h3 { margin: 20px 0 6px; font-size: 13px; }
+.packet-filter-help-dialog p { color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.packet-filter-help-dialog table { table-layout: fixed; margin-top: 20px; }
+.packet-filter-help-dialog caption { text-align: left; margin-bottom: 8px; font-weight: 700; }
+.packet-filter-help-dialog th { position: static; }
+.packet-filter-help-dialog td { white-space: normal; overflow-wrap: anywhere; font: 11px var(--mono); }
+.packet-filter-example { display: block; width: 100%; padding: 9px; margin-top: 6px; text-align: left; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--ink); font: 11px var(--mono); overflow-wrap: anywhere; cursor: pointer; }
+.packet-filter-example:hover, .packet-filter-help-button:hover { border-color: var(--green); }
+.filters, .workbench-actions { flex-wrap: wrap; }
+.timeline-canvas-wrap { position: relative; }
+.timeline-axis-control { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 8px 20px; color: var(--muted); font: 10px var(--mono); }
+.timeline-axis-control select { padding: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
 .packet-table tbody tr { cursor: pointer; }
 .packet-table tbody tr:hover { background: rgba(184,216,93,.11); }
 .packet-table td:nth-child(2), .packet-table td:nth-child(6) { font-family: var(--mono); color: var(--muted); }

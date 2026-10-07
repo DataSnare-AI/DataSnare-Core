@@ -94,7 +94,8 @@
         <section class="overview-grid">
           <article class="panel timeline-panel">
             <div class="panel-heading"><div><p class="eyebrow">TRAFFIC SHAPE</p><h2>Throughput over time</h2></div><div class="legend"><span><i class="legend-in"></i>Inbound</span><span><i class="legend-out"></i>Outbound</span></div></div>
-            <canvas id="timelineCanvas" height="260" aria-label="Throughput timeline"></canvas>
+            <label class="timeline-axis-control">Time axis <select id="timelineTimeAxis" aria-label="Throughput time axis"><option value="relative">Capture seconds</option><option value="utc">Date/time (UTC)</option></select></label>
+            <div class="timeline-canvas-wrap"><canvas id="timelineCanvas" height="260" aria-label="Throughput timeline"></canvas><div class="latency-tooltip" id="timelineTooltip" role="tooltip" hidden></div></div>
           </article>
           <article class="panel protocol-panel">
             <div class="panel-heading"><div><p class="eyebrow">PROTOCOL MIX</p><h2>Bytes by layer</h2></div></div>
@@ -593,7 +594,7 @@
   </dialog>
   <div class="toast" id="toast" role="status"></div>
   <dialog id="twoSidedAnalyticsDialog" class="two-analytics-dialog" aria-labelledby="twoSidedAnalyticsTitle">
-    <header class="two-analytics-heading"><h2 id="twoSidedAnalyticsTitle">Two-Sided Analytics</h2><div><button id="twoSidedAnalyticsExport" class="button button-primary" type="button">Export findings JSON</button><button id="twoSidedAnalyticsClose" class="button button-quiet" type="button">Close analytics</button></div></header>
+    <header class="two-analytics-heading"><h2 id="twoSidedAnalyticsTitle">Two-Sided Analytics</h2><div><button id="twoSidedAnalyticsPrint" class="button button-quiet" type="button">Print / Save as PDF</button><button id="twoSidedAnalyticsExport" class="button button-primary" type="button">Export findings JSON</button><button id="twoSidedAnalyticsClose" class="button button-quiet" type="button">Close analytics</button></div></header>
     <div id="twoSidedAnalyticsBody"></div>
     <details class="two-analytics-help"><summary>Metric help: definitions and unavailable values</summary>
       <p>Unavailable is not zero, healthy, or an application failure. It means the current evidence cannot support that metric. Analytics is a snapshot of all filtered observations; reopen it after changing filters or re-analyzing clock settings.</p>
@@ -629,6 +630,7 @@
   <script src="suite-theme.js"></script>
   <script src="host-maps.js"></script>
   <script src="report-common.js"></script>
+  <script src="packet-filter.js"></script>
   <script src="app.js"></script>
   <script src="tuning.js"></script>
   <script src="expert.js"></script>
@@ -644,6 +646,7 @@
   <script src="two-sided.js"></script>
   <script src="stream-inspector.js"></script>
   <script src="two-sided-analytics.js"></script>
+  <script src="two-sided-report.js"></script>
   <script src="capture-set-report.js"></script>
   <script src="two-sided-dashboard.js"></script>
   <script src="capture-launch.js"></script>

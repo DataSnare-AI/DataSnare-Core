@@ -25,7 +25,8 @@ function buildCaptureSetReportModel({ results = [], totals = {}, findings = [], 
     severity: String(finding.severity || "info"),
     title: String(finding.title || "Observation"),
     detail: String(finding.detail || ""),
-    sourcePath: finding.index === undefined ? "" : String(results.find(result => result.index === finding.index)?.path || "")
+    sourcePath: finding.index === undefined ? "" : String(results.find(result => result.index === finding.index)?.path || ""),
+    frameNumber: Number.isSafeInteger(Number(finding.packet)) && Number(finding.packet) > 0 ? Number(finding.packet) : null
   }));
   const hosts = Array.isArray(topology.hosts) ? topology.hosts : [];
   const edges = Array.isArray(topology.edges) ? topology.edges : [];
@@ -92,6 +93,8 @@ function buildCaptureSetReportModel({ results = [], totals = {}, findings = [], 
 
 function renderCaptureSetReportHtml(model) {
   const escape = DataSnareReportCommon.escapeReportHtml;
+  const sharedCoverage = DataSnareReportCommon.sharedReportCoverageHtml("Capture Set totals use analyzed files; per-file details retain failed and incomplete statuses.");
+  const sharedInterpretation = DataSnareReportCommon.sharedReportInterpretationHtml();
   const number = value => Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "Unavailable";
   const byteSize = value => {
     if (!Number.isFinite(value)) return "Unavailable";
@@ -101,7 +104,7 @@ function renderCaptureSetReportHtml(model) {
   };
   const metricRows = model.metrics.map(metric => `<div><dt>${escape(metric.label)}</dt><dd>${escape(metric.label.includes("bytes") ? byteSize(metric.value) : number(metric.value))}</dd></div>`).join("");
   const fileRows = model.fileRows.slice(0, model.reportOptions.fileLimit).map(file => `<tr><td>${escape(file.path)}</td><td>${escape(file.status)}</td><td>${number(file.packets)}</td><td>${byteSize(file.bytes)}</td><td>${number(file.flows)}</td><td>${file.latencyP95Ms === null ? "Unavailable" : `${number(file.latencyP95Ms)} ms`}</td><td>${escape(file.start || "Unavailable")}</td><td>${escape(file.end || "Unavailable")}</td><td>${number(file.highFindings + file.mediumFindings)}</td><td>${escape(file.error)}</td></tr>`).join("");
-  const findingRows = model.findings.map(finding => `<article class="finding finding--${escape(finding.state)}"><b>${escape(finding.state)}</b><div><h3>${escape(finding.title)}</h3><p>${escape(finding.detail)}</p>${finding.sourcePath ? `<small>${escape(finding.sourcePath)}</small>` : ""}</div></article>`).join("");
+  const findingRows = model.findings.map(finding => `<article class="finding finding--${escape(finding.state)}"><b>${escape(finding.state)}</b><div><h3>${escape(finding.title)}</h3><p>${escape(finding.detail)}</p>${finding.sourcePath ? `<small>${escape(finding.sourcePath)}${finding.frameNumber ? ` · Frame ${number(finding.frameNumber)}` : ""}</small>` : finding.frameNumber ? `<small>Frame ${number(finding.frameNumber)}</small>` : ""}</div></article>`).join("");
   const checkRows = model.checks.map(check => `<tr><th>${escape(check.name)}</th><td>${escape(check.statusLabel)}</td><td>${escape(check.evidence)}</td><td>${escape(check.limitation)}</td></tr>`).join("");
   const protocolRows = model.protocols.map(item => `<tr><td>${escape(item.protocol)}</td><td>${byteSize(item.bytes)}</td><td>${number(item.percent)}%</td></tr>`).join("");
   const hostRows = model.topology.hosts.map(host => `<tr><td>${escape(host.host)}</td><td>${byteSize(host.bytes)}</td></tr>`).join("");
@@ -116,7 +119,7 @@ function renderCaptureSetReportHtml(model) {
 <section class="section"><h2>Topology overview</h2><p class="muted">${number(model.topology.totalHosts)} observed hosts · ${number(model.topology.totalEdges)} observed connections. Showing ${hostLimitLabel} hosts and ${edgeLimitLabel} connections.</p><div class="table-wrap"><table><thead><tr><th>Host</th><th>Traffic</th></tr></thead><tbody>${hostRows || '<tr><td colspan="2">No host inventory available.</td></tr>'}</tbody></table></div>${model.topology.omittedHosts ? `<p class="omitted">${number(model.topology.omittedHosts)} hosts omitted from details.</p>` : ""}<div class="table-wrap"><table><thead><tr><th>Connection</th><th>Traffic</th><th>Packets</th><th>Observed in captures</th></tr></thead><tbody>${edgeRows || '<tr><td colspan="4">No connection inventory available.</td></tr>'}</tbody></table></div>${model.topology.omittedEdges ? `<p class="omitted">${number(model.topology.omittedEdges)} connections omitted from details.</p>` : ""}</section>
 <section class="section"><h2>File inventory</h2><div class="table-wrap"><table><thead><tr><th>Capture</th><th>Status</th><th>Packets</th><th>Traffic</th><th>Flows</th><th>p95 latency</th><th>Start</th><th>End</th><th>Ranked observations</th><th>Error</th></tr></thead><tbody>${fileRows || '<tr><td colspan="10">No files in this capture set.</td></tr>'}</tbody></table></div>${model.omittedFiles ? `<p class="omitted">${number(model.omittedFiles)} additional files omitted from the detail table.</p>` : ""}</section>
 <section class="section"><h2>Coverage check</h2><div class="table-wrap"><table><thead><tr><th>Check</th><th>State</th><th>Evidence</th><th>Limitation</th></tr></thead><tbody>${checkRows}</tbody></table></div></section>
-<section class="section methodology"><h2>Methodology and limitations</h2><p>Capture Set aggregates bounded per-file summaries. Cross-file timing, coverage gaps, and outliers are descriptive and depend on comparable timestamps; they do not establish packet loss, a dropping device, or root cause.</p><ul class="caveats">${model.caveats.map(caveat => `<li>${escape(caveat)}</li>`).join("")}</ul></section></main></body></html>`;
+<section class="section methodology"><h2>Methodology and limitations</h2>${sharedCoverage}<p>Capture Set aggregates bounded per-file summaries. Cross-file timing, coverage gaps, and outliers are descriptive and depend on comparable timestamps; they do not establish packet loss, a dropping device, or root cause.</p>${sharedInterpretation}<ul class="caveats">${model.caveats.map(caveat => `<li>${escape(caveat)}</li>`).join("")}</ul></section></main></body></html>`;
 }
 
 function openCaptureSetReport(input) {

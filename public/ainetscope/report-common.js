@@ -38,6 +38,32 @@ function normalizeReportCheck(check = {}) {
   };
 }
 
+function renderReportStatusBadge(check, className = "report-status") {
+  const normalized = normalizeReportCheck(check);
+  const safeClass = /^[a-z][a-z0-9-]*$/i.test(className) ? className : "report-status";
+  return `<span class="${safeClass} ${safeClass}--${normalized.state}">${escapeReportHtml(normalized.statusLabel)}</span>`;
+}
+
+function twoSidedReportCheckState(category, metrics = {}, reduced = false, severity = "info") {
+  if (reduced && ["network.loss-diagnostics", "network.flow-control"].includes(category)) return "not-assessed";
+  if (category === "network.path-performance") return metrics.matched > 0 ? "observed" : "not-assessed";
+  if (category === "network.loss-diagnostics") {
+    const loss = metrics.loss;
+    if (!loss || loss.onlyA === null || loss.onlyB === null || metrics.ambiguous === null) return "not-assessed";
+    return loss.onlyA || loss.onlyB || metrics.ambiguous ? "review" : "clear";
+  }
+  if (category === "network.middlebox") {
+    if (reduced || !(metrics.middlebox?.matchedCompleteHandshakes > 0)) return "not-assessed";
+    return metrics.middlebox.differencesTotal > 0 ? "review" : "clear";
+  }
+  if (category === "network.flow-control") {
+    const flows = [metrics.flowA, metrics.flowB].filter(Boolean);
+    if (!flows.some(flow => flow.windowSamples > 0 || flow.flight?.count > 0)) return "not-assessed";
+    return flows.some(flow => flow.zeroWindows > 0) ? "review" : "clear";
+  }
+  return severity === "warning" ? "review" : "observed";
+}
+
 function normalizeCaptureSetReportOptions(options = {}) {
   const normalized = {};
   for (const key of Object.keys(CAPTURE_SET_REPORT_MAXIMA)) {
@@ -52,6 +78,15 @@ function normalizeCaptureSetReportOptions(options = {}) {
   }
   normalized.orientation = options.orientation === "portrait" ? "portrait" : "landscape";
   return normalized;
+}
+
+function sharedReportCoverageHtml(scopeDescription) {
+  const escape = escapeReportHtml;
+  return `<article class="method-item" style="padding:10px 0;border-bottom:1px solid var(--line);break-inside:avoid"><h3 style="margin:0 0 4px;color:var(--green);font-size:13px">Scope and coverage</h3><p style="margin:4px 0;color:var(--muted);font-size:10px">${escape(scopeDescription)} Capture boundaries, filters, packet loss, and asymmetric visibility may omit traffic; absence in this report does not establish that an event did not occur.</p></article>`;
+}
+
+function sharedReportInterpretationHtml() {
+  return `<p class="method-callout" style="margin:16px 0;padding:10px;border-left:3px solid var(--gold);background:#f5f2e9;font-size:10px"><strong>Interpretation:</strong> “Not observed” means the signal was absent from decoded evidence in this scope. “No issue detected” means a supported check ran and found no matching signal. “Not assessed” means evidence or decoding was insufficient. None of these states proves the network or service is healthy; verify important findings against frames, endpoint logs, and appropriately placed captures.</p>`;
 }
 
 function createReportModel(model = {}) {
@@ -72,6 +107,7 @@ function createReportModel(model = {}) {
 }
 
 const dataSnareReportCommonApi = { REPORT_MODEL_SCHEMA, REPORT_STATES, CAPTURE_SET_REPORT_DEFAULTS,
-  CAPTURE_SET_REPORT_MAXIMA, escapeReportHtml, normalizeReportCheck, normalizeCaptureSetReportOptions, createReportModel };
+  CAPTURE_SET_REPORT_MAXIMA, escapeReportHtml, normalizeReportCheck, renderReportStatusBadge, normalizeCaptureSetReportOptions,
+  twoSidedReportCheckState, sharedReportCoverageHtml, sharedReportInterpretationHtml, createReportModel };
 if (typeof module !== "undefined" && module.exports) module.exports = dataSnareReportCommonApi;
 if (typeof globalThis !== "undefined") globalThis.DataSnareReportCommon = dataSnareReportCommonApi;

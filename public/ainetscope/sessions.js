@@ -81,8 +81,9 @@ function exportWorkspaceSession() {
       data = { name: state.fileName, captureId: state.captureId, captureSource: state.captureSource?.name === state.fileName ? state.captureSource : sessionContract.source(null, state.fileName),
         packets: sessionContract.packets(state.packets), ...sessionPacketNotes(),
         view: { workbench: !$('#workbench').hidden, selected: workbenchState.selectedNumber,
-          listTop: $('#workbenchListPane').scrollTop, listLeft: $('#workbenchListPane').scrollLeft, search: $('#searchInput').value, protocol: $('#protocolFilter').value,
-          workbenchSearch: $('#workbenchSearch').value, workbenchProtocol: $('#workbenchProtocolFilter').value,
+          listTop: $('#workbenchListPane').scrollTop, listLeft: $('#workbenchListPane').scrollLeft, search: corePacketFilter.expression, protocol: $('#protocolFilter').value,
+          workbenchSearch: workbenchPacketFilter.expression, workbenchProtocol: $('#workbenchProtocolFilter').value,
+          searchMode: corePacketFilter.mode, workbenchSearchMode: workbenchPacketFilter.mode,
           fieldFilters: workbenchState.fieldFilters, columns: workbenchState.columns, activeFlowKey: state.activeFlowKey,
           listHeight: workbenchLayout.listHeight, detailRatio: workbenchLayout.detailRatio,
           streamWidth: $('#workbenchGrid').style.getPropertyValue('--stream-width') } };
@@ -117,6 +118,8 @@ function restoreStandardData(data) {
   workbenchState.columns = Array.isArray(data.view?.columns) ? data.view.columns.filter(item => item && typeof item.key === 'string' && typeof item.label === 'string') : [];
   $('#searchInput').value = data.view?.search || '';
   $('#workbenchSearch').value = data.view?.workbenchSearch || '';
+  corePacketFilter.restore(data.view?.searchMode);
+  workbenchPacketFilter.restore(data.view?.workbenchSearchMode);
   workbenchState.sessionProtocol = typeof data.view?.workbenchProtocol === 'string' ? data.view.workbenchProtocol : 'all';
   workbenchState.selectedNumber = Number.isSafeInteger(data.view?.selected) ? data.view.selected : null;
   if (Number.isFinite(data.view?.listHeight)) {
