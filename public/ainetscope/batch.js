@@ -226,9 +226,20 @@ function openSetReport() {
   if (!batchState.results.length) { showToast("Analyze a capture set before creating its report."); return; }
   batchState.name = currentCaptureSetName();
   const summary = captureSetSummary();
-  const opened = window.DataSnareCaptureSetReport?.openCaptureSetReport({ results: batchState.results,
+  const reportResults = batchState.results.slice();
+  if (batchState.cancelled) {
+    const completedIndexes = new Set(reportResults.map(result => result.index));
+    batchState.items.forEach((item, index) => {
+      if (completedIndexes.has(index)) return;
+      reportResults.push({ index, name: item.name, path: item.path || item.name, status: "Cancelled",
+        error: "Not processed because set analysis was stopped", start: 0, end: 0,
+        summary: { packets: 0, bytes: 0, flows: 0, streams: 0 }, highFindings: 0, mediumFindings: 0 });
+    });
+  }
+  const opened = window.DataSnareCaptureSetReport?.openCaptureSetReport({ results: reportResults,
     totals: captureSetTotals(), findings: buildSetFindings(batchState.results), topology: combinedTopology(), profile: getActiveAnalysisProfile(),
     reportOptions: settings.captureSetReportOptions,
+    inventorySearch: $("#setSearchInput").value,
     narrative: { problemStatement: summary.problemStatement, text: reportSummaryText(summary.narrative) }, name: batchState.name });
   if (!opened) showToast("Pop-up blocked. Allow pop-ups to open the Capture Set report.");
 }

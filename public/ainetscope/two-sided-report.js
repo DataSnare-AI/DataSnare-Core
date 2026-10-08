@@ -22,7 +22,7 @@ function buildTwoSidedReportModel(snapshot = {}) {
   };
 }
 
-function renderTwoSidedReportHtml(model) {
+function renderTwoSidedReportHtmlBase(model) {
   const escape = DataSnareReportCommon.escapeReportHtml;
   const number = value => Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 3 }) : "Unavailable";
   const value = (numberValue, unit = "") => Number.isFinite(numberValue) ? `${number(numberValue)}${unit ? ` ${unit}` : ""}` : "Unavailable";
@@ -40,13 +40,32 @@ function renderTwoSidedReportHtml(model) {
     ["Aligned overlap", Number.isFinite(loss.overlapMs) ? `${number(loss.overlapMs)} ms` : null],
     ["Confirmed drop location", "Unavailable from these two captures alone"]
   ].map(([label, valueText]) => `<tr><th>${escape(label)}</th><td>${escape(valueText === null || valueText === undefined ? "Unavailable" : String(valueText))}</td></tr>`).join("");
-  const handshakeRows = (rows, side) => rows.map(row => `<tr><td>${side}</td><td>${number(row.frame)}</td><td>${value(row.options?.mss)}</td><td>${row.options?.complete ? number(row.options.windowScale) : "Unavailable"}</td><td>${row.options?.complete ? row.options.sackPermitted ? "Yes" : "No" : "Unavailable"}</td><td>${row.options?.complete ? row.options.timestamps ? "Yes" : "No" : "Unavailable"}</td></tr>`).join("");
-  const differences = (model.metrics.middlebox?.optionDifferences || []).map(item => `<tr><td>${escape(item.evidence?.sourceA || model.sources[0]?.name || "System A")}</td><td>${number(item.evidence?.frameA)}</td><td>${escape(item.evidence?.sourceB || model.sources[1]?.name || "System B")}</td><td>${number(item.evidence?.frameB)}</td><td>${escape((item.changes || []).join(", "))}</td></tr>`).join("");
+  const frameReferences = new Map();
+  const addFrameReference = (side, frame, sourceName) => {
+    if ((side !== "A" && side !== "B") || !Number.isSafeInteger(frame) || frame < 1) return;
+    frameReferences.set(`${side}:${frame}`, { side, frame, source: sourceName || model.sources[side === "A" ? 0 : 1]?.name || `System ${side}` });
+  };
+  model.findings.forEach(finding => {
+    addFrameReference("A", finding.evidence?.frameA, finding.evidence?.sourceA);
+    addFrameReference("B", finding.evidence?.frameB, finding.evidence?.sourceB);
+  });
+  model.handshakesA.forEach(handshake => addFrameReference("A", handshake.frame));
+  model.handshakesB.forEach(handshake => addFrameReference("B", handshake.frame));
+  (model.metrics.middlebox?.optionDifferences || []).forEach(item => {
+    addFrameReference("A", item.evidence?.frameA, item.evidence?.sourceA);
+    addFrameReference("B", item.evidence?.frameB, item.evidence?.sourceB);
+  });
+  const frameReferenceRows = [...frameReferences.values()].sort((left, right) => left.side.localeCompare(right.side) || left.frame - right.frame)
+    .map(item => `<tr id="two-sided-frame-${item.side}-${item.frame}"><td>System ${item.side}</td><td>${escape(item.source)}</td><td>${number(item.frame)}</td></tr>`).join("");
+  const frameLink = (side, frame) => Number.isSafeInteger(frame) && frame > 0
+    ? `<a href="#two-sided-frame-${side}-${frame}" aria-label="Go to System ${side} source frame ${frame}">Frame ${number(frame)}</a>` : `Frame ${number(frame)}`;
+  const handshakeRows = (rows, side) => rows.map(row => `<tr><td>${side}</td><td>${frameLink(side, row.frame)}</td><td>${value(row.options?.mss)}</td><td>${row.options?.complete ? number(row.options.windowScale) : "Unavailable"}</td><td>${row.options?.complete ? row.options.sackPermitted ? "Yes" : "No" : "Unavailable"}</td><td>${row.options?.complete ? row.options.timestamps ? "Yes" : "No" : "Unavailable"}</td></tr>`).join("");
+  const differences = (model.metrics.middlebox?.optionDifferences || []).map(item => `<tr><td>${escape(item.evidence?.sourceA || model.sources[0]?.name || "System A")}</td><td>${frameLink("A", item.evidence?.frameA)}</td><td>${escape(item.evidence?.sourceB || model.sources[1]?.name || "System B")}</td><td>${frameLink("B", item.evidence?.frameB)}</td><td>${escape((item.changes || []).join(", "))}</td></tr>`).join("");
   const flowRows = ["A", "B"].map(side => {
     const flow = model.metrics[`flow${side}`] || {};
     return `<tr><th>System ${side}</th><td>${number(flow.zeroWindows)}</td><td>${value(flow.flight?.max, "bytes")}</td><td>${value(flow.flight?.p95, "bytes")}</td><td>${number(flow.flight?.count)}</td><td>${value(flow.advertisedWindow?.max, "bytes")}</td><td>${escape(flow.windowBasis || "Unavailable")}</td></tr>`;
   }).join("");
-  const findings = model.findings.map(finding => `<article class="finding"><div>${DataSnareReportCommon.renderReportStatusBadge(model.checks.find(check => check.name === finding.title) || { state: finding.severity === "warning" ? "review" : "observed" }, "status")}</div><div><h3>${escape(finding.title)}</h3><p>${escape(finding.detail)}</p><small>${escape(finding.evidence?.sourceA || "System A")} · Frame A ${number(finding.evidence?.frameA)} · ${escape(finding.evidence?.sourceB || "System B")} · Frame B ${number(finding.evidence?.frameB)}</small></div></article>`).join("");
+  const findings = model.findings.map(finding => `<article class="finding"><div>${DataSnareReportCommon.renderReportStatusBadge(model.checks.find(check => check.name === finding.title) || { state: finding.severity === "warning" ? "review" : "observed" }, "status")}</div><div><h3>${escape(finding.title)}</h3><p>${escape(finding.detail)}</p><small>${escape(finding.evidence?.sourceA || "System A")} · ${frameLink("A", finding.evidence?.frameA)} · ${escape(finding.evidence?.sourceB || "System B")} · ${frameLink("B", finding.evidence?.frameB)}</small></div></article>`).join("");
   const scope = model.scope || {};
   const sources = (model.sources || []).map(source => `<li><strong>${escape(source.side || "Capture")}</strong> ${escape(source.name || "Unknown source")}${Number.isFinite(source.size) ? ` · ${number(source.size)} bytes` : ""}</li>`).join("");
   const caveats = model.caveats.map(caveat => `<li>${escape(caveat)}</li>`).join("");
@@ -57,9 +76,14 @@ function renderTwoSidedReportHtml(model) {
 <section class="section"><h2>Path performance ${badge('network.path-performance')}</h2><div class="table-wrap"><table><thead><tr><th>Direction</th><th>Samples</th><th>Mean ms</th><th>p50 ms</th><th>p95 ms</th><th>p99 ms</th><th>Jitter ms</th><th>Negative</th></tr></thead><tbody>${directionRows}</tbody></table></div><p class="muted">Corrected capture intervals; not independently validated wire latency. Jitter is population standard deviation; negative values are retained.</p></section>
 <section class="section"><h2>Visibility / loss diagnostics ${badge('network.loss-diagnostics')}</h2><div class="table-wrap"><table><thead><tr><th>Observation</th><th>Value</th></tr></thead><tbody>${lossRows}</tbody></table></div><p class="muted">Sender-only and unmatched observations indicate possible capture/path visibility gaps. They do not establish packet loss or identify a dropping device.</p></section>
 <section class="section"><h2>Handshake / middlebox comparison ${badge('network.middlebox')}</h2><p>${number(model.metrics.middlebox?.differencesTotal)} differing uniquely matched complete SYN option sets. At most ${TWO_SIDED_REPORT_HANDSHAKE_LIMIT} handshake rows per source are printed.</p><div class="table-wrap"><table><thead><tr><th>Side</th><th>Frame</th><th>MSS</th><th>Window scale</th><th>SACK</th><th>TCP timestamps</th></tr></thead><tbody>${handshakeRows(model.handshakesA, 'A')}${handshakeRows(model.handshakesB, 'B')}</tbody></table></div><div class="table-wrap"><table><thead><tr><th>Capture A</th><th>Frame A</th><th>Capture B</th><th>Frame B</th><th>Changed options</th></tr></thead><tbody>${differences || '<tr><td colspan="5">No complete matched option differences available.</td></tr>'}</tbody></table></div>${model.omittedHandshakesA || model.omittedHandshakesB || model.omittedOptionDifferences ? `<p class="muted">Omitted details: ${number(model.omittedHandshakesA)} A handshakes, ${number(model.omittedHandshakesB)} B handshakes, ${number(model.omittedOptionDifferences)} option differences.</p>` : ''}</section>
+<section class="section"><h2>Source frame references</h2><p class="muted">Internal links identify cited frame numbers in the source captures; open the original capture to inspect packet contents.</p><div class="table-wrap"><table><thead><tr><th>Side</th><th>Source capture</th><th>Frame</th></tr></thead><tbody>${frameReferenceRows || '<tr><td colspan="3">No source frames were retained in this report.</td></tr>'}</tbody></table></div></section>
 <section class="section"><h2>Per-side flow control ${badge('network.flow-control')}</h2><div class="table-wrap"><table><thead><tr><th>Source</th><th>Zero windows</th><th>Peak flight</th><th>p95 flight</th><th>Samples</th><th>Max advertised window</th><th>Window basis</th></tr></thead><tbody>${flowRows}</tbody></table></div><p class="muted">Flight estimates need captured handshake and ACK context. Gaps/reordering can inflate estimates; advertised windows are not proof of receiver application state.</p></section>
 <section class="section"><h2>Supporting findings</h2>${findings || '<p class="muted">No supporting findings were generated for this scope.</p>'}${model.omittedFindings ? `<p class="muted">${number(model.omittedFindings)} additional findings omitted.</p>` : ''}</section>
 <section class="section methodology"><h2>Methodology and limitations</h2>${DataSnareReportCommon.sharedReportCoverageHtml('Two-Sided metrics use the selected observations and both capture timelines after the configured B offset.')}<div class="methodology-callout">${DataSnareReportCommon.sharedReportInterpretationHtml()}</div><ul>${model.caveats.map(caveat => `<li>${escape(caveat)}</li>`).join('')}</ul><p>Matching uses observed metadata and unique TCP signatures; it does not verify payload identity. Offset correction is applied to B timestamps only. In matched-only sessions, unmatched, ambiguous, handshake, and surrounding flow-control evidence may have been discarded.</p></section></main></body></html>`;
+}
+
+function renderTwoSidedReportHtml(model) {
+  return DataSnareReportCommon.addSharedPrintFrame(renderTwoSidedReportHtmlBase(model), "landscape");
 }
 
 function openTwoSidedReport(snapshot) {

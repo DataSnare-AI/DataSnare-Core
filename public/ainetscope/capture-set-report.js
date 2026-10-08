@@ -5,9 +5,10 @@ const SET_REPORT_HOST_LIMIT = DataSnareReportCommon.CAPTURE_SET_REPORT_DEFAULTS.
 const SET_REPORT_EDGE_LIMIT = DataSnareReportCommon.CAPTURE_SET_REPORT_DEFAULTS.edgeLimit;
 
 function buildCaptureSetReportModel({ results = [], totals = {}, findings = [], topology = {}, profile = {}, narrative = {},
-  reportOptions = {}, name = "Capture Set", generatedAt } = {}) {
+  reportOptions = {}, inventorySearch = "", name = "Capture Set", generatedAt } = {}) {
   const options = DataSnareReportCommon.normalizeCaptureSetReportOptions(reportOptions);
-  const files = results.map(result => ({
+  const files = results.map((result, index) => ({
+    rowId: `capture-file-${index}`,
     name: String(result.name || "Unnamed capture"),
     path: String(result.path || result.name || "Unnamed capture"),
     status: String(result.status || "Not analyzed"),
@@ -19,13 +20,14 @@ function buildCaptureSetReportModel({ results = [], totals = {}, findings = [], 
     mediumFindings: Number(result.mediumFindings) || 0,
     start: Number.isFinite(result.start) && result.start ? new Date(result.start * 1000).toISOString() : null,
     end: Number.isFinite(result.end) && result.end ? new Date(result.end * 1000).toISOString() : null,
-    error: result.status === "Failed" ? String(result.error || "Analysis failed") : ""
+    error: ["Failed", "Cancelled"].includes(result.status) ? String(result.error || (result.status === "Cancelled" ? "Not processed because analysis was stopped" : "Analysis failed")) : ""
   }));
   const boundedFindings = findings.slice(0, options.findingLimit).map(finding => ({
     severity: String(finding.severity || "info"),
     title: String(finding.title || "Observation"),
     detail: String(finding.detail || ""),
     sourcePath: finding.index === undefined ? "" : String(results.find(result => result.index === finding.index)?.path || ""),
+    sourceRowId: finding.index === undefined ? "" : files[results.findIndex(result => result.index === finding.index)]?.rowId || "",
     frameNumber: Number.isSafeInteger(Number(finding.packet)) && Number(finding.packet) > 0 ? Number(finding.packet) : null
   }));
   const hosts = Array.isArray(topology.hosts) ? topology.hosts : [];
@@ -33,6 +35,10 @@ function buildCaptureSetReportModel({ results = [], totals = {}, findings = [], 
   const analyzedFiles = files.filter(file => file.status === "Analyzed").length;
   const failedFiles = files.filter(file => file.status === "Failed").length;
   const incompleteFiles = files.length - analyzedFiles - failedFiles;
+  const queuedFiles = files.filter(file => file.status === "Queued").length;
+  const runningFiles = files.filter(file => file.status === "Running").length;
+  const cancelledFiles = files.filter(file => file.status === "Cancelled").length;
+  const otherIncompleteFiles = Math.max(0, incompleteFiles - queuedFiles - runningFiles - cancelledFiles);
   const protocols = Object.entries(totals.protocols || {}).sort((left, right) => right[1] - left[1]);
   const sortedHosts = hosts.slice().sort((left, right) => right.bytes - left.bytes);
   const sortedEdges = edges.slice().sort((left, right) => right.bytes - left.bytes);
@@ -48,15 +54,17 @@ function buildCaptureSetReportModel({ results = [], totals = {}, findings = [], 
     caveats.push("All topology hosts and/or connections are included as requested. Very large topologies can make the report slow to generate, consume substantial memory, or produce very large PDF files.");
   }
   if (failedFiles) caveats.push(`${failedFiles} file(s) failed analysis; totals and comparisons cover analyzed files only.`);
-  if (results.some(result => ["Queued", "Running"].includes(result.status))) caveats.push("Some files are queued or still processing; this report reflects their current statuses and may be incomplete.");
-  if (results.some(result => result.status === "Cancelled")) caveats.push("Some files were cancelled before analysis completed.");
+  if (queuedFiles || runningFiles) caveats.push(`${queuedFiles} file(s) queued and ${runningFiles} file(s) still running; report totals cover analyzed files only.`);
+  if (cancelledFiles) caveats.push(`${cancelledFiles} file(s) were cancelled or not processed after analysis was stopped.`);
+  if (otherIncompleteFiles) caveats.push(`${otherIncompleteFiles} file(s) have an incomplete or unrecognized status; they are not included in analyzed totals.`);
+  if (String(inventorySearch).trim()) caveats.push(`The interactive inventory search “${String(inventorySearch).slice(0, 2048)}” is display-only; this report includes the full capture set and does not exclude files matching or hidden by that search.`);
   if (findings.length > boundedFindings.length) caveats.push(`${findings.length - boundedFindings.length} additional finding(s) omitted from the bounded detail list.`);
   return DataSnareReportCommon.createReportModel({
     mode: "capture-set",
     generatedAt,
     sources: files.map(({ name: fileName, path, status }) => ({ name: fileName, path, status })),
     scope: { summary: `${analyzedFiles} analyzed of ${results.length} files`, fileCount: results.length,
-      analyzedFiles, failedFiles, incompleteFiles, packets: totals.packets || 0,
+      analyzedFiles, failedFiles, incompleteFiles, queuedFiles, runningFiles, cancelledFiles, otherIncompleteFiles, packets: totals.packets || 0,
       bytes: totals.bytes || 0, windowSeconds: totals.window || 0 },
     metrics: [
       { label: "Files analyzed", value: totals.files || 0 },
@@ -69,11 +77,12 @@ function buildCaptureSetReportModel({ results = [], totals = {}, findings = [], 
     findings: boundedFindings.map(finding => ({ ...finding, state: finding.severity === "high" ? "issue" : finding.severity === "medium" ? "review" : "observed" })),
     checks: [{ group: "Capture Set", name: "File analysis coverage", severity: failedFiles ? "high" : "low",
       state: failedFiles || incompleteFiles ? "review" : "clear",
-      evidence: `${analyzedFiles} analyzed, ${failedFiles} failed, ${incompleteFiles} queued or otherwise incomplete of ${results.length} total file(s).`,
+      evidence: `${analyzedFiles} analyzed, ${failedFiles} failed, ${queuedFiles} queued, ${runningFiles} running, ${cancelledFiles} cancelled, and ${otherIncompleteFiles} otherwise incomplete of ${results.length} total file(s).`,
       limitation: "Per-file analysis status reflects this run; an analyzed file can still have filtered or incomplete packet visibility." }],
     caveats,
     profile: { name: String(profile.name || "Default"), thresholds: profile.thresholds || {}, rules: profile.rules || {} },
     name: String(name || "Capture Set"),
+    inventorySearch: String(inventorySearch).slice(0, 2048),
     problemStatement: String(narrative.problemStatement || ""),
     narrative: String(narrative.text || ""),
     fileRows: files.slice(0, options.fileLimit),
@@ -91,7 +100,7 @@ function buildCaptureSetReportModel({ results = [], totals = {}, findings = [], 
   });
 }
 
-function renderCaptureSetReportHtml(model) {
+function renderCaptureSetReportHtmlBase(model) {
   const escape = DataSnareReportCommon.escapeReportHtml;
   const sharedCoverage = DataSnareReportCommon.sharedReportCoverageHtml("Capture Set totals use analyzed files; per-file details retain failed and incomplete statuses.");
   const sharedInterpretation = DataSnareReportCommon.sharedReportInterpretationHtml();
@@ -103,8 +112,17 @@ function renderCaptureSetReportHtml(model) {
     return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
   };
   const metricRows = model.metrics.map(metric => `<div><dt>${escape(metric.label)}</dt><dd>${escape(metric.label.includes("bytes") ? byteSize(metric.value) : number(metric.value))}</dd></div>`).join("");
-  const fileRows = model.fileRows.slice(0, model.reportOptions.fileLimit).map(file => `<tr><td>${escape(file.path)}</td><td>${escape(file.status)}</td><td>${number(file.packets)}</td><td>${byteSize(file.bytes)}</td><td>${number(file.flows)}</td><td>${file.latencyP95Ms === null ? "Unavailable" : `${number(file.latencyP95Ms)} ms`}</td><td>${escape(file.start || "Unavailable")}</td><td>${escape(file.end || "Unavailable")}</td><td>${number(file.highFindings + file.mediumFindings)}</td><td>${escape(file.error)}</td></tr>`).join("");
-  const findingRows = model.findings.map(finding => `<article class="finding finding--${escape(finding.state)}"><b>${escape(finding.state)}</b><div><h3>${escape(finding.title)}</h3><p>${escape(finding.detail)}</p>${finding.sourcePath ? `<small>${escape(finding.sourcePath)}${finding.frameNumber ? ` · Frame ${number(finding.frameNumber)}` : ""}</small>` : finding.frameNumber ? `<small>Frame ${number(finding.frameNumber)}</small>` : ""}</div></article>`).join("");
+  const visibleFileRows = model.fileRows.slice(0, model.reportOptions.fileLimit);
+  const visibleFileIds = new Set(visibleFileRows.map(file => file.rowId));
+  const fileRows = visibleFileRows.map(file => `<tr id="${escape(file.rowId)}"><td>${escape(file.path)}</td><td>${escape(file.status)}</td><td>${number(file.packets)}</td><td>${byteSize(file.bytes)}</td><td>${number(file.flows)}</td><td>${file.latencyP95Ms === null ? "Unavailable" : `${number(file.latencyP95Ms)} ms`}</td><td>${escape(file.start || "Unavailable")}</td><td>${escape(file.end || "Unavailable")}</td><td>${number(file.highFindings + file.mediumFindings)}</td><td>${escape(file.error)}</td></tr>`).join("");
+  const findingRows = model.findings.map(finding => {
+    const sourceHref = finding.sourceRowId ? `#${visibleFileIds.has(finding.sourceRowId) ? finding.sourceRowId : "capture-file-inventory"}` : "";
+    const evidenceLabel = `${finding.sourcePath ? `${finding.sourcePath}${finding.frameNumber ? ` · Frame ${number(finding.frameNumber)}` : ""}` : finding.frameNumber ? `Frame ${number(finding.frameNumber)}` : ""}`;
+    const sourceReference = evidenceLabel ? sourceHref
+      ? `<small><a href="${escape(sourceHref)}" aria-label="Source capture ${escape(finding.sourcePath || "")} ${finding.frameNumber ? `frame ${number(finding.frameNumber)}` : "file inventory"}">${escape(evidenceLabel)}</a></small>`
+      : `<small>${escape(evidenceLabel)}</small>` : "";
+    return `<article class="finding finding--${escape(finding.state)}"><b>${escape(finding.state)}</b><div><h3>${escape(finding.title)}</h3><p>${escape(finding.detail)}</p>${sourceReference}</div></article>`;
+  }).join("");
   const checkRows = model.checks.map(check => `<tr><th>${escape(check.name)}</th><td>${escape(check.statusLabel)}</td><td>${escape(check.evidence)}</td><td>${escape(check.limitation)}</td></tr>`).join("");
   const protocolRows = model.protocols.map(item => `<tr><td>${escape(item.protocol)}</td><td>${byteSize(item.bytes)}</td><td>${number(item.percent)}%</td></tr>`).join("");
   const hostRows = model.topology.hosts.map(host => `<tr><td>${escape(host.host)}</td><td>${byteSize(host.bytes)}</td></tr>`).join("");
@@ -117,9 +135,13 @@ function renderCaptureSetReportHtml(model) {
 <section class="section"><h2>Cross-file observations</h2><div class="findings">${findingRows || '<p class="muted">No observations in this set.</p>'}</div>${model.omittedFindings ? `<p class="omitted">${number(model.omittedFindings)} additional observations omitted.</p>` : ""}</section>
 <section class="section"><h2>Protocol distribution</h2><div class="table-wrap"><table><thead><tr><th>Protocol</th><th>Traffic</th><th>Share</th></tr></thead><tbody>${protocolRows || '<tr><td colspan="3">No protocol totals available.</td></tr>'}</tbody></table></div>${model.omittedProtocols ? `<p class="omitted">${number(model.omittedProtocols)} additional protocols omitted.</p>` : ""}</section>
 <section class="section"><h2>Topology overview</h2><p class="muted">${number(model.topology.totalHosts)} observed hosts · ${number(model.topology.totalEdges)} observed connections. Showing ${hostLimitLabel} hosts and ${edgeLimitLabel} connections.</p><div class="table-wrap"><table><thead><tr><th>Host</th><th>Traffic</th></tr></thead><tbody>${hostRows || '<tr><td colspan="2">No host inventory available.</td></tr>'}</tbody></table></div>${model.topology.omittedHosts ? `<p class="omitted">${number(model.topology.omittedHosts)} hosts omitted from details.</p>` : ""}<div class="table-wrap"><table><thead><tr><th>Connection</th><th>Traffic</th><th>Packets</th><th>Observed in captures</th></tr></thead><tbody>${edgeRows || '<tr><td colspan="4">No connection inventory available.</td></tr>'}</tbody></table></div>${model.topology.omittedEdges ? `<p class="omitted">${number(model.topology.omittedEdges)} connections omitted from details.</p>` : ""}</section>
-<section class="section"><h2>File inventory</h2><div class="table-wrap"><table><thead><tr><th>Capture</th><th>Status</th><th>Packets</th><th>Traffic</th><th>Flows</th><th>p95 latency</th><th>Start</th><th>End</th><th>Ranked observations</th><th>Error</th></tr></thead><tbody>${fileRows || '<tr><td colspan="10">No files in this capture set.</td></tr>'}</tbody></table></div>${model.omittedFiles ? `<p class="omitted">${number(model.omittedFiles)} additional files omitted from the detail table.</p>` : ""}</section>
+<section class="section" id="capture-file-inventory"><h2>File inventory</h2><div class="table-wrap"><table><thead><tr><th>Capture</th><th>Status</th><th>Packets</th><th>Traffic</th><th>Flows</th><th>p95 latency</th><th>Start</th><th>End</th><th>Ranked observations</th><th>Error</th></tr></thead><tbody>${fileRows || '<tr><td colspan="10">No files in this capture set.</td></tr>'}</tbody></table></div>${model.omittedFiles ? `<p class="omitted">${number(model.omittedFiles)} additional files omitted from the detail table.</p>` : ""}</section>
 <section class="section"><h2>Coverage check</h2><div class="table-wrap"><table><thead><tr><th>Check</th><th>State</th><th>Evidence</th><th>Limitation</th></tr></thead><tbody>${checkRows}</tbody></table></div></section>
 <section class="section methodology"><h2>Methodology and limitations</h2>${sharedCoverage}<p>Capture Set aggregates bounded per-file summaries. Cross-file timing, coverage gaps, and outliers are descriptive and depend on comparable timestamps; they do not establish packet loss, a dropping device, or root cause.</p>${sharedInterpretation}<ul class="caveats">${model.caveats.map(caveat => `<li>${escape(caveat)}</li>`).join("")}</ul></section></main></body></html>`;
+}
+
+function renderCaptureSetReportHtml(model) {
+  return DataSnareReportCommon.addSharedPrintFrame(renderCaptureSetReportHtmlBase(model), model.reportOptions.orientation);
 }
 
 function openCaptureSetReport(input) {

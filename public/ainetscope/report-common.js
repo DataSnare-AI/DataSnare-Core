@@ -90,6 +90,14 @@ function sharedReportInterpretationHtml() {
   return `<p class="method-callout" style="margin:16px 0;padding:10px;border-left:3px solid var(--gold);background:#f5f2e9;font-size:10px"><strong>Interpretation:</strong> “Not observed” means the signal was absent from decoded evidence in this scope. “No issue detected” means a supported check ran and found no matching signal. “Not assessed” means evidence or decoding was insufficient. None of these states proves the network or service is healthy; verify important findings against frames, endpoint logs, and appropriately placed captures.</p>`;
 }
 
+function addSharedPrintFrame(html, orientation = "portrait") {
+  const pageOrientation = orientation === "landscape" ? "landscape" : "portrait";
+  const sharedStyles = `@page{size:A4 ${pageOrientation};margin:12mm}@media print{body{background:#fff!important}.toolbar{display:none!important}.report{max-width:none!important;margin:0!important;padding:0!important;box-shadow:none!important}}`;
+  const closing = "</style></head>";
+  if (!String(html).includes(closing)) throw new Error("Report HTML is missing its closing style/head boundary.");
+  return String(html).replace(closing, `</style><style>${sharedStyles}</style></head>`);
+}
+
 function createReportModel(model = {}) {
   const checks = (model.checks || model.triageChecks || []).map(normalizeReportCheck);
   return {
@@ -109,6 +117,6 @@ function createReportModel(model = {}) {
 
 const dataSnareReportCommonApi = { REPORT_MODEL_SCHEMA, REPORT_STATES, CAPTURE_SET_REPORT_DEFAULTS,
   CAPTURE_SET_REPORT_MAXIMA, escapeReportHtml, normalizeReportCheck, renderReportStatusBadge, normalizeCaptureSetReportOptions,
-  twoSidedReportCheckState, sharedReportCoverageHtml, sharedReportInterpretationHtml, createReportModel };
+  twoSidedReportCheckState, sharedReportCoverageHtml, sharedReportInterpretationHtml, addSharedPrintFrame, createReportModel };
 if (typeof module !== "undefined" && module.exports) module.exports = dataSnareReportCommonApi;
 if (typeof globalThis !== "undefined") globalThis.DataSnareReportCommon = dataSnareReportCommonApi;

@@ -50,6 +50,8 @@ try {
   const help = analyzer.getByRole('dialog', { name: 'Filter syntax help', exact: true });
   await help.waitFor({ state: 'visible' });
   assert.ok((await help.textContent()).includes('ip.addr'));
+  assert.match(await help.textContent(), /IPv4\/IPv6 CIDR network.*starts_with.*matches/s);
+  assert.doesNotMatch(await help.textContent(), /matches.*not implemented/s);
   await help.getByRole('button', { name: 'Display Filter: ip.addr == 10.242.88.7 and tds', exact: true }).click();
   assert.equal(await analyzer.getByLabel('Core filter mode', { exact: true }).inputValue(), 'display');
   assert.equal(await analyzer.locator('#searchInput').inputValue(), 'ip.addr == 10.242.88.7 and tds');
@@ -78,7 +80,7 @@ try {
   await coreSuggestions.getByRole('option', { name: 'ip.addr', exact: false }).click();
   assert.equal(await analyzer.locator('#searchInput').inputValue(), 'ip.addr ');
   await analyzer.locator('#searchInput').press('ArrowDown');
-  assert.equal(await coreSuggestions.getByRole('option').count(), 2, 'IP fields must offer only equality operators');
+  assert.deepEqual(await coreSuggestions.getByRole('option').allTextContents(), ['==Exact equality', '!=Not equal', 'inCIDR network membership']);
   await analyzer.locator('#searchInput').press('Enter');
   assert.equal(await analyzer.locator('#searchInput').inputValue(), 'ip.addr == ');
   assert.deepEqual(await analyzer.evaluate(() => state.filtered.map(packet => packet.number)), beforeCompletion);
@@ -143,6 +145,34 @@ try {
   assert.deepEqual(reportFilterScope.jsonFilter, { mode: 'display', expression: displayExpression, matched: displayFrames.length,
     total: await analyzer.evaluate(() => state.packets.length), protocol: 'all' });
   assert.equal(reportFilterScope.pdfIncludesFilter, true, 'PDF must disclose the applied expression and matched/total count');
+  const setReportLinks = await analyzer.evaluate(() => {
+    const model = DataSnareCaptureSetReport.buildCaptureSetReportModel({
+      results: [{ index: 0, name: 'source.pcap', path: 'source.pcap', status: 'Analyzed', summary: { packets: 1, bytes: 60 } }],
+      totals: { files: 1, packets: 1, bytes: 60 },
+      findings: [{ title: 'Reset signal', detail: 'Evidence', severity: 'high', index: 0, packet: 7 }],
+      inventorySearch: 'source.pcap'
+    });
+    const html = DataSnareCaptureSetReport.renderCaptureSetReportHtml(model);
+    return html.includes('href="#capture-file-0"') && html.includes('source.pcap · Frame 7')
+      && html.includes('interactive inventory search “source.pcap” is display-only');
+  });
+  assert.equal(setReportLinks, true, 'Capture Set findings should link to source inventory rows and disclose report search scope');
+  const hostPrefix = await analyzer.evaluate(() => state.packets.find(packet => packet.httpHost)?.httpHost.slice(0, 4));
+  assert.ok(hostPrefix, 'Demo capture should retain a decoded HTTP Host value');
+  const prefixExpression = `ip.src in 0.0.0.0/0 and http.host starts_with ${JSON.stringify(hostPrefix)}`;
+  await analyzer.locator('#searchInput').fill(prefixExpression);
+  await analyzer.locator('#searchInput').press('Enter');
+  const prefixFrames = await analyzer.evaluate(prefix => state.packets.filter(packet => packet.src.split('.').length === 4
+    && packet.httpHost?.toLowerCase().startsWith(prefix.toLowerCase())).map(packet => packet.number), hostPrefix);
+  assert.deepEqual(await analyzer.evaluate(() => state.filtered.map(packet => packet.number)), prefixFrames);
+  const regexExpression = `ip.src in 0.0.0.0/0 and http.host matches ${JSON.stringify('^example.*$')}`;
+  await analyzer.locator('#searchInput').fill(regexExpression);
+  await analyzer.locator('#searchInput').press('Enter');
+  const regexFrames = await analyzer.evaluate(() => state.packets.filter(packet => packet.src.split('.').length === 4
+    && /^example.*$/i.test(packet.httpHost || '')).map(packet => packet.number));
+  assert.deepEqual(await analyzer.evaluate(() => state.filtered.map(packet => packet.number)), regexFrames);
+  await analyzer.locator('#searchInput').fill(displayExpression);
+  await analyzer.locator('#searchInput').press('Enter');
   await analyzer.locator('#searchInput').fill('op.addr == 10.0.0.1');
   assert.equal(await analyzer.locator('#searchInput').getAttribute('aria-invalid'), 'true');
   assert.deepEqual(await analyzer.evaluate(() => state.filtered.map(packet => packet.number)), displayFrames);

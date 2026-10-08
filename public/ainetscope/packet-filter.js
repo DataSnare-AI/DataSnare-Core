@@ -4,6 +4,8 @@
   const historyKey = "datasnare-packet-filter-history-v1";
   const fields = new Map();
   const protocols = new Map();
+  const STRING_VALUE_LIMIT = 512;
+  const MATCH_PATTERN_LIMIT = 64;
   function canonicalIp(value) {
     const address = String(value);
     if (address.includes(":")) {
@@ -15,6 +17,48 @@
   }
   function registerField(name, definition) { fields.set(name.toLowerCase(), definition); }
   function registerProtocol(name, predicate) { protocols.set(name.toLowerCase(), predicate); }
+  function fieldOperators(definition) {
+    if (definition.type === "ip") return ["==", "!=", "in"];
+    if (definition.type === "string") return ["==", "!=", "starts_with", "matches"];
+    return ["==", "!=", "<", "<=", ">", ">="];
+  }
+  function ipInteger(value) {
+    const address = canonicalIp(value);
+    if (!address) return null;
+    if (!address.includes(":")) return { version: 4, bits: 32, value: address.split(".").reduce((result, part) => (result << 8n) | BigInt(part), 0n) };
+    const halves = address.split("::");
+    const left = halves[0] ? halves[0].split(":") : [];
+    const right = halves.length > 1 && halves[1] ? halves[1].split(":") : [];
+    const groups = halves.length > 1 ? [...left, ...Array(8 - left.length - right.length).fill("0"), ...right] : left;
+    if (groups.length !== 8) return null;
+    return { version: 6, bits: 128, value: groups.reduce((result, group) => (result << 16n) | BigInt(`0x${group || "0"}`), 0n) };
+  }
+  function parseCidr(value, version) {
+    const match = /^(.+)\/(\d{1,3})$/.exec(String(value));
+    if (!match) throw new Error(`Expected an IPv${version} CIDR network, such as ${version === 4 ? "10.0.0.0/8" : "2001:db8::/32"}.`);
+    const network = ipInteger(match[1]);
+    const prefix = Number(match[2]);
+    if (!network || network.version !== version || prefix > network.bits)
+      throw new Error(`Expected a valid IPv${version} CIDR prefix from 0 to ${version === 4 ? 32 : 128}.`);
+    const shift = BigInt(network.bits - prefix);
+    return { ...network, prefix, network: (network.value >> shift) << shift };
+  }
+  function compileSafePattern(pattern) {
+    if (!pattern || pattern.length > MATCH_PATTERN_LIMIT) throw new Error(`matches patterns must contain 1 to ${MATCH_PATTERN_LIMIT} characters.`);
+    if (/[()|{}]/.test(pattern) || /\\[1-9]/.test(pattern)) throw new Error("matches supports no groups, alternation, braces, or backreferences.");
+    let quantifiers = 0;
+    let inClass = false;
+    for (let index = 0; index < pattern.length; index++) {
+      const character = pattern[index];
+      if (character === "\\") { index++; continue; }
+      if (character === "[") inClass = true;
+      else if (character === "]") inClass = false;
+      else if (!inClass && "*+?".includes(character)) quantifiers++;
+    }
+    if (inClass || quantifiers > 1) throw new Error("matches allows one repetition operator and requires closed character classes.");
+    try { return new RegExp(pattern, "i"); }
+    catch (_) { throw new Error("Invalid matches pattern."); }
+  }
   function registerDecodedNumber(name, property, max, description, eligible) {
     registerField(name, { type: "number", max, description,
       get: packet => eligible(packet) && Number.isFinite(packet[property]) ? [packet[property]] : [] });
@@ -64,6 +108,15 @@
   registerDecodedNumber("tls.record_type", "tlsRecordType", 255, "Decoded TLS record type", packet => protocols.get("tls")(packet));
   registerDecodedNumber("tls.alert_level", "tlsAlertLevel", 255, "Decoded TLS alert level", packet => protocols.get("tls")(packet) && packet.tlsRecordType === 21);
   registerDecodedNumber("tls.alert_description", "tlsAlertDescription", 255, "Decoded TLS alert description", packet => protocols.get("tls")(packet) && packet.tlsRecordType === 21);
+  for (const [name, property, protocol, description] of [
+    ["http.host", "httpHost", "HTTP", "Decoded HTTP Host header"],
+    ["http.uri", "httpUri", "HTTP", "Decoded HTTP request target"],
+    ["dns.name", "dnsName", "DNS", "Decoded DNS question name"],
+    ["tds.type", "tdsType", "TDS", "Decoded TDS packet type"],
+    ["smb.command", "smbCommand", "SMB2", "Decoded SMB2 command"]
+  ]) registerField(name, { type: "string", description,
+    get: packet => packet.protocol === protocol && typeof packet[property] === "string" && packet[property]
+      ? [packet[property]] : [] });
 
   function displayAtom(tokens, position) {
     const name = String(tokens[position.cursor++]).toLowerCase();
@@ -73,16 +126,23 @@
       if (!protocol) throw new Error(`Unknown field or protocol: ${name}.`);
       return protocol;
     }
-    const operator = tokens[position.cursor++];
-    if (!["==", "!=", ">", ">=", "<", "<="].includes(operator)) throw new Error(`Expected comparison after ${name}.`);
+    const operator = String(tokens[position.cursor++] || "").toLowerCase();
+    if (!fieldOperators(field).includes(operator)) throw new Error(`Unsupported operator ${operator} for ${name}.`);
     const literal = tokens[position.cursor++];
     if (!literal) throw new Error(`Expected value after ${operator}.`);
-    const raw = literal.startsWith('"') ? JSON.parse(literal) : literal;
+    const quoted = literal.startsWith('"');
+    const raw = quoted ? JSON.parse(literal) : literal;
     let expected;
     if (field.type === "ip") {
-      expected = canonicalIp(raw);
-      if (!expected || (expected.includes(":") ? 6 : 4) !== field.version) throw new Error(`Expected IPv${field.version} address for ${name}.`);
-      if (!["==", "!="].includes(operator)) throw new Error("IP addresses support == and != only.");
+      if (operator === "in") expected = parseCidr(raw, field.version);
+      else {
+        expected = canonicalIp(raw);
+        if (!expected || (expected.includes(":") ? 6 : 4) !== field.version) throw new Error(`Expected IPv${field.version} address for ${name}.`);
+      }
+    } else if (field.type === "string") {
+      if (!quoted) throw new Error(`Expected a quoted string for ${name}.`);
+      if (raw.length > STRING_VALUE_LIMIT) throw new Error(`String filter values are limited to ${STRING_VALUE_LIMIT} characters.`);
+      expected = operator === "matches" ? compileSafePattern(raw) : raw.toLowerCase();
     } else {
       if (!/^\d+$/.test(String(raw))) throw new Error(`Expected a nonnegative integer for ${name}.`);
       expected = Number(raw);
@@ -90,9 +150,17 @@
     }
     return packet => {
       const values = field.get(packet).filter(value => value != null)
-        .map(value => field.type === "ip" ? canonicalIp(value) : value).filter(value => value != null);
+        .map(value => field.type === "ip" ? canonicalIp(value) : field.type === "string" ? String(value).toLowerCase() : value).filter(value => value != null);
       if (!values.length) return false;
       if (operator === "!=") return values.every(value => value !== expected);
+      if (operator === "in") return values.some(value => {
+        const address = ipInteger(value);
+        if (!address || address.version !== expected.version) return false;
+        const shift = BigInt(address.bits - expected.prefix);
+        return (address.value >> shift) === (expected.network >> shift);
+      });
+      if (operator === "starts_with") return values.some(value => value.startsWith(expected));
+      if (operator === "matches") return values.some(value => expected.test(value.slice(0, STRING_VALUE_LIMIT)));
       return values.some(value => operator === "==" ? value === expected : operator === ">" ? value > expected
         : operator === ">=" ? value >= expected : operator === "<" ? value < expected : value <= expected);
     };
@@ -174,12 +242,14 @@
   function syntaxReference() {
     return {
       fields: [...fields].map(([name, definition]) => ({ name, description: definition.description || `${definition.type} field`, type: definition.type,
-        operators: definition.type === "ip" ? ["==", "!="] : ["==", "!=", "<", "<=", ">", ">="] })),
+        operators: fieldOperators(definition) })),
       protocols: [...protocols.keys()],
       examples: [
         { mode: "text", expression: "Rbt || TDS" },
         { mode: "text", expression: "(Rbt || TDS) && !reset" },
         { mode: "display", expression: "ip.addr == 10.242.88.7 and tds" },
+        { mode: "display", expression: "ip.src in 10.242.0.0/16 and http.host starts_with \"api.\"" },
+        { mode: "display", expression: "dns.name matches \"^db[0-9]+\\\\.example\\\\.com$\"" },
         { mode: "display", expression: "tcp.port == 1433 && frame.len > 100" },
         { mode: "display", expression: "ipv6.src == 2001:db8::1 and tcp" }
       ]
@@ -203,6 +273,7 @@
     }
     let state = "operand";
     let definition = null;
+    let currentOperator = "";
     for (const match of tokens) {
       const token = match[0].toLowerCase();
       if (state === "operand") {
@@ -212,8 +283,8 @@
         else if (protocols.has(token)) state = "logical";
         else return [];
       } else if (state === "operator") {
-        const operators = definition.type === "ip" ? ["==", "!="] : ["==", "!=", "<", "<=", ">", ">="];
-        if (!operators.includes(token)) return [];
+        if (!fieldOperators(definition).includes(token)) return [];
+        currentOperator = token;
         state = "value";
       } else if (state === "value") {
         state = "logical";
@@ -224,7 +295,8 @@
     }
     const end = caret + (source.slice(caret).match(/^[^\s()!&|"=<>]+/)?.[0].length || 0);
     if (state === "value") {
-      if (!definition?.suggestValues || source.slice(0, caret).includes('"') || fragment.startsWith('"') || !Array.isArray(packets)) return [];
+      if (currentOperator === "in" || definition?.type === "string" || !definition?.suggestValues
+        || source.slice(0, caret).includes('"') || fragment.startsWith('"') || !Array.isArray(packets)) return [];
       const counts = new Map();
       const sampleCount = Math.min(packets.length, 5000);
       const sampleStep = sampleCount > 1 ? (packets.length - 1) / (sampleCount - 1) : 1;
@@ -247,8 +319,9 @@
         .concat([...protocols.keys()].map(value => ({ value, description: "Protocol present" })),
           [{ value: "not", description: "Negate a predicate" }]);
     } else if (state === "operator") {
-      options = (definition.type === "ip" ? ["==", "!="] : ["==", "!=", "<", "<=", ">", ">="])
-        .map(value => ({ value, description: value === "==" ? "Exact equality" : value === "!=" ? "Not equal" : "Numeric comparison" }));
+      options = fieldOperators(definition).map(value => ({ value, description: value === "==" ? "Exact equality"
+        : value === "!=" ? "Not equal" : value === "in" ? "CIDR network membership"
+          : value === "starts_with" ? "Case-insensitive string prefix" : value === "matches" ? "Bounded regular expression" : "Numeric comparison" }));
     } else options = [{ value: "and", description: "Both predicates" }, { value: "or", description: "Either predicate" }];
     const matching = options.filter(option => option.value.startsWith(fragment.toLowerCase()));
     if (state === "operand") matching.sort((left, right) => left.value.length - right.value.length);
@@ -373,7 +446,7 @@
       }
       section("Text", 'Case-insensitive text search includes addresses, mapped hostnames, displayed protocol and Info. Quote phrases or literal operator words, such as "and".');
       section("Grouping", "Use parentheses, && / and, || / or, and ! / not. NOT binds first, then AND, then OR.");
-      section("Display Filter", "This is a Wireshark-inspired subset, not full Wireshark syntax. == means exact equality, not a partial address, subnet or wildcard. Subnet/pattern operators in, matches, starts_with and like are not implemented. Missing fields do not match comparisons, including !=. ip.addr != X requires neither endpoint to equal X. IP comparisons use addresses, not hostname labels.");
+      section("Display Filter", "This is a Wireshark-inspired subset, not full Wireshark syntax. == means exact equality. IP fields also support in with an IPv4/IPv6 CIDR network, for example ip.src in 10.0.0.0/8. Registered text fields http.host, http.uri, dns.name, tds.type and smb.command support quoted, case-insensitive starts_with and matches. matches is a bounded regular-expression subset (64-character patterns, no groups/alternation/backreferences, at most one repetition operator; only the first 512 field characters are scanned). like and general wildcard syntax are not supported. Missing fields do not match comparisons, including !=. ip.addr != X requires neither endpoint to equal X. IP comparisons use addresses, not hostname labels.");
       section("Application And Validation", "Display filters validate while typing and run on Enter or Apply. Text filters apply after a short debounce. Green means valid syntax; red indicates an error and retains the last applied results. History is separate for each mode. Examples below fill the box without applying.");
       const reference = syntaxReference();
       const exampleHeading = document.createElement("h3");

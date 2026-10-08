@@ -319,9 +319,16 @@ function renderTriageChecks(checks = []) {
   }).join("") || `<tr><td colspan="4">No checks were generated for this analysis scope.</td></tr>`;
 }
 
-function buildSingleCaptureReportHtml(report) {
+function buildSingleCaptureReportHtmlBase(report) {
+  const evidenceFrames = new Set(report.relevantFrames.map(frame => Number(frame.number)));
   const findingRows = report.findings.length
-    ? report.findings.map(finding => `<article class="finding finding--${reportEscape(finding.severity)}"><div class="finding-rank">${reportEscape(finding.severity)}</div><div><h3>${reportEscape(finding.title)}</h3><p>${reportEscape(finding.detail)}</p>${finding.packet ? `<small>Evidence frame ${reportEscape(finding.packet)}</small>` : ""}</div></article>`).join("")
+    ? report.findings.map(finding => {
+      const frame = Number(finding.packet);
+      const frameReference = Number.isSafeInteger(frame) && frame > 0
+        ? `<small>Evidence <a href="#single-frame-${frame}" aria-label="Go to evidence frame ${frame}">Frame ${reportEscape(frame)}</a></small>`
+        : "";
+      return `<article class="finding finding--${reportEscape(finding.severity)}"><div class="finding-rank">${reportEscape(finding.severity)}</div><div><h3>${reportEscape(finding.title)}</h3><p>${reportEscape(finding.detail)}</p>${frameReference}</div></article>`;
+    }).join("")
     : `<p class="empty">No expert findings were generated for this analysis scope.</p>`;
   const charts = report.charts.map(chart => `<figure class="chart"><figcaption>${reportEscape(chart.title)}</figcaption>${chart.image ? `<img src="${reportEscape(chart.image)}" alt="${reportEscape(chart.title)} chart">` : `<div class="chart-unavailable">Chart not available for this capture mode.</div>`}${renderReportLegend(chart.legend)}</figure>`).join("");
   const services = report.services.length
@@ -331,7 +338,7 @@ function buildSingleCaptureReportHtml(report) {
     ? report.flows.slice(0, 10).map(flow => `<tr><td>${reportEscape(flow.a)} ↔ ${reportEscape(flow.b)}</td><td>${reportEscape(flow.protocol)}</td><td>${reportNumber(flow.packets)}</td><td>${reportEscape(flow.traffic)}</td><td>${reportEscape(flow.latency)}</td><td>${reportEscape(flow.state)}</td></tr>`).join("")
     : `<tr><td colspan="6">No conversations in this analysis scope.</td></tr>`;
   const hasInvestigationNotes = Boolean(report.problemStatement || report.narrative || report.relevantFrames.length);
-  const narrative = hasInvestigationNotes ? `<section class="report-section"><p class="eyebrow">INVESTIGATION NOTES</p><h2>${report.problemStatement ? "Problem statement and narrative" : "Analysis narrative"}</h2>${report.problemStatement ? `<p class="problem">${reportEscape(report.problemStatement)}</p>` : ""}${report.narrative ? `<p class="narrative">${reportEscape(report.narrative)}</p>` : ""}${report.relevantFrames.length ? `<h3>Relevant frames</h3><ol class="evidence-list">${report.relevantFrames.map(frame => `<li><strong>Frame ${reportEscape(frame.number)} · ${reportEscape(frame.protocol || "Packet")}</strong><span>${reportEscape(frame.time)} · ${reportEscape(frame.source)} → ${reportEscape(frame.destination)} · ${reportEscape(frame.length)} B</span><p>${reportEscape(frame.note || frame.info)}</p></li>`).join("")}</ol>` : ""}</section>` : "";
+  const narrative = hasInvestigationNotes || report.relevantFrames.length ? `<section class="report-section"><p class="eyebrow">INVESTIGATION NOTES</p><h2>${report.problemStatement ? "Problem statement and narrative" : "Analysis narrative"}</h2>${report.problemStatement ? `<p class="problem">${reportEscape(report.problemStatement)}</p>` : ""}${report.narrative ? `<p class="narrative">${reportEscape(report.narrative)}</p>` : ""}${report.relevantFrames.length ? `<h3>Relevant frames</h3><ol class="evidence-list">${report.relevantFrames.map(frame => `<li id="single-frame-${reportEscape(frame.number)}"><strong>Frame ${reportEscape(frame.number)} · ${reportEscape(frame.protocol || "Packet")}</strong><span>${reportEscape(frame.time)} · ${reportEscape(frame.source)} → ${reportEscape(frame.destination)} · ${reportEscape(frame.length)} B</span><p>${reportEscape(frame.note || frame.info)}</p></li>`).join("")}</ol>` : ""}</section>` : "";
   const triageRows = renderTriageChecks(report.triageChecks);
   const includedCheckGroups = report.includedCheckGroups?.length ? report.includedCheckGroups.join(", ") : "none selected";
   const sharedScopeMethodology = reportCommon.sharedReportCoverageHtml("Counts and checks use packets in the selected capture view (including active dashboard filters).", report.filter);
@@ -445,6 +452,10 @@ function reportSummaryText(html) {
   return new DOMParser().parseFromString(String(html || ""), "text/html").body.textContent.replace(/\s+/g, " ").trim();
 }
 
+function buildSingleCaptureReportHtml(report) {
+  return reportCommon.addSharedPrintFrame(buildSingleCaptureReportHtmlBase(report));
+}
+
 function buildSingleCaptureReportData() {
   const packets = state.filtered;
   const aggregation = aggregate(packets);
@@ -490,7 +501,10 @@ function buildSingleCaptureReportData() {
     try { if (canvas?.width && canvas?.height) image = canvas.toDataURL("image/png"); } catch (_) { image = ""; }
     return { title: chart.title, legend: chart.legend, image };
   });
-  const relevantFrames = (captureNarrative.relevantFrames || []).map(reference => {
+  const findings = buildFindings(packets, aggregation, services, profile);
+  const frameReferences = new Map((captureNarrative.relevantFrames || []).map(reference => [Number(reference.number), reference]));
+  findings.forEach(finding => { if (Number.isSafeInteger(Number(finding.packet)) && Number(finding.packet) > 0 && !frameReferences.has(Number(finding.packet))) frameReferences.set(Number(finding.packet), { number: Number(finding.packet) }); });
+  const relevantFrames = [...frameReferences.values()].map(reference => {
     const packet = state.packets.find(item => item.number === Number(reference.number));
     return packet ? {
       number: packet.number,
@@ -528,7 +542,7 @@ function buildSingleCaptureReportData() {
       { label: "Retransmissions", value: reportNumber(summary.retransmissions) }
     ],
     charts,
-    findings: buildFindings(packets, aggregation, services, profile),
+    findings,
     triageChecks,
     caveats: [...new Set(triageChecks.map(check => check.limitation).filter(Boolean))],
     includedCheckGroups: Object.keys(settings.reportCheckGroups).filter(group => settings.reportCheckGroups[group]),
